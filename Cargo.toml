@@ -1,0 +1,12 @@
+[workspace]
+resolver = "3"
+members = [
+    "netlist",
+]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+license = "Apache-2.0 WITH LLVM-exception"
+repository = "https://github.com/prjunnamed/prjunnamed"
+authors = []

@@ -1,0 +1,16 @@
+on:
+  push:
+  pull_request:
+  merge_group:
+
+name: CI
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Check out source code
+      uses: actions/checkout@v4
+    - name: Set up toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+    - name: Run tests
+      run: cargo test
