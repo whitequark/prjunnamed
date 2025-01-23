@@ -93,11 +93,10 @@ impl Value {
         self.nets.len()
     }
 
-    pub fn visit<E>(&self, mut f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
+    pub fn visit(&self, mut f: impl FnMut(Net)) {
         for &net in self.nets.iter() {
-            f(net)?;
+            f(net)
         }
-        Ok(())
     }
 
     pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {

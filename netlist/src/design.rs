@@ -44,9 +44,12 @@ impl Design {
     }
 
     pub fn replace_cell(&mut self, index: CellIndex, cell: CellRepr) {
-        let index = index.0;
-        assert_eq!(self.cells[index].output_len(), cell.output_len());
-        self.cells[index] = cell.into();
+        assert_eq!(self.cells[index.0].output_len(), cell.output_len());
+        self.cells[index.0] = cell.into();
+    }
+
+    pub fn visit_cell_mut(&mut self, index: CellIndex, f: impl FnMut(&mut Net)) {
+        self.cells[index.0].visit_mut(f);
     }
 
     pub fn find_cell(&self, net: Net) -> Result<(CellRef, u32), Trit> {
@@ -72,7 +75,7 @@ pub struct CellRef<'a> {
     index: usize,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 pub struct CellIndex(usize);
 
 impl PartialEq<CellRef<'_>> for CellRef<'_> {
@@ -99,8 +102,13 @@ impl<'a> CellRef<'a> {
     pub fn index(&self) -> CellIndex {
         CellIndex(self.index)
     }
+
+    pub fn visit(&self, f: impl FnMut(Net)) {
+        self.design.cells[self.index].visit(f)
+    }
 }
 
+#[derive(Debug)]
 pub struct CellIter<'a> {
     design: &'a Design,
     index: usize,

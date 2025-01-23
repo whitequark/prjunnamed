@@ -1,9 +1,18 @@
 [workspace]
 resolver = "3"
-members = [ "cli",
+members = [
     "netlist",
+    "pass",
     "yosys_json",
+    "cli",
 ]
+
+[workspace.dependencies]
+prjunnamed-netlist.path = "netlist"
+prjunnamed-pass.path = "pass"
+prjunnamed-yosys_json.path = "yosys_json"
+argparse = "0.2"
+json = "0.12"
 
 [workspace.package]
 edition = "2021"

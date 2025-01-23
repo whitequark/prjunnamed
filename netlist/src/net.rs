@@ -79,9 +79,8 @@ impl Net {
         }
     }
 
-    pub fn visit<E>(self, mut f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
-        f(self)?;
-        Ok(())
+    pub fn visit(self, mut f: impl FnMut(Net)) {
+        f(self)
     }
 
     pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
@@ -162,7 +161,7 @@ impl ControlNet {
         !self.is_unused()
     }
 
-    pub fn visit<E>(self, f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
+    pub fn visit(self, f: impl FnMut(Net)) {
         match self {
             ControlNet::Pos(net) => net.visit(f),
             ControlNet::Neg(net) => net.visit(f),

@@ -1,6 +1,7 @@
 use std::fs::File;
 
 use prjunnamed_yosys_json::{import, export};
+use prjunnamed_pass::combine;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
@@ -14,9 +15,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         parser.parse_args_or_exit();
     }
 
-    let design_bundle = import(&mut File::open(input)?)?;
+    let mut design_bundle = import(&mut File::open(input)?)?;
 
-    println!("{:?}", design_bundle);
+    for design in design_bundle.values_mut() {
+        combine(design);
+    }
 
     export(&mut File::create(output)?, design_bundle)?;
 

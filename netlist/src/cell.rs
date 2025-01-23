@@ -119,31 +119,31 @@ impl Cell {
         }
     }
 
-    pub(crate) fn visit<E>(&self, mut f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
+    pub(crate) fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
             Cell::Skip(_) => unreachable!(),
 
-            Cell::Buf(arg) => arg.visit(&mut f)?,
-            Cell::Not(arg) => arg.visit(&mut f)?,
+            Cell::Buf(arg) => arg.visit(&mut f),
+            Cell::Not(arg) => arg.visit(&mut f),
             Cell::And(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             Cell::Xor(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             Cell::Mux(arg1, arg2, arg3) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
-                arg3.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
+                arg3.visit(&mut f);
             }
 
-            Cell::Coarse(coarse) => coarse.visit(&mut f)?,
+            Cell::Coarse(coarse) => coarse.visit(&mut f),
         }
-        Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
             Cell::Skip(_) => unreachable!(),
@@ -213,103 +213,103 @@ impl CellRepr {
         }
     }
 
-    pub(crate) fn visit<E>(&self, mut f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
+    pub(crate) fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
             CellRepr::Buf(arg)
-            | CellRepr::Not(arg) => arg.visit(&mut f)?,
+            | CellRepr::Not(arg) => arg.visit(&mut f),
             CellRepr::And(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::Or(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::Xor(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::Mux(net, arg1, arg2) => {
-                net.visit(&mut f)?;
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                net.visit(&mut f);
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
 
             CellRepr::Add(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::Sub(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::Mul(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::UDiv(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::UMod(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::SDivTrunc(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::SDivFloor(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::SModTrunc(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::SModFloor(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::Eq(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::ULt(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::SLt(arg1, arg2) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::Shl(arg1, arg2, _) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::UShr(arg1, arg2, _) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::SShr(arg1, arg2, _) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
             CellRepr::XShr(arg1, arg2, _) => {
-                arg1.visit(&mut f)?;
-                arg2.visit(&mut f)?;
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
             }
 
-            CellRepr::Dff(flip_flop) => flip_flop.visit(&mut f)?,
-            CellRepr::Iob(io_buffer) => io_buffer.visit(&mut f)?,
-            CellRepr::Other(instance) => instance.visit(&mut f)?,
+            CellRepr::Dff(flip_flop) => flip_flop.visit(&mut f),
+            CellRepr::Iob(io_buffer) => io_buffer.visit(&mut f),
+            CellRepr::Other(instance) => instance.visit(&mut f),
 
             CellRepr::TopInput(_, _) => (),
-            CellRepr::TopOutput(_, arg) => arg.visit(f)?,
+            CellRepr::TopOutput(_, arg) => arg.visit(f),
         }
-        Ok(())
     }
 
+    #[allow(dead_code)]
     pub(crate) fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
             CellRepr::Buf(arg) | CellRepr::Not(arg) => arg.visit_mut(&mut f),
@@ -425,13 +425,12 @@ impl FlipFlop {
         self.data.len()
     }
 
-    pub fn visit<E>(&self, mut f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
-        self.data.visit(&mut f)?;
-        self.clock.visit(&mut f)?;
-        self.enable.visit(&mut f)?;
-        self.reset.visit(&mut f)?;
-        self.clear.visit(&mut f)?;
-        Ok(())
+    pub fn visit(&self, mut f: impl FnMut(Net)) {
+        self.data.visit(&mut f);
+        self.clock.visit(&mut f);
+        self.enable.visit(&mut f);
+        self.reset.visit(&mut f);
+        self.clear.visit(&mut f);
     }
 
     pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
@@ -455,10 +454,9 @@ impl IoBuffer {
         self.io.len()
     }
 
-    pub fn visit<E>(&self, mut f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
-        self.output.visit(&mut f)?;
-        self.enable.visit(&mut f)?;
-        Ok(())
+    pub fn visit(&self, mut f: impl FnMut(Net)) {
+        self.output.visit(&mut f);
+        self.enable.visit(&mut f);
     }
 
     pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
@@ -489,11 +487,10 @@ impl Instance {
         self.outputs.values().map(|range| range.len()).sum()
     }
 
-    pub fn visit<E>(&self, mut f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
+    pub fn visit(&self, mut f: impl FnMut(Net)) {
         for val in self.inputs.values() {
-            val.visit(&mut f)?;
+            val.visit(&mut f);
         }
-        Ok(())
     }
 
     pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
