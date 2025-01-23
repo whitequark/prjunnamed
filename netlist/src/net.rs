@@ -1,56 +1,91 @@
-use std::fmt::Debug;
+use std::{fmt::Debug, u32};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum Trit {
+    Undef,
+    Zero,
+    One,
+}
+
+impl std::fmt::Display for Trit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Trit::Undef => write!(f, "X"),
+            Trit::Zero => write!(f, "0"),
+            Trit::One => write!(f, "1"),
+        }
+    }
+}
+
+impl From<bool> for Trit {
+    fn from(value: bool) -> Self {
+        match value {
+            false => Trit::Zero,
+            true => Trit::One,
+        }
+    }
+}
+
+impl TryFrom<Net> for Trit {
+    type Error = ();
+
+    fn try_from(value: Net) -> Result<Self, Self::Error> {
+        if value == Net::UNDEF {
+            Ok(Trit::Undef)
+        } else if value == Net::ZERO {
+            Ok(Trit::Zero)
+        } else if value == Net::ONE {
+            Ok(Trit::One)
+        } else {
+            Err(())
+        }
+    }
+}
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Net {
     pub(crate) index: u32,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum NetRepr {
-    Zero,
-    One,
-    Undef,
-    Cell(u32),
-}
-
 impl Net {
+    pub const UNDEF: Net = Net { index: u32::MAX };
     pub const ZERO: Net = Net { index: 0 };
     pub const ONE: Net = Net { index: 1 };
-    pub const UNDEF: Net = Net { index: 2 };
 
-    const FIRST_CELL: u32 = 3; // Zero, One, Undef, Cell...
+    const FIRST_CELL: u32 = 2; // Zero, One, then cells
 
-    pub fn cell(cell_index: u32) -> Net {
-        Net { index: cell_index.checked_add(Net::FIRST_CELL).unwrap() }
+    pub(crate) fn from_cell(cell_index: usize) -> Net {
+        assert!(cell_index <= u32::MAX as usize - 3);
+        Net { index: cell_index as u32 + Net::FIRST_CELL }
     }
 
-    pub fn repr(self) -> NetRepr {
-        NetRepr::from(self)
-    }
-}
-
-impl From<Net> for NetRepr {
-    fn from(value: Net) -> Self {
-        if value == Net::ZERO {
-            Self::Zero
-        } else if value == Net::ONE {
-            Self::One
-        } else if value == Net::UNDEF {
-            Self::Undef
+    pub(crate) fn as_cell(self) -> Option<usize> {
+        if self.index >= Self::FIRST_CELL && self != Self::UNDEF {
+            Some((self.index - Self::FIRST_CELL) as usize)
         } else {
-            Self::Cell(value.index.checked_sub(Net::FIRST_CELL).unwrap())
+            None
         }
     }
-}
 
-impl From<NetRepr> for Net {
-    fn from(value: NetRepr) -> Self {
-        match value {
-            NetRepr::Zero => Net::ZERO,
-            NetRepr::One => Net::ONE,
-            NetRepr::Undef => Net::UNDEF,
-            NetRepr::Cell(cell_index) => Net::cell(cell_index),
+    pub fn as_const(self) -> Option<Trit> {
+        if self == Self::UNDEF {
+            Some(Trit::Undef)
+        } else if self == Self::ZERO {
+            Some(Trit::Zero)
+        } else if self == Self::ONE {
+            Some(Trit::One)
+        } else {
+            None
         }
+    }
+
+    pub fn visit<E>(self, mut f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
+        f(self)?;
+        Ok(())
+    }
+
+    pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
+        f(self)
     }
 }
 
@@ -63,35 +98,95 @@ impl From<bool> for Net {
     }
 }
 
+impl From<Trit> for Net {
+    fn from(value: Trit) -> Self {
+        match value {
+            Trit::Undef => Self::UNDEF,
+            Trit::Zero => Self::ZERO,
+            Trit::One => Self::ONE,
+        }
+    }
+}
+
 impl Debug for Net {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Net { index: 0 } => write!(f, "Net::ZERO"),
             Net { index: 1 } => write!(f, "Net::ONE"),
-            Net { index: 2 } => write!(f, "Net::UNDEF"),
+            Net { index: u32::MAX } => write!(f, "Net::UNDEF"),
             _ => {
                 let cell_index = self.index.checked_sub(Net::FIRST_CELL).unwrap();
-                write!(f, "Net::cell({cell_index})")
+                write!(f, "Net::from_cell({cell_index})")
             }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ControlNet {
+    Pos(Net),
+    Neg(Net),
+}
+
+impl ControlNet {
+    pub fn net(self) -> Net {
+        match self {
+            Self::Pos(net) => net,
+            Self::Neg(net) => net,
+        }
+    }
+
+    pub fn is_positive(self) -> bool {
+        matches!(self, Self::Pos(_))
+    }
+
+    pub fn is_negative(self) -> bool {
+        matches!(self, Self::Neg(_))
+    }
+
+    pub fn is_active(self) -> Option<bool> {
+        match self {
+            Self::Pos(net) if net == Net::ZERO => Some(false),
+            Self::Neg(net) if net == Net::ONE => Some(false),
+            Self::Pos(net) if net == Net::ONE => Some(true),
+            Self::Neg(net) if net == Net::ZERO => Some(true),
+            _ => None,
+        }
+    }
+
+    pub fn is_unused(self) -> bool {
+        matches!(self.is_active(), Some(false))
+    }
+
+    pub fn is_used(self) -> bool {
+        !self.is_unused()
+    }
+
+    pub fn visit<E>(self, f: impl FnMut(Net) -> Result<(), E>) -> Result<(), E> {
+        match self {
+            ControlNet::Pos(net) => net.visit(f),
+            ControlNet::Neg(net) => net.visit(f),
+        }
+    }
+
+    pub fn visit_mut(&mut self, f: impl FnMut(&mut Net)) {
+        match self {
+            ControlNet::Pos(net) => net.visit_mut(f),
+            ControlNet::Neg(net) => net.visit_mut(f),
         }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{Net, NetRepr};
+    use crate::{Net, Trit};
 
     #[test]
     fn test_net() {
-        assert_eq!(Net::ZERO.repr(), NetRepr::Zero);
-        assert_eq!(Net::ONE.repr(), NetRepr::One);
-        assert_eq!(Net::UNDEF.repr(), NetRepr::Undef);
-        assert_eq!(Net { index: 7 }.repr(), NetRepr::Cell(4));
-
-        assert_eq!(Net::from(NetRepr::Zero), Net::ZERO);
-        assert_eq!(Net::from(NetRepr::One), Net::ONE);
-        assert_eq!(Net::from(NetRepr::Undef), Net::UNDEF);
-        assert_eq!(Net::from(NetRepr::Cell(3)), Net { index: 6 });
+        assert_eq!(Net::from(Trit::Zero), Net::ZERO);
+        assert_eq!(Net::from(Trit::One), Net::ONE);
+        assert_eq!(Net::from(Trit::Undef), Net::UNDEF);
+        assert_eq!(Net::from_cell(3), Net { index: 5 });
     }
 
     #[test]
@@ -101,10 +196,17 @@ mod test {
     }
 
     #[test]
+    fn test_from_trit() {
+        assert_eq!(Net::from(Trit::Zero), Net::ZERO);
+        assert_eq!(Net::from(Trit::One), Net::ONE);
+        assert_eq!(Net::from(Trit::Undef), Net::UNDEF);
+    }
+
+    #[test]
     fn test_net_debug() {
         assert_eq!(format!("{:?}", Net::ZERO), "Net::ZERO");
         assert_eq!(format!("{:?}", Net::ONE), "Net::ONE");
         assert_eq!(format!("{:?}", Net::UNDEF), "Net::UNDEF");
-        assert_eq!(format!("{:?}", Net::from(NetRepr::Cell(0))), "Net::cell(0)");
+        assert_eq!(format!("{:?}", Net::from_cell(0)), "Net::from_cell(0)");
     }
 }

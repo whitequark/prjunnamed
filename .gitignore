@@ -1,1 +1,4 @@
 /target
+*.il
+*.json
+*.dot

@@ -1,7 +1,8 @@
 [workspace]
 resolver = "3"
-members = [
+members = [ "cli",
     "netlist",
+    "yosys_json",
 ]
 
 [workspace.package]
