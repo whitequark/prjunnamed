@@ -1,5 +1,6 @@
 use std::borrow::Cow;
-use std::collections::{hash_map, HashMap};
+use std::collections::{hash_map, BTreeMap, HashMap};
+use std::fmt::Display;
 use std::ops::Range;
 
 use crate::cell::{Cell, CellRepr};
@@ -125,5 +126,113 @@ impl<'a> Iterator for CellIter<'a> {
         } else {
             None
         }
+    }
+}
+
+impl Display for Design {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let mut cell_index_map = BTreeMap::new();
+        for (index, cell) in self.cells.iter().enumerate() {
+            match cell {
+                Cell::Skip(_) => (),
+                _ => {
+                    cell_index_map.insert(index, cell_index_map.len());
+                }
+            }
+        }
+
+        let cell_ident = |cell_ref: CellRef| {
+            cell_index_map.get(&cell_ref.index).unwrap()
+        };
+
+        let write_net = |f: &mut std::fmt::Formatter, net: Net| -> std::fmt::Result {
+            match self.find_cell(net) {
+                Ok((cell_ref, offset)) => {
+                    if cell_ref.output().len() == 1 {
+                        write!(f, "%{}", cell_ident(cell_ref))
+                    } else {
+                        write!(f, "%{}.{}", cell_ident(cell_ref), offset)
+                    }
+                }
+                Err(trit) => write!(f, "{}", trit),
+            }
+        };
+
+        let write_value = |f: &mut std::fmt::Formatter, value: &Value| -> std::fmt::Result {
+            match self.find_cell(value[0]) {
+                Ok((cell_ref, _offset)) if *value == cell_ref.output() => {
+                    write!(f, "%{}", cell_ident(cell_ref))
+                }
+                _ => {
+                    write!(f, "{{ ")?;
+                    for net in value {
+                        write_net(f, net)?;
+                        write!(f, " ")?;
+                    }
+                    write!(f, "}}")?;
+                    Ok(())
+                }
+            }
+        };
+
+        let write_cell = |f: &mut std::fmt::Formatter, name: &str, args: &[&Value]| -> std::fmt::Result {
+            write!(f, "{}", name)?;
+            for arg in args {
+                write!(f, " ")?;
+                write_value(f, arg)?;
+            }
+            Ok(())
+        };
+
+        // TODO: ios
+
+        for (index, cell) in self.cells.iter().enumerate() {
+            if let Cell::Skip(_) = cell { continue }
+
+            write!(f, "%{}:{} = ", cell_index_map.get(&index).unwrap(), cell.output_len())?;
+            match &*cell.repr() {
+                CellRepr::Buf(arg) => write_cell(f, "buf", &[arg])?,
+                CellRepr::Not(arg) => write_cell(f, "not", &[arg])?,
+                CellRepr::And(arg1, arg2) => write_cell(f, "and", &[arg1, arg2])?,
+                CellRepr::Or(arg1, arg2) => write_cell(f, "or", &[arg1, arg2])?,
+                CellRepr::Xor(arg1, arg2) => write_cell(f, "xor", &[arg1, arg2])?,
+                CellRepr::Mux(arg1, arg2, arg3) => write_cell(f, "mux", &[&arg1.into(), arg2, arg3])?,
+
+                CellRepr::Add(arg1, arg2) => write_cell(f, "add", &[arg1, arg2])?,
+                CellRepr::Sub(arg1, arg2) => write_cell(f, "sub", &[arg1, arg2])?,
+                // CellRepr::Mul(arg1, arg2) => todo!(),
+                // CellRepr::UDiv(arg1, arg2) => todo!(),
+                // CellRepr::UMod(arg1, arg2) => todo!(),
+                // CellRepr::SDivTrunc(arg1, arg2) => todo!(),
+                // CellRepr::SDivFloor(arg1, arg2) => todo!(),
+                // CellRepr::SModTrunc(arg1, arg2) => todo!(),
+                // CellRepr::SModFloor(arg1, arg2) => todo!(),
+
+                // CellRepr::Eq(arg1, arg2) => todo!(),
+                // CellRepr::ULt(arg1, arg2) => todo!(),
+                // CellRepr::SLt(arg1, arg2) => todo!(),
+
+                // CellRepr::Shl(arg1, arg2, stride) => todo!(),
+                // CellRepr::UShr(arg1, arg2, stride) => todo!(),
+                // CellRepr::SShr(arg1, arg2, stride) => todo!(),
+                // CellRepr::XShr(arg1, arg2, stride) => todo!(),
+
+                // CellRepr::Dff(flip_flop) => todo!(),
+                // CellRepr::Iob(io_buffer) => todo!(),
+                // CellRepr::Other(instance) => todo!(),
+
+                CellRepr::TopInput(name, _size) => write!(f, "top_input {:?}", name)?,
+                CellRepr::TopOutput(name, value) => {
+                    write!(f, "top_output {:?} ", name)?;
+                    write_value(f, value)?;
+                }
+
+                _ => write!(f, "<unprintable>")?,
+            }
+
+            write!(f, "\n")?;
+        }
+
+        write!(f, "\n")
     }
 }

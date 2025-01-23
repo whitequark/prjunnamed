@@ -7,7 +7,7 @@ use prjunnamed_netlist::{Const, ParamValue, Trit};
 pub struct SyntaxError(JsonValue);
 
 impl std::fmt::Display for SyntaxError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "syntax error near: {}", self.0)
     }
 }
@@ -18,7 +18,7 @@ impl std::error::Error for SyntaxError {}
 pub struct MetadataTypeError;
 
 impl std::fmt::Display for MetadataTypeError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "unexpected metadata type")
     }
 }

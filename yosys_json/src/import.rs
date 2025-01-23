@@ -40,7 +40,7 @@ impl From<yosys::MetadataTypeError> for Error {
 }
 
 impl std::fmt::Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error::Io(error) => write!(f, "I/O error: {}", error),
             Error::Json(error) => write!(f, "JSON parse error: {}", error),
@@ -231,7 +231,7 @@ impl ModuleImporter<'_> {
             match port.direction {
                 yosys::PortDirection::Input => {
                     let value =
-                        self.design.add_cell(CellRepr::TopInput(port_name.clone(), port.bits.len() as u32)).output();
+                        self.design.add_cell(CellRepr::TopInput(port_name.clone(), port.bits.len())).output();
                     self.drive(&port.bits, value);
                 }
                 yosys::PortDirection::Output => {

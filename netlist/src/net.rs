@@ -8,7 +8,7 @@ pub enum Trit {
 }
 
 impl std::fmt::Display for Trit {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Trit::Undef => write!(f, "X"),
             Trit::Zero => write!(f, "0"),
@@ -108,7 +108,7 @@ impl From<Trit> for Net {
 }
 
 impl Debug for Net {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Net { index: 0 } => write!(f, "Net::ZERO"),
             Net { index: 1 } => write!(f, "Net::ONE"),

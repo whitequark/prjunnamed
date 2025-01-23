@@ -58,7 +58,7 @@ pub enum CellRepr {
     Other(Instance),
     // TODO: memory
 
-    TopInput(String, u32),
+    TopInput(String, usize),
     TopOutput(String, Value),
 }
 

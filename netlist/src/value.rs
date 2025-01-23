@@ -53,7 +53,7 @@ impl IntoIterator for &Const {
 }
 
 impl Debug for Const {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "Const(")?;
         for (index, trit) in self.trits.iter().enumerate() {
             if index != 0 {
@@ -67,7 +67,7 @@ impl Debug for Const {
 }
 
 impl Display for Const {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for trit in self.trits.iter().rev() {
             write!(f, "{}", trit)?;
         }
@@ -75,7 +75,7 @@ impl Display for Const {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Value {
     nets: Vec<Net>
 }
@@ -190,7 +190,7 @@ impl IntoIterator for &Value {
 }
 
 impl Debug for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "Value(")?;
         for (index, net) in self.nets.iter().enumerate() {
             if index != 0 {

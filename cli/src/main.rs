@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut design_bundle = import(&mut File::open(input)?)?;
 
     for design in design_bundle.values_mut() {
+        print!("{}", design);
         combine(design);
     }
 
