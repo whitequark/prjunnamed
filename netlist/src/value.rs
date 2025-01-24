@@ -46,16 +46,10 @@ impl Const {
             assert!(val < (1 << bits));
         }
         for i in 0..bits {
-            let trit = if i < u128::BITS as usize && ((val >> i) & 1) != 0 {
-                Trit::One
-            } else {
-                Trit::Zero
-            };
+            let trit = if i < u128::BITS as usize && ((val >> i) & 1) != 0 { Trit::One } else { Trit::Zero };
             trits.push(trit);
         }
-        Self {
-            trits
-        }
+        Self { trits }
     }
 }
 

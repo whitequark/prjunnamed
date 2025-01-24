@@ -1,7 +1,7 @@
+use std::ops::Range;
 use std::borrow::Cow;
 use std::collections::{btree_map, BTreeMap, BTreeSet};
 use std::fmt::Display;
-use std::ops::Range;
 
 use crate::cell::{Cell, CellRepr};
 use crate::{ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, Trit, Value};
@@ -30,16 +30,7 @@ impl Design {
         CellRef { design: self, index }
     }
 
-    pub fn replace_cell(&mut self, index: CellIndex, cell: CellRepr) {
-        assert_eq!(self.cells[index.0].output_len(), cell.output_len());
-        self.cells[index.0] = cell.into();
-    }
-
-    pub fn visit_cell_mut(&mut self, index: CellIndex, f: impl FnMut(&mut Net)) {
-        self.cells[index.0].visit_mut(f);
-    }
-
-    pub fn find_cell(&self, net: Net) -> Result<(CellRef, usize), Trit> {
+    fn locate_cell(&self, net: Net) -> Result<(usize, usize), Trit> {
         if let Some(trit) = net.as_const() {
             return Err(trit);
         }
@@ -48,11 +39,23 @@ impl Design {
             Cell::Skip(start) => (start as usize, index - start as usize),
             _ => (index, 0),
         };
-        Ok((CellRef { design: self, index: cell_index }, bit_index))
+        Ok((cell_index, bit_index))
+    }
+
+    pub fn find_cell(&self, net: Net) -> Result<(CellRef, usize), Trit> {
+        self.locate_cell(net).map(|(cell_index, bit_index)| (CellRef { design: self, index: cell_index }, bit_index))
+    }
+
+    pub fn find_cell_mut(&mut self, net: Net) -> Result<(CellRefMut, usize), Trit> {
+        self.locate_cell(net).map(|(cell_index, bit_index)| (CellRefMut { design: self, index: cell_index }, bit_index))
     }
 
     pub fn iter_cells(&self) -> CellIter {
         CellIter { design: self, index: 0 }
+    }
+
+    pub fn replace_cells(&self) -> CellReplacer {
+        CellReplacer(BTreeMap::new())
     }
 
     pub fn add_io(&mut self, name: String, width: usize) -> IoValue {
@@ -77,62 +80,91 @@ impl Design {
         }
         None
     }
+}
 
-    // Invalidates all existing `CellIndex`es.
-    pub fn compact(&mut self) {
-        let mut queue = BTreeSet::new();
-        for (index, cell) in self.cells.iter().enumerate() {
-            if let Cell::Skip(_) = cell {
-                continue;
-            }
-            match &*cell.repr() {
-                CellRepr::Dff(_)
-                | CellRepr::Iob(_)
-                | CellRepr::Other(_)
-                | CellRepr::Input(_, _)
-                | CellRepr::Output(_, _) => {
-                    queue.insert(index);
-                }
-                _ => (),
-            }
+#[derive(Clone, Copy)]
+pub struct CellRef<'a> {
+    design: &'a Design,
+    index: usize,
+}
+
+pub struct CellRefMut<'a> {
+    design: &'a mut Design,
+    index: usize,
+}
+
+impl PartialEq<CellRef<'_>> for CellRef<'_> {
+    fn eq(&self, other: &CellRef<'_>) -> bool {
+        std::ptr::eq(self.design, other.design) && self.index == other.index
+    }
+}
+
+impl Eq for CellRef<'_> {}
+
+impl<'a> CellRef<'a> {
+    pub fn repr(&self) -> Cow<'a, CellRepr> {
+        self.design.cells[self.index].repr()
+    }
+
+    pub fn output(&self) -> Value {
+        Value::cell(self.index, self.design.cells[self.index].output_len())
+    }
+
+    pub fn visit(&self, f: impl FnMut(Net)) {
+        self.design.cells[self.index].visit(f)
+    }
+}
+
+impl<'a> CellRefMut<'a> {
+    pub fn replace(&mut self, cell: CellRepr) {
+        assert_eq!(self.design.cells[self.index].output_len(), cell.output_len());
+        self.design.cells[self.index] = cell.into();
+    }
+
+    pub fn visit_mut(&mut self, f: impl FnMut(&mut Net)) {
+        self.design.cells[self.index].visit_mut(f)
+    }
+}
+
+pub struct CellIter<'a> {
+    design: &'a Design,
+    index: usize,
+}
+
+impl<'a> Iterator for CellIter<'a> {
+    type Item = CellRef<'a>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.index < self.design.cells.len() {
+            let cell_ref = CellRef { design: self.design, index: self.index };
+            self.index += self.design.cells[self.index].output_len().max(1);
+            Some(cell_ref)
+        } else {
+            None
         }
+    }
+}
 
-        let mut keep = BTreeSet::new();
-        while let Some(index) = queue.pop_first() {
-            keep.insert(index);
-            let cell = &self.cells[index];
-            cell.visit(|net| match self.find_cell(net) {
-                Ok((cell_ref, _offset)) => {
-                    if !keep.contains(&cell_ref.index) {
-                        queue.insert(cell_ref.index);
-                    }
-                }
-                Err(_trit) => (),
-            });
+#[derive(Debug)]
+pub struct CellReplacer(BTreeMap<Net, Net>);
+
+impl CellReplacer {
+    pub fn net(&mut self, from_net: Net, to_net: Net) {
+        assert_eq!(self.0.insert(from_net, to_net), None);
+    }
+
+    pub fn value(&mut self, from_value: &Value, to_value: &Value) {
+        assert_eq!(from_value.len(), to_value.len());
+        for (from_net, to_net) in from_value.into_iter().zip(to_value.into_iter()) {
+            self.net(from_net, to_net);
         }
+    }
 
-        let mut net_map = BTreeMap::new();
-        for (old_index, cell) in std::mem::take(&mut self.cells).into_iter().enumerate() {
-            if keep.contains(&old_index) {
-                let new_index = self.cells.len();
-                for offset in 0..cell.output_len() {
-                    net_map.insert(Net::from_cell(old_index + offset), Net::from_cell(new_index + offset));
-                }
-                let skip_count = cell.output_len().checked_sub(1).unwrap_or(0);
-                self.cells.push(cell);
-                for _ in 0..skip_count {
-                    self.cells.push(Cell::Skip(new_index as u32));
-                }
-            }
-        }
-
-        for cell in self.cells.iter_mut() {
-            if let Cell::Skip(_) = cell {
-                continue;
-            }
+    pub fn apply(self, design: &mut Design) {
+        for cell in design.cells.iter_mut().filter(|cell| !matches!(cell, Cell::Skip(_))) {
             cell.visit_mut(|net| {
-                if ![Net::UNDEF, Net::ZERO, Net::ONE].contains(net) {
-                    *net = net_map[net];
+                if let Some(new_net) = self.0.get(net) {
+                    *net = *new_net;
                 }
             });
         }
@@ -220,71 +252,67 @@ impl Design {
         add_output(name: impl Into<String>, value: impl Into<Value>) :
             Output(name.into(), value.into());
     }
-}
 
-impl Design {
     pub fn add_ne(&mut self, arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value {
         let eq = self.add_eq(arg1, arg2);
         self.add_not(eq)
     }
 }
 
-// Only used for replacing a cell; otherwise a `CellRef` is a better choice.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct CellIndex(usize);
+impl Design {
+    pub fn compact(&mut self) {
+        let mut queue = BTreeSet::new();
+        for (index, cell) in self.cells.iter().enumerate() {
+            if let Cell::Skip(_) = cell {
+                continue;
+            }
+            match &*cell.repr() {
+                CellRepr::Dff(_)
+                | CellRepr::Iob(_)
+                | CellRepr::Other(_)
+                | CellRepr::Input(_, _)
+                | CellRepr::Output(_, _) => {
+                    queue.insert(index);
+                }
+                _ => (),
+            }
+        }
 
-#[derive(Clone, Copy)]
-pub struct CellRef<'a> {
-    design: &'a Design,
-    index: usize,
-}
+        let mut keep = BTreeSet::new();
+        while let Some(index) = queue.pop_first() {
+            keep.insert(index);
+            let cell = &self.cells[index];
+            cell.visit(|net| match self.find_cell(net) {
+                Ok((cell_ref, _offset)) => {
+                    if !keep.contains(&cell_ref.index) {
+                        queue.insert(cell_ref.index);
+                    }
+                }
+                Err(_trit) => (),
+            });
+        }
 
-impl PartialEq<CellRef<'_>> for CellRef<'_> {
-    fn eq(&self, other: &CellRef<'_>) -> bool {
-        std::ptr::eq(self.design, other.design) && self.index == other.index
-    }
-}
+        let mut net_map = BTreeMap::new();
+        for (old_index, cell) in std::mem::take(&mut self.cells).into_iter().enumerate() {
+            if keep.contains(&old_index) {
+                let new_index = self.cells.len();
+                for offset in 0..cell.output_len() {
+                    net_map.insert(Net::from_cell(old_index + offset), Net::from_cell(new_index + offset));
+                }
+                let skip_count = cell.output_len().checked_sub(1).unwrap_or(0);
+                self.cells.push(cell);
+                for _ in 0..skip_count {
+                    self.cells.push(Cell::Skip(new_index as u32));
+                }
+            }
+        }
 
-impl Eq for CellRef<'_> {}
-
-impl<'a> CellRef<'a> {
-    fn deref(&self) -> &Cell {
-        &self.design.cells[self.index]
-    }
-
-    pub fn repr(&self) -> Cow<'a, CellRepr> {
-        self.design.cells[self.index].repr()
-    }
-
-    pub fn output(&self) -> Value {
-        Value::cell(self.index, self.deref().output_len())
-    }
-
-    pub fn index(&self) -> CellIndex {
-        CellIndex(self.index)
-    }
-
-    pub fn visit(&self, f: impl FnMut(Net)) {
-        self.design.cells[self.index].visit(f)
-    }
-}
-
-#[derive(Debug)]
-pub struct CellIter<'a> {
-    design: &'a Design,
-    index: usize,
-}
-
-impl<'a> Iterator for CellIter<'a> {
-    type Item = CellRef<'a>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.index < self.design.cells.len() {
-            let cell_ref = CellRef { design: self.design, index: self.index };
-            self.index += cell_ref.deref().output_len().max(1);
-            Some(cell_ref)
-        } else {
-            None
+        for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, Cell::Skip(_))) {
+            cell.visit_mut(|net| {
+                if ![Net::UNDEF, Net::ZERO, Net::ONE].contains(net) {
+                    *net = net_map[net];
+                }
+            });
         }
     }
 }

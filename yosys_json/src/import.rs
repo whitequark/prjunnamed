@@ -72,8 +72,7 @@ impl ModuleImporter<'_> {
             assert!(!self.driven_nets.contains(&ynet));
             match self.nets.entry(ynet) {
                 btree_map::Entry::Occupied(e) => {
-                    let cell = self.design.find_cell(*e.get()).unwrap().0;
-                    self.design.replace_cell(cell.index(), CellRepr::Buf(Value::from(net)));
+                    self.design.find_cell_mut(*e.get()).unwrap().0.replace(CellRepr::Buf(Value::from(net)));
                 }
                 btree_map::Entry::Vacant(e) => {
                     e.insert(net);
@@ -482,8 +481,7 @@ impl ModuleImporter<'_> {
                     assert!(!self.driven_nets.contains(&ynet));
                     match self.nets.entry(ynet) {
                         btree_map::Entry::Occupied(e) => {
-                            let cell = self.design.find_cell(*e.get()).unwrap().0;
-                            self.design.replace_cell(cell.index(), CellRepr::Buf(Value::from(net)));
+                            self.design.find_cell_mut(*e.get()).unwrap().0.replace(CellRepr::Buf(Value::from(net)));
                         }
                         btree_map::Entry::Vacant(e) => {
                             e.insert(net);
@@ -576,15 +574,11 @@ impl ModuleImporter<'_> {
                 continue;
             }
             let Some(&net) = self.nets.get(&ynet) else { continue };
-            let index = self.design.find_cell(net).unwrap().0.index();
-            self.design.replace_cell(
-                index,
-                CellRepr::Iob(IoBuffer {
-                    output: Value::undef(1),
-                    enable: ControlNet::Pos(Net::ZERO),
-                    io: io_net.into(),
-                }),
-            );
+            self.design.find_cell_mut(net).unwrap().0.replace(CellRepr::Iob(IoBuffer {
+                output: Value::undef(1),
+                enable: ControlNet::Pos(Net::ZERO),
+                io: io_net.into(),
+            }));
         }
     }
 }

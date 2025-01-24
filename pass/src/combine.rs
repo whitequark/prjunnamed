@@ -1,14 +1,12 @@
 use prjunnamed_netlist::{CellRepr, Design};
 
-use crate::replacer::Replacer;
-
 pub fn combine(design: &mut Design) {
-    let mut design_index = Replacer::new(design);
+    let mut replacer = design.replace_cells();
     for cell_ref in design.iter_cells() {
         match &*cell_ref.repr() {
-            CellRepr::Buf(arg) => design_index.replace_value(&cell_ref.output(), arg),
+            CellRepr::Buf(arg) => replacer.value(&cell_ref.output(), arg),
             _ => (),
         }
     }
-    design_index.apply(design);
+    replacer.apply(design);
 }
