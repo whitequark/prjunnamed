@@ -1,10 +1,14 @@
-use std::{fmt::{Debug, Display}, ops::{Index, IndexMut}, slice::SliceIndex};
+use std::{
+    fmt::{Debug, Display},
+    ops::{Index, IndexMut},
+    slice::SliceIndex,
+};
 
-use crate::{Trit, Net};
+use crate::{Net, Trit};
 
 #[derive(Clone)]
 pub struct Const {
-    trits: Vec<Trit>
+    trits: Vec<Trit>,
 }
 
 impl Const {
@@ -77,7 +81,7 @@ impl Display for Const {
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Value {
-    nets: Vec<Net>
+    nets: Vec<Net>,
 }
 
 impl Value {
@@ -127,7 +131,6 @@ impl Value {
         assert!(width >= self.len());
         Self::from_iter(self.into_iter().chain(std::iter::repeat_n(self[self.len() - 1], width - self.len())))
     }
-
 }
 
 impl<I: SliceIndex<[Net]>> Index<I> for Value {

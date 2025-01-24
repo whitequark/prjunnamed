@@ -1,4 +1,4 @@
-use std::collections::{hash_map, HashMap, HashSet};
+use std::collections::{btree_map, BTreeMap, BTreeSet};
 
 use prjunnamed_netlist::{
     CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Trit, Value,
@@ -55,11 +55,11 @@ impl std::error::Error for Error {}
 
 struct ModuleImporter<'a> {
     module: &'a yosys::Module,
-    design_io_ports: &'a HashSet<(&'a str, &'a str)>,
-    io_nets: HashMap<usize, IoNet>,
-    driven_nets: HashSet<usize>,
-    nets: HashMap<usize, Net>,
-    init: HashMap<usize, Trit>,
+    design_io_ports: &'a BTreeSet<(&'a str, &'a str)>,
+    io_nets: BTreeMap<usize, IoNet>,
+    driven_nets: BTreeSet<usize>,
+    nets: BTreeMap<usize, Net>,
+    init: BTreeMap<usize, Trit>,
     design: Design,
 }
 
@@ -70,11 +70,11 @@ impl ModuleImporter<'_> {
             let yosys::Bit::Net(ynet) = bit else { unreachable!() };
             assert!(!self.driven_nets.contains(&ynet));
             match self.nets.entry(ynet) {
-                hash_map::Entry::Occupied(e) => {
+                btree_map::Entry::Occupied(e) => {
                     let cell = self.design.find_cell(*e.get()).unwrap().0;
                     self.design.replace_cell(cell.index(), CellRepr::Buf(Value::from(net)));
                 }
-                hash_map::Entry::Vacant(e) => {
+                btree_map::Entry::Vacant(e) => {
                     e.insert(net);
                 }
             }
@@ -170,10 +170,10 @@ impl ModuleImporter<'_> {
                 }
                 let yosys::Bit::Net(ynet) = bit else { Err(yosys::MetadataTypeError)? };
                 match self.init.entry(ynet) {
-                    hash_map::Entry::Occupied(e) => {
+                    btree_map::Entry::Occupied(e) => {
                         assert_eq!(*e.get(), binit);
                     }
-                    hash_map::Entry::Vacant(e) => {
+                    btree_map::Entry::Vacant(e) => {
                         e.insert(binit);
                     }
                 }
@@ -184,7 +184,7 @@ impl ModuleImporter<'_> {
 
     fn handle_ports(&mut self) -> Result<(), Error> {
         // determine set of nets that need to be IOs from cell port connections.
-        let mut io_net_conns = HashSet::new();
+        let mut io_net_conns = BTreeSet::new();
         for cell in self.module.cells.0.values() {
             for (port_name, bits) in cell.connections.iter() {
                 if self.design_io_ports.contains(&(&cell.type_, port_name)) {
@@ -197,7 +197,7 @@ impl ModuleImporter<'_> {
         }
 
         // now create all IoValues we're going to need.
-        let mut io_ports = HashSet::new();
+        let mut io_ports = BTreeSet::new();
         for (port_name, port) in self.module.ports.iter() {
             let mut is_inout = port.direction == yosys::PortDirection::Inout;
             for &bit in port.bits.iter() {
@@ -212,10 +212,10 @@ impl ModuleImporter<'_> {
                 for (index, &bit) in port.bits.iter().enumerate() {
                     let yosys::Bit::Net(net) = bit else { return Err(Error::Semantic) };
                     match self.io_nets.entry(net) {
-                        hash_map::Entry::Occupied(_) => {
+                        btree_map::Entry::Occupied(_) => {
                             return Err(Error::Semantic);
                         }
-                        hash_map::Entry::Vacant(e) => {
+                        btree_map::Entry::Vacant(e) => {
                             e.insert(ioval[index]);
                         }
                     }
@@ -230,8 +230,7 @@ impl ModuleImporter<'_> {
             }
             match port.direction {
                 yosys::PortDirection::Input => {
-                    let value =
-                        self.design.add_cell(CellRepr::TopInput(port_name.clone(), port.bits.len())).output();
+                    let value = self.design.add_cell(CellRepr::TopInput(port_name.clone(), port.bits.len())).output();
                     self.drive(&port.bits, value);
                 }
                 yosys::PortDirection::Output => {
@@ -421,11 +420,11 @@ impl ModuleImporter<'_> {
                     let yosys::Bit::Net(ynet) = bit else { unreachable!() };
                     assert!(!self.driven_nets.contains(&ynet));
                     match self.nets.entry(ynet) {
-                        hash_map::Entry::Occupied(e) => {
+                        btree_map::Entry::Occupied(e) => {
                             let cell = self.design.find_cell(*e.get()).unwrap().0;
                             self.design.replace_cell(cell.index(), CellRepr::Buf(Value::from(net)));
                         }
-                        hash_map::Entry::Vacant(e) => {
+                        btree_map::Entry::Vacant(e) => {
                             e.insert(net);
                         }
                     }
@@ -474,9 +473,9 @@ impl ModuleImporter<'_> {
                 // instance
                 let mut out_bits = vec![];
                 let mut next_out = 0;
-                let mut inputs = HashMap::new();
-                let mut outputs = HashMap::new();
-                let mut ios = HashMap::new();
+                let mut inputs = BTreeMap::new();
+                let mut outputs = BTreeMap::new();
+                let mut ios = BTreeMap::new();
                 for (name, bits) in cell.connections.iter() {
                     let direction = *cell.port_directions.get(name).unwrap();
                     if self.design_io_ports.contains(&(&cell.type_, name)) || direction == yosys::PortDirection::Inout {
@@ -490,7 +489,7 @@ impl ModuleImporter<'_> {
                         inputs.insert(name.clone(), self.value(bits));
                     }
                 }
-                let mut parameters = HashMap::new();
+                let mut parameters = BTreeMap::new();
                 for (name, val) in cell.parameters.iter() {
                     let val = match val {
                         yosys::MetadataValue::Const(val) => ParamValue::Const(val.clone()),
@@ -535,7 +534,7 @@ impl ModuleImporter<'_> {
     }
 }
 
-fn import_module(module: &yosys::Module, design_io_ports: &HashSet<(&str, &str)>) -> Result<Option<Design>, Error> {
+fn import_module(module: &yosys::Module, design_io_ports: &BTreeSet<(&str, &str)>) -> Result<Option<Design>, Error> {
     if let Some(val) = module.attributes.get("blackbox") {
         if val.as_bool()? {
             return Ok(None);
@@ -545,10 +544,10 @@ fn import_module(module: &yosys::Module, design_io_ports: &HashSet<(&str, &str)>
     let mut importer = ModuleImporter {
         module,
         design_io_ports,
-        io_nets: HashMap::new(),
-        driven_nets: HashSet::new(),
-        nets: HashMap::new(),
-        init: HashMap::new(),
+        io_nets: BTreeMap::new(),
+        driven_nets: BTreeSet::new(),
+        nets: BTreeMap::new(),
+        init: BTreeMap::new(),
         design: Design::new(),
     };
 
@@ -562,8 +561,8 @@ fn import_module(module: &yosys::Module, design_io_ports: &HashSet<(&str, &str)>
     Ok(Some(importer.design))
 }
 
-fn index_io_ports(design: &yosys::Design) -> Result<HashSet<(&str, &str)>, Error> {
-    let mut io_ports: HashSet<(&str, &str)> = HashSet::new();
+fn index_io_ports(design: &yosys::Design) -> Result<BTreeSet<(&str, &str)>, Error> {
+    let mut io_ports: BTreeSet<(&str, &str)> = BTreeSet::new();
     io_ports.insert(("$tribuf", "Y"));
     for (mod_name, module) in design.modules.iter() {
         for (port_name, port) in module.ports.iter() {
@@ -582,14 +581,14 @@ fn index_io_ports(design: &yosys::Design) -> Result<HashSet<(&str, &str)>, Error
     Ok(io_ports)
 }
 
-pub fn import(reader: &mut impl std::io::Read) -> Result<HashMap<String, Design>, Error> {
+pub fn import(reader: &mut impl std::io::Read) -> Result<BTreeMap<String, Design>, Error> {
     let mut text = String::new();
     reader.read_to_string(&mut text)?;
     let json = json::parse(text.as_str())?;
     let yosys_design = yosys::Design::try_from(json)?;
 
     let io_ports = index_io_ports(&yosys_design)?;
-    let mut designs = HashMap::new();
+    let mut designs = BTreeMap::new();
     for (name, module) in yosys_design.modules.iter() {
         if let Some(design) = import_module(module, &io_ports)? {
             designs.insert(name.clone(), design);

@@ -10,11 +10,8 @@ pub struct Replacer {
 
 impl Replacer {
     pub fn new(design: &Design) -> Replacer {
-        let mut replacer = Replacer {
-            net_uses: BTreeMap::new(),
-            replace_cells: BTreeSet::new(),
-            replace_nets: BTreeMap::new(),
-        };
+        let mut replacer =
+            Replacer { net_uses: BTreeMap::new(), replace_cells: BTreeSet::new(), replace_nets: BTreeMap::new() };
         for cell_ref in design.iter_cells() {
             cell_ref.visit(|net| {
                 replacer.net_uses.entry(net).or_default().insert(cell_ref.index());

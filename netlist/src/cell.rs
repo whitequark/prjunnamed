@@ -3,7 +3,7 @@
 //
 
 use core::ops::Range;
-use std::{borrow::Cow, collections::HashMap};
+use std::{borrow::Cow, collections::BTreeMap};
 
 use crate::{Const, ControlNet, IoValue, Net, Value};
 
@@ -56,6 +56,7 @@ pub enum CellRepr {
     Dff(FlipFlop),
     Iob(IoBuffer),
     Other(Instance),
+
     // TODO: memory
 
     TopInput(String, usize),
@@ -69,15 +70,9 @@ impl Cell {
 
             Cell::Buf(arg) => Cow::Owned(CellRepr::Buf(Value::from(arg))),
             Cell::Not(arg) => Cow::Owned(CellRepr::Not(Value::from(arg))),
-            Cell::And(arg1, arg2) => {
-                Cow::Owned(CellRepr::And(Value::from(arg1), Value::from(arg2)))
-            }
-            Cell::Xor(arg1, arg2) => {
-                Cow::Owned(CellRepr::Xor(Value::from(arg1), Value::from(arg2)))
-            }
-            Cell::Mux(arg1, arg2, arg3) => {
-                Cow::Owned(CellRepr::Mux(arg1, Value::from(arg2), Value::from(arg3)))
-            }
+            Cell::And(arg1, arg2) => Cow::Owned(CellRepr::And(Value::from(arg1), Value::from(arg2))),
+            Cell::Xor(arg1, arg2) => Cow::Owned(CellRepr::Xor(Value::from(arg1), Value::from(arg2))),
+            Cell::Mux(arg1, arg2, arg3) => Cow::Owned(CellRepr::Mux(arg1, Value::from(arg2), Value::from(arg3))),
 
             Cell::Coarse(ref coarse) => Cow::Borrowed(coarse),
         }
@@ -89,15 +84,9 @@ impl From<CellRepr> for Cell {
         match value {
             CellRepr::Buf(arg) if arg.len() == 1 => Cell::Buf(arg[0]),
             CellRepr::Not(arg) if arg.len() == 1 => Cell::Not(arg[0]),
-            CellRepr::And(arg1, arg2) if arg1.len() == 1 && arg2.len() == 1 => {
-                Cell::And(arg1[0], arg2[0])
-            }
-            CellRepr::Xor(arg1, arg2) if arg1.len() == 1 && arg2.len() == 1 => {
-                Cell::Xor(arg1[0], arg2[0])
-            }
-            CellRepr::Mux(arg1, arg2, arg3) if arg2.len() == 1 && arg3.len() == 1 => {
-                Cell::Mux(arg1, arg2[0], arg3[0])
-            }
+            CellRepr::And(arg1, arg2) if arg1.len() == 1 && arg2.len() == 1 => Cell::And(arg1[0], arg2[0]),
+            CellRepr::Xor(arg1, arg2) if arg1.len() == 1 && arg2.len() == 1 => Cell::Xor(arg1[0], arg2[0]),
+            CellRepr::Mux(arg1, arg2, arg3) if arg2.len() == 1 && arg3.len() == 1 => Cell::Mux(arg1, arg2[0], arg3[0]),
 
             coarse => Cell::Coarse(Box::new(coarse)),
         }
@@ -109,11 +98,7 @@ impl Cell {
         match self {
             Cell::Skip(_) => unreachable!(),
 
-            Cell::Buf(_)
-            | Cell::Not(_)
-            | Cell::And(_, _)
-            | Cell::Xor(_, _)
-            | Cell::Mux(_, _, _) => 1,
+            Cell::Buf(_) | Cell::Not(_) | Cell::And(_, _) | Cell::Xor(_, _) | Cell::Mux(_, _, _) => 1,
 
             Cell::Coarse(coarse) => coarse.output_len(),
         }
@@ -172,8 +157,7 @@ impl Cell {
 impl CellRepr {
     pub fn output_len(&self) -> usize {
         match self {
-            CellRepr::Buf(arg)
-            | CellRepr::Not(arg) => arg.len(),
+            CellRepr::Buf(arg) | CellRepr::Not(arg) => arg.len(),
             CellRepr::And(arg1, arg2)
             | CellRepr::Or(arg1, arg2)
             | CellRepr::Xor(arg1, arg2)
@@ -215,8 +199,7 @@ impl CellRepr {
 
     pub(crate) fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
-            CellRepr::Buf(arg)
-            | CellRepr::Not(arg) => arg.visit(&mut f),
+            CellRepr::Buf(arg) | CellRepr::Not(arg) => arg.visit(&mut f),
             CellRepr::And(arg1, arg2) => {
                 arg1.visit(&mut f);
                 arg2.visit(&mut f);
@@ -476,10 +459,10 @@ pub enum ParamValue {
 #[derive(Debug, Clone)]
 pub struct Instance {
     pub reference: String,
-    pub parameters: HashMap<String, ParamValue>,
-    pub inputs: HashMap<String, Value>,
-    pub outputs: HashMap<String, Range<usize>>,
-    pub ios: HashMap<String, IoValue>,
+    pub parameters: BTreeMap<String, ParamValue>,
+    pub inputs: BTreeMap<String, Value>,
+    pub outputs: BTreeMap<String, Range<usize>>,
+    pub ios: BTreeMap<String, IoValue>,
 }
 
 impl Instance {

@@ -15,17 +15,13 @@ impl IoValue {
     }
 
     pub fn from_range(range: Range<u32>) -> Self {
-        Self {
-            nets: range.map(|i| IoNet(i)).collect()
-        }
+        Self { nets: range.map(|i| IoNet(i)).collect() }
     }
 }
 
 impl From<IoNet> for IoValue {
     fn from(value: IoNet) -> Self {
-        Self {
-            nets: vec![value]
-        }
+        Self { nets: vec![value] }
     }
 }
 
@@ -34,7 +30,6 @@ impl FromIterator<IoNet> for IoValue {
         IoValue { nets: iter.into_iter().collect() }
     }
 }
-
 
 impl<I: SliceIndex<[IoNet]>> Index<I> for IoValue {
     type Output = I::Output;

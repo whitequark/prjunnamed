@@ -1,5 +1,5 @@
 use json::{object, JsonValue};
-use std::collections::{hash_map, HashMap};
+use std::collections::{btree_map, BTreeMap};
 
 use prjunnamed_netlist::{Const, ParamValue, Trit};
 
@@ -278,14 +278,14 @@ impl From<MetadataValue> for JsonValue {
 }
 
 #[derive(Debug)]
-pub struct Metadata(pub HashMap<String, MetadataValue>);
+pub struct Metadata(pub BTreeMap<String, MetadataValue>);
 
 impl Metadata {
     pub fn new() -> Metadata {
-        Metadata(HashMap::new())
+        Metadata(BTreeMap::new())
     }
 
-    pub fn iter(&self) -> hash_map::Iter<String, MetadataValue> {
+    pub fn iter(&self) -> btree_map::Iter<String, MetadataValue> {
         self.0.iter()
     }
 
@@ -303,7 +303,7 @@ impl TryFrom<JsonValue> for Metadata {
 
     fn try_from(mut value: JsonValue) -> Result<Self, Self::Error> {
         if value.is_object() {
-            let mut entries = HashMap::new();
+            let mut entries = BTreeMap::new();
             for (name, value) in value.entries_mut() {
                 entries.insert(name.to_owned(), value.take().try_into()?);
             }
@@ -321,14 +321,14 @@ impl From<Metadata> for JsonValue {
 }
 
 #[derive(Debug)]
-pub struct Map<V>(pub HashMap<String, V>);
+pub struct Map<V>(pub BTreeMap<String, V>);
 
 impl<V> Map<V> {
     pub fn new() -> Map<V> {
-        Map(HashMap::new())
+        Map(BTreeMap::new())
     }
 
-    pub fn iter(&self) -> hash_map::Iter<String, V> {
+    pub fn iter(&self) -> btree_map::Iter<String, V> {
         self.0.iter()
     }
 
@@ -345,8 +345,8 @@ impl<V> Map<V> {
     }
 }
 
-impl<V> From<HashMap<String, V>> for Map<V> {
-    fn from(value: HashMap<String, V>) -> Self {
+impl<V> From<BTreeMap<String, V>> for Map<V> {
+    fn from(value: BTreeMap<String, V>) -> Self {
         Map(value)
     }
 }
@@ -356,7 +356,7 @@ impl<V: TryFrom<JsonValue, Error = SyntaxError>> TryFrom<JsonValue> for Map<V> {
 
     fn try_from(mut value: JsonValue) -> Result<Self, Self::Error> {
         if value.is_object() {
-            let mut entries = HashMap::new();
+            let mut entries = BTreeMap::new();
             for (name, value) in value.entries_mut() {
                 entries.insert(name.to_owned(), value.take().try_into()?);
             }

@@ -33,7 +33,7 @@ impl Builder {
         self.design.add_io(name.to_owned(), width)
     }
 
-    builder_fn!{
+    builder_fn! {
         buf(arg: Value) => Buf(arg);
         not(arg: Value) => Not(arg);
         and(arg1: Value, arg2: Value) => And(arg1, arg2);

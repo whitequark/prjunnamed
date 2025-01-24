@@ -1,8 +1,5 @@
 use json::JsonValue;
-use std::{
-    cell::RefCell,
-    collections::{BTreeMap, HashMap},
-};
+use std::{cell::RefCell, collections::BTreeMap};
 
 use crate::yosys::{self, CellDetails, NetDetails, PortDetails};
 use prjunnamed_netlist::{CellRepr, ControlNet, Design, IoNet, IoValue, Net, Trit, Value};
@@ -216,15 +213,14 @@ fn export_module(design: Design) -> yosys::Module {
             }
         };
 
-        NetDetails::new(indexer.value(&output))
-            .add_to(&format!("{}$out", ys_cell_name), &mut ys_module);
+        NetDetails::new(indexer.value(&output)).add_to(&format!("{}$out", ys_cell_name), &mut ys_module);
     }
 
     ys_module
 }
 
-pub fn export(writer: &mut impl std::io::Write, designs: HashMap<String, Design>) -> std::io::Result<()> {
-    let mut ys_modules = HashMap::new();
+pub fn export(writer: &mut impl std::io::Write, designs: BTreeMap<String, Design>) -> std::io::Result<()> {
+    let mut ys_modules = BTreeMap::new();
     for (name, design) in designs {
         ys_modules.insert(name, export_module(design));
     }

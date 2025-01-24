@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{hash_map, BTreeMap, HashMap};
+use std::collections::{btree_map, BTreeMap};
 use std::fmt::Display;
 use std::ops::Range;
 
@@ -9,23 +9,23 @@ use crate::{IoValue, Net, Trit, Value};
 #[derive(Debug)]
 pub struct Design {
     cells: Vec<Cell>,
-    ios: HashMap<String, Range<u32>>,
+    ios: BTreeMap<String, Range<u32>>,
     next_io: u32,
 }
 
 impl Design {
     pub fn new() -> Design {
-        Design { cells: vec![], ios: HashMap::new(), next_io: 0 }
+        Design { cells: vec![], ios: BTreeMap::new(), next_io: 0 }
     }
 
     pub fn add_io(&mut self, name: String, width: usize) -> IoValue {
         let width = width as u32;
         let range = self.next_io..(self.next_io + width);
         match self.ios.entry(name) {
-            hash_map::Entry::Occupied(entry) => {
+            btree_map::Entry::Occupied(entry) => {
                 panic!("duplicate IO port {}", entry.key());
             }
-            hash_map::Entry::Vacant(entry) => {
+            btree_map::Entry::Vacant(entry) => {
                 entry.insert(range.clone());
             }
         }
@@ -141,9 +141,7 @@ impl Display for Design {
             }
         }
 
-        let cell_ident = |cell_ref: CellRef| {
-            cell_index_map.get(&cell_ref.index).unwrap()
-        };
+        let cell_ident = |cell_ref: CellRef| cell_index_map.get(&cell_ref.index).unwrap();
 
         let write_net = |f: &mut std::fmt::Formatter, net: Net| -> std::fmt::Result {
             match self.find_cell(net) {
@@ -187,7 +185,9 @@ impl Display for Design {
         // TODO: ios
 
         for (index, cell) in self.cells.iter().enumerate() {
-            if let Cell::Skip(_) = cell { continue }
+            if let Cell::Skip(_) = cell {
+                continue;
+            }
 
             write!(f, "%{}:{} = ", cell_index_map.get(&index).unwrap(), cell.output_len())?;
             match &*cell.repr() {
