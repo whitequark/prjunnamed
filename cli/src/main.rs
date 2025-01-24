@@ -18,6 +18,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for design in design_bundle.values_mut() {
         print!("{}", design);
         combine(design);
+        design.compact();
+        print!("{}", design);
     }
 
     export(&mut File::create(output)?, design_bundle)?;

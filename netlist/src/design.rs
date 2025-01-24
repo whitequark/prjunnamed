@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::collections::{btree_map, BTreeMap};
+use std::collections::{btree_map, BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::ops::Range;
 
@@ -24,7 +24,7 @@ impl Design {
         self.cells.push(cell.into());
         if output_len > 1 {
             for _ in 0..(output_len - 1) {
-                self.cells.push(Cell::Skip(index as u32))
+                self.cells.push(Cell::Skip(index.try_into().expect("cell index too large")))
             }
         }
         CellRef { design: self, index }
@@ -39,7 +39,7 @@ impl Design {
         self.cells[index.0].visit_mut(f);
     }
 
-    pub fn find_cell(&self, net: Net) -> Result<(CellRef, u32), Trit> {
+    pub fn find_cell(&self, net: Net) -> Result<(CellRef, usize), Trit> {
         if let Some(trit) = net.as_const() {
             return Err(trit);
         }
@@ -48,7 +48,7 @@ impl Design {
             Cell::Skip(start) => (start as usize, index - start as usize),
             _ => (index, 0),
         };
-        Ok((CellRef { design: self, index: cell_index }, bit_index as u32))
+        Ok((CellRef { design: self, index: cell_index }, bit_index))
     }
 
     pub fn iter_cells(&self) -> CellIter {
@@ -69,13 +69,73 @@ impl Design {
         IoValue::from_range(range)
     }
 
-    pub fn find_io(&self, io_net: IoNet) -> Option<(&str, u32)> {
+    pub fn find_io(&self, io_net: IoNet) -> Option<(&str, usize)> {
         for (name, range) in self.ios.iter() {
             if range.contains(&io_net.0) {
-                return Some((name.as_str(), io_net.0 - range.start));
+                return Some((name.as_str(), (io_net.0 - range.start) as usize));
             }
         }
         None
+    }
+
+    // Invalidates all existing `CellIndex`es.
+    pub fn compact(&mut self) {
+        let mut queue = BTreeSet::new();
+        for (index, cell) in self.cells.iter().enumerate() {
+            if let Cell::Skip(_) = cell {
+                continue;
+            }
+            match &*cell.repr() {
+                CellRepr::Dff(_)
+                | CellRepr::Iob(_)
+                | CellRepr::Other(_)
+                | CellRepr::TopInput(_, _)
+                | CellRepr::TopOutput(_, _) => {
+                    queue.insert(index);
+                }
+                _ => (),
+            }
+        }
+
+        let mut keep = BTreeSet::new();
+        while let Some(index) = queue.pop_first() {
+            keep.insert(index);
+            let cell = &self.cells[index];
+            cell.visit(|net| match self.find_cell(net) {
+                Ok((cell_ref, _offset)) => {
+                    if !keep.contains(&cell_ref.index) {
+                        queue.insert(cell_ref.index);
+                    }
+                }
+                Err(_trit) => (),
+            });
+        }
+
+        let mut net_map = BTreeMap::new();
+        for (old_index, cell) in std::mem::take(&mut self.cells).into_iter().enumerate() {
+            if keep.contains(&old_index) {
+                let new_index = self.cells.len();
+                for offset in 0..cell.output_len() {
+                    net_map.insert(Net::from_cell(old_index + offset), Net::from_cell(new_index + offset));
+                }
+                let skip_count = cell.output_len().checked_sub(1).unwrap_or(0);
+                self.cells.push(cell);
+                for _ in 0..skip_count {
+                    self.cells.push(Cell::Skip(new_index as u32));
+                }
+            }
+        }
+
+        for cell in self.cells.iter_mut() {
+            if let Cell::Skip(_) = cell {
+                continue;
+            }
+            cell.visit_mut(|net| {
+                if ![Net::UNDEF, Net::ZERO, Net::ONE].contains(net) {
+                    *net = net_map[net];
+                }
+            });
+        }
     }
 }
 
@@ -165,14 +225,15 @@ impl Design {
     }
 }
 
+// Only used for replacing a cell; otherwise a `CellRef` is a better choice.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+pub struct CellIndex(usize);
+
 #[derive(Clone, Copy)]
 pub struct CellRef<'a> {
     design: &'a Design,
     index: usize,
 }
-
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-pub struct CellIndex(usize);
 
 impl PartialEq<CellRef<'_>> for CellRef<'_> {
     fn eq(&self, other: &CellRef<'_>) -> bool {
