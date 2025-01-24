@@ -39,6 +39,24 @@ impl Const {
     pub fn is_undef(&self) -> bool {
         self.trits.iter().all(|&trit| trit == Trit::Undef)
     }
+
+    pub fn from_uint(val: u128, bits: usize) -> Self {
+        let mut trits = vec![];
+        if bits < 128 {
+            assert!(val < (1 << bits));
+        }
+        for i in 0..bits {
+            let trit = if i < u128::BITS as usize && ((val >> i) & 1) != 0 {
+                Trit::One
+            } else {
+                Trit::Zero
+            };
+            trits.push(trit);
+        }
+        Self {
+            trits
+        }
+    }
 }
 
 impl From<Trit> for Const {
@@ -222,6 +240,12 @@ impl From<Vec<Net>> for Value {
 impl From<&Const> for Value {
     fn from(value: &Const) -> Self {
         Value::from_iter(value.trits.iter().copied().map(Net::from))
+    }
+}
+
+impl From<Const> for Value {
+    fn from(value: Const) -> Self {
+        Value::from(&value)
     }
 }
 

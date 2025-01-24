@@ -184,10 +184,14 @@ impl Design {
         add_slt(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
             SLt(arg1.into(), arg2.into());
 
-        // Shl(Value, Value, u32),
-        // UShr(Value, Value, u32),
-        // SShr(Value, Value, u32),
-        // XShr(Value, Value, u32),
+        add_shl(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) ->
+            Shl(arg1.into(), arg2.into(), stride);
+        add_ushr(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) ->
+            UShr(arg1.into(), arg2.into(), stride);
+        add_sshr(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) ->
+            SShr(arg1.into(), arg2.into(), stride);
+        add_xshr(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) ->
+            XShr(arg1.into(), arg2.into(), stride);
 
         add_mul(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
             Mul(arg1.into(), arg2.into());
@@ -360,6 +364,16 @@ impl Display for Design {
             Ok(())
         };
 
+        let write_shift =
+            |f: &mut std::fmt::Formatter, name: &str, arg1: &Value, arg2: &Value, stride: u32| -> std::fmt::Result {
+                write!(f, "{} ", name)?;
+                write_value(f, arg1)?;
+                write!(f, " ")?;
+                write_value(f, arg2)?;
+                write!(f, " {stride}")?;
+                Ok(())
+            };
+
         for (index, cell) in self.cells.iter().enumerate() {
             if let Cell::Skip(_) = cell {
                 continue;
@@ -393,10 +407,10 @@ impl Display for Design {
                 CellRepr::ULt(arg1, arg2) => write_cell(f, "ult", &[arg1, arg2])?,
                 CellRepr::SLt(arg1, arg2) => write_cell(f, "slt", &[arg1, arg2])?,
 
-                CellRepr::Shl(_arg1, _arg2, _stride) => todo!(),
-                CellRepr::UShr(_arg1, _arg2, _stride) => todo!(),
-                CellRepr::SShr(_arg1, _arg2, _stride) => todo!(),
-                CellRepr::XShr(_arg1, _arg2, _stride) => todo!(),
+                CellRepr::Shl(arg1, arg2, stride) => write_shift(f, "shl", arg1, arg2, *stride)?,
+                CellRepr::UShr(arg1, arg2, stride) => write_shift(f, "ushr", arg1, arg2, *stride)?,
+                CellRepr::SShr(arg1, arg2, stride) => write_shift(f, "sshr", arg1, arg2, *stride)?,
+                CellRepr::XShr(arg1, arg2, stride) => write_shift(f, "xshr", arg1, arg2, *stride)?,
 
                 CellRepr::Mul(arg1, arg2) => write_cell(f, "mul", &[arg1, arg2])?,
                 CellRepr::UDiv(arg1, arg2) => write_cell(f, "udiv", &[arg1, arg2])?,

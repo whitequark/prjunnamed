@@ -339,7 +339,54 @@ impl ModuleImporter<'_> {
                 self.port_drive(cell, "CO", co);
             }
             "$shl" | "$sshl" | "$shr" | "$sshr" | "$shift" | "$shiftx" => {
-                todo!()
+                let width = cell.parameters.get("Y_WIDTH").unwrap().as_i32()? as usize;
+                let a_signed = cell.parameters.get("A_SIGNED").unwrap().as_bool()?;
+                let b_signed = cell.parameters.get("B_SIGNED").unwrap().as_bool()?;
+                let mut a = self.port_value(cell, "A");
+                if a.len() < width {
+                    if cell.type_ == "$shiftx" {
+                        let a_width = a.len();
+                        a = a.concat(Value::undef(width - a_width))
+                    } else {
+                        if a_signed {
+                            a = a.sext(width);
+                        } else {
+                            a = a.zext(width);
+                        }
+                    }
+                }
+                let b = self.port_value(cell, "B");
+                let value = match &cell.type_[..] {
+                    "$shl" | "$sshl" => self.design.add_shl(a, b, 1),
+                    "$shr" => self.design.add_ushr(a, b, 1),
+                    "$sshr" => {
+                        if a_signed {
+                            self.design.add_sshr(a, b, 1)
+                        } else {
+                            self.design.add_ushr(a, b, 1)
+                        }
+                    }
+                    "$shift" | "$shiftx" => {
+                        let val_shr = if cell.type_ == "$shiftx" {
+                            self.design.add_xshr(&a, &b, 1)
+                        } else if a_signed {
+                            self.design.add_sshr(&a, &b, 1)
+                        } else {
+                            self.design.add_ushr(&a, &b, 1)
+                        };
+                        if b_signed {
+                            let b_inv = self.design.add_not(&b);
+                            let b_neg =
+                                Value::from(&self.design.add_adc(Value::zero(b.len()), &b_inv, Net::ONE)[..b.len()]);
+                            let val_shl = self.design.add_shl(&a, b_neg, 1);
+                            self.design.add_mux(b[b.len() - 1], val_shl, val_shr)
+                        } else {
+                            val_shr
+                        }
+                    }
+                    _ => unreachable!(),
+                };
+                self.port_drive(cell, "Y", &value[..width]);
             }
             "$lt" | "$le" | "$gt" | "$ge" | "$eq" | "$ne" => {
                 let y_width = cell.parameters.get("Y_WIDTH").unwrap().as_i32()? as usize;

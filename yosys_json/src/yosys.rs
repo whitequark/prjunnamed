@@ -74,7 +74,7 @@ impl From<Bit> for JsonValue {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BitVector(pub Vec<Bit>);
 
 impl BitVector {

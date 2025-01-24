@@ -2,7 +2,7 @@ use json::JsonValue;
 use std::{cell::RefCell, collections::BTreeMap};
 
 use crate::yosys::{self, CellDetails, NetDetails, PortDetails};
-use prjunnamed_netlist::{CellRepr, ControlNet, Design, IoNet, IoValue, Net, Trit, Value};
+use prjunnamed_netlist::{CellRepr, ControlNet, Design, IoNet, IoValue, Net, Trit, Value, Const};
 
 struct Counter(usize);
 
@@ -97,6 +97,43 @@ fn export_module(design: Design) -> yosys::Module {
                 .add_to(&format!("${}", cell_index), module)
         };
 
+        let ys_shift_count = |module: &mut yosys::Module, a: &Value, stride: u32| -> yosys::BitVector {
+            if stride == 1 {
+                return indexer.value(a);
+            } else if stride == 0 {
+                return indexer.value(&Value::zero(1));
+            } else {
+                let stride_bits = stride.ilog2() + 1;
+                let stride = Const::from_uint(stride.into(), stride_bits as usize);
+                let res = indexer.synthetic_value(a.len() + stride.len());
+                CellDetails::new("$mul")
+                    .param("A_SIGNED", 0)
+                    .param("A_WIDTH", a.len())
+                    .param("B_SIGNED", 0)
+                    .param("B_WIDTH", stride.len())
+                    .param("Y_WIDTH", res.len())
+                    .input("A", indexer.value(a))
+                    .input("B", indexer.value(&Value::from(stride)))
+                    .output("Y", res.clone())
+                    .add_to(&format!("${}$stride", cell_index), module);
+                res
+            }
+        };
+
+        let ys_cell_shift = |module: &mut yosys::Module, ty: &str, a: &Value, b: &Value, stride: u32, signed: bool| {
+            let b = ys_shift_count(module, b, stride);
+            CellDetails::new(ty)
+                .param("A_SIGNED", if signed { 1 } else { 0 })
+                .param("A_WIDTH", a.len())
+                .param("B_SIGNED", 0)
+                .param("B_WIDTH", b.len())
+                .param("Y_WIDTH", output.len())
+                .input("A", indexer.value(a))
+                .input("B", b)
+                .output("Y", indexer.value(&output))
+                .add_to(&format!("${}", cell_index), module)
+        };
+
         match cell_ref.repr().as_ref() {
             CellRepr::Buf(arg) => ys_cell_unary(&mut ys_module, "$pos", arg),
             CellRepr::Not(arg) => ys_cell_unary(&mut ys_module, "$not", arg),
@@ -149,10 +186,10 @@ fn export_module(design: Design) -> yosys::Module {
             CellRepr::ULt(arg1, arg2) => ys_cell_binary(&mut ys_module, "$lt", arg1, arg2, false),
             CellRepr::SLt(arg1, arg2) => ys_cell_binary(&mut ys_module, "$lt", arg1, arg2, true),
 
-            CellRepr::Shl(_arg1, _arg2, _stride) => todo!(),
-            CellRepr::UShr(_arg1, _arg2, _stride) => todo!(),
-            CellRepr::SShr(_arg1, _arg2, _stride) => todo!(),
-            CellRepr::XShr(_arg1, _arg2, _stride) => todo!(),
+            CellRepr::Shl(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$shl", arg1, arg2, *stride, false),
+            CellRepr::UShr(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$shr", arg1, arg2, *stride, false),
+            CellRepr::SShr(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$sshr", arg1, arg2, *stride, true),
+            CellRepr::XShr(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$shiftx", arg1, arg2, *stride, false),
 
             CellRepr::Mul(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mul", arg1, arg2, false),
             CellRepr::UDiv(arg1, arg2) => ys_cell_binary(&mut ys_module, "$div", arg1, arg2, false),
