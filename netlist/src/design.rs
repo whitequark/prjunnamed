@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::ops::Range;
 
 use crate::cell::{Cell, CellRepr};
-use crate::{Const, ControlNet, FlipFlop, IoValue, Net, Trit, Value};
+use crate::{ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, Trit, Value};
 
 #[derive(Debug)]
 pub struct Design {
@@ -16,20 +16,6 @@ pub struct Design {
 impl Design {
     pub fn new() -> Design {
         Design { cells: vec![], ios: BTreeMap::new(), next_io: 0 }
-    }
-
-    pub fn add_io(&mut self, name: String, width: usize) -> IoValue {
-        let width = width as u32;
-        let range = self.next_io..(self.next_io + width);
-        match self.ios.entry(name) {
-            btree_map::Entry::Occupied(entry) => {
-                panic!("duplicate IO port {}", entry.key());
-            }
-            btree_map::Entry::Vacant(entry) => {
-                entry.insert(range.clone());
-            }
-        }
-        IoValue::from_range(range)
     }
 
     pub fn add_cell(&mut self, cell: CellRepr) -> CellRef {
@@ -67,6 +53,115 @@ impl Design {
 
     pub fn iter_cells(&self) -> CellIter {
         CellIter { design: self, index: 0 }
+    }
+
+    pub fn add_io(&mut self, name: String, width: usize) -> IoValue {
+        let width = width as u32;
+        let range = self.next_io..(self.next_io + width);
+        match self.ios.entry(name) {
+            btree_map::Entry::Occupied(entry) => {
+                panic!("duplicate IO port {}", entry.key());
+            }
+            btree_map::Entry::Vacant(entry) => {
+                entry.insert(range.clone());
+            }
+        }
+        IoValue::from_range(range)
+    }
+
+    pub fn find_io(&self, io_net: IoNet) -> Option<(&str, u32)> {
+        for (name, range) in self.ios.iter() {
+            if range.contains(&io_net.0) {
+                return Some((name.as_str(), io_net.0 - range.start));
+            }
+        }
+        None
+    }
+}
+
+macro_rules! builder_fn {
+    () => {};
+
+    ($func:ident( $($arg:ident : $ty:ty),+ ) -> $repr:ident $body:tt; $($rest:tt)*) => {
+        pub fn $func(&mut self, $( $arg: $ty ),+) -> Value {
+            self.add_cell(CellRepr::$repr $body).output()
+        }
+
+        builder_fn!{ $($rest)* }
+    };
+
+    // For cells with no output value.
+    ($func:ident( $($arg:ident : $ty:ty),+ ) : $repr:ident $body:tt; $($rest:tt)*) => {
+        pub fn $func(&mut self, $( $arg: $ty ),+) {
+            self.add_cell(CellRepr::$repr $body);
+        }
+
+        builder_fn!{ $($rest)* }
+    };
+}
+
+impl Design {
+    builder_fn! {
+        add_buf(arg: impl Into<Value>) ->
+            Buf(arg.into());
+        add_not(arg: impl Into<Value>) ->
+            Not(arg.into());
+        add_and(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            And(arg1.into(), arg2.into());
+        add_or(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            Or(arg1.into(), arg2.into());
+        add_xor(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            Xor(arg1.into(), arg2.into());
+        add_mux(arg1: impl Into<Net>, arg2: impl Into<Value>, arg3: impl Into<Value>) ->
+            Mux(arg1.into(), arg2.into(), arg3.into());
+        add_adc(arg1: impl Into<Value>, arg2: impl Into<Value>, arg3: impl Into<Net>) ->
+            Adc(arg1.into(), arg2.into(), arg3.into());
+
+        add_eq(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            Eq(arg1.into(), arg2.into());
+        add_ult(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            ULt(arg1.into(), arg2.into());
+        add_slt(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            SLt(arg1.into(), arg2.into());
+
+        // Shl(Value, Value, u32),
+        // UShr(Value, Value, u32),
+        // SShr(Value, Value, u32),
+        // XShr(Value, Value, u32),
+
+        add_mul(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            Mul(arg1.into(), arg2.into());
+        add_udiv(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            UDiv(arg1.into(), arg2.into());
+        add_umod(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            UMod(arg1.into(), arg2.into());
+        add_sdiv_trunc(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            SDivTrunc(arg1.into(), arg2.into());
+        add_sdiv_floor(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            SDivFloor(arg1.into(), arg2.into());
+        add_smod_trunc(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            SModTrunc(arg1.into(), arg2.into());
+        add_smod_floor(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+            SModFloor(arg1.into(), arg2.into());
+
+        add_dff(arg: impl Into<FlipFlop>) ->
+            Dff(arg.into());
+        add_iob(arg: impl Into<IoBuffer>) ->
+            Iob(arg.into());
+        add_other(arg: impl Into<Instance>) ->
+            Other(arg.into());
+
+        add_top_input(name: impl Into<String>, width: usize) ->
+            TopInput(name.into(), width);
+        add_top_output(name: impl Into<String>, value: impl Into<Value>) :
+            TopOutput(name.into(), value.into());
+    }
+}
+
+impl Design {
+    pub fn add_ne(&mut self, arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value {
+        let eq = self.add_eq(arg1, arg2);
+        self.add_not(eq)
     }
 }
 
@@ -162,12 +257,12 @@ impl Display for Design {
                     write!(f, "%{}", cell_ident(cell_ref))
                 }
                 _ => {
-                    write!(f, "{{ ")?;
+                    write!(f, "{{")?;
                     for net in value {
-                        write_net(f, net)?;
                         write!(f, " ")?;
+                        write_net(f, net)?;
                     }
-                    write!(f, "}}")?;
+                    write!(f, " }}")?;
                     Ok(())
                 }
             }
@@ -191,7 +286,18 @@ impl Display for Design {
             Ok(())
         };
 
-        // TODO: ios
+        let write_io_value = |f: &mut std::fmt::Formatter, io_value: &IoValue| -> std::fmt::Result {
+            write!(f, "{{")?;
+            for io_net in io_value {
+                write!(f, " #")?;
+                match self.find_io(io_net) {
+                    Some((name, offset)) => write!(f, "{:?}.{}", name, offset)?,
+                    None => write!(f, "<invalid>")?,
+                }
+            }
+            write!(f, " }}")?;
+            Ok(())
+        };
 
         for (index, cell) in self.cells.iter().enumerate() {
             if let Cell::Skip(_) = cell {
@@ -205,67 +311,98 @@ impl Display for Design {
                 CellRepr::And(arg1, arg2) => write_cell(f, "and", &[arg1, arg2])?,
                 CellRepr::Or(arg1, arg2) => write_cell(f, "or", &[arg1, arg2])?,
                 CellRepr::Xor(arg1, arg2) => write_cell(f, "xor", &[arg1, arg2])?,
-                CellRepr::Mux(arg1, arg2, arg3) => write_cell(f, "mux", &[&arg1.into(), arg2, arg3])?,
+                CellRepr::Mux(arg1, arg2, arg3) => {
+                    write!(f, "mux ")?;
+                    write_net(f, *arg1)?;
+                    write!(f, " ")?;
+                    write_value(f, arg2)?;
+                    write!(f, " ")?;
+                    write_value(f, arg3)?;
+                }
+                CellRepr::Adc(arg1, arg2, arg3) => {
+                    write!(f, "adc ")?;
+                    write_value(f, arg1)?;
+                    write!(f, " ")?;
+                    write_value(f, arg2)?;
+                    write!(f, " ")?;
+                    write_net(f, *arg3)?;
+                }
 
-                CellRepr::Add(arg1, arg2) => write_cell(f, "add", &[arg1, arg2])?,
-                CellRepr::Sub(arg1, arg2) => write_cell(f, "sub", &[arg1, arg2])?,
-                // CellRepr::Mul(arg1, arg2) => todo!(),
-                // CellRepr::UDiv(arg1, arg2) => todo!(),
-                // CellRepr::UMod(arg1, arg2) => todo!(),
-                // CellRepr::SDivTrunc(arg1, arg2) => todo!(),
-                // CellRepr::SDivFloor(arg1, arg2) => todo!(),
-                // CellRepr::SModTrunc(arg1, arg2) => todo!(),
-                // CellRepr::SModFloor(arg1, arg2) => todo!(),
+                CellRepr::Eq(arg1, arg2) => write_cell(f, "eq", &[arg1, arg2])?,
+                CellRepr::ULt(arg1, arg2) => write_cell(f, "ult", &[arg1, arg2])?,
+                CellRepr::SLt(arg1, arg2) => write_cell(f, "slt", &[arg1, arg2])?,
 
-                // CellRepr::Eq(arg1, arg2) => todo!(),
-                // CellRepr::ULt(arg1, arg2) => todo!(),
-                // CellRepr::SLt(arg1, arg2) => todo!(),
+                CellRepr::Shl(_arg1, _arg2, _stride) => todo!(),
+                CellRepr::UShr(_arg1, _arg2, _stride) => todo!(),
+                CellRepr::SShr(_arg1, _arg2, _stride) => todo!(),
+                CellRepr::XShr(_arg1, _arg2, _stride) => todo!(),
 
-                // CellRepr::Shl(arg1, arg2, stride) => todo!(),
-                // CellRepr::UShr(arg1, arg2, stride) => todo!(),
-                // CellRepr::SShr(arg1, arg2, stride) => todo!(),
-                // CellRepr::XShr(arg1, arg2, stride) => todo!(),
+                CellRepr::Mul(arg1, arg2) => write_cell(f, "mul", &[arg1, arg2])?,
+                CellRepr::UDiv(arg1, arg2) => write_cell(f, "udiv", &[arg1, arg2])?,
+                CellRepr::UMod(arg1, arg2) => write_cell(f, "umod", &[arg1, arg2])?,
+                CellRepr::SDivTrunc(arg1, arg2) => write_cell(f, "sdiv_trunc", &[arg1, arg2])?,
+                CellRepr::SDivFloor(arg1, arg2) => write_cell(f, "sdiv_floor", &[arg1, arg2])?,
+                CellRepr::SModTrunc(arg1, arg2) => write_cell(f, "smod_trunc", &[arg1, arg2])?,
+                CellRepr::SModFloor(arg1, arg2) => write_cell(f, "smod_floor", &[arg1, arg2])?,
 
                 CellRepr::Dff(flip_flop) => {
                     write_cell(f, "dff", &[&flip_flop.data])?;
                     write_control(f, " clk", &flip_flop.clock)?;
-                    if !flip_flop.clear.is_always(false) {
+                    if flip_flop.has_clear() {
                         write_control(f, " clr", &flip_flop.clear)?;
                         if flip_flop.clear_value != flip_flop.init_value {
                             write!(f, ",{}", flip_flop.clear_value)?;
                         }
                     }
-                    if !flip_flop.reset.is_always(false) {
+                    if flip_flop.has_reset() {
                         write_control(f, " rst", &flip_flop.reset)?;
                         if flip_flop.reset_value != flip_flop.init_value {
                             write!(f, ",{}", flip_flop.reset_value)?;
                         }
                     }
-                    if !flip_flop.enable.is_always(true) {
+                    if flip_flop.has_enable() {
                         write_control(f, " en", &flip_flop.enable)?;
                     }
-                    if !flip_flop.reset.is_always(false) && !flip_flop.enable.is_always(true) {
+                    if flip_flop.has_reset() && flip_flop.has_enable() {
                         if flip_flop.reset_over_enable {
                             write!(f, " rst>en")?;
                         } else {
                             write!(f, " en>rst")?;
                         }
                     }
-                    if !flip_flop.init_value.is_undef() {
+                    if flip_flop.has_init_value() {
                         write!(f, " init={}", flip_flop.init_value)?;
                     }
                 }
-
-                // CellRepr::Iob(io_buffer) => todo!(),
-                // CellRepr::Other(instance) => todo!(),
+                CellRepr::Iob(io_buffer) => {
+                    write_cell(f, "iob", &[&io_buffer.output])?;
+                    write_control(f, " en", &io_buffer.enable)?;
+                    write!(f, " io=")?;
+                    write_io_value(f, &io_buffer.io)?;
+                }
+                CellRepr::Other(instance) => {
+                    write!(f, "{:?} {{\n", instance.reference)?;
+                    for (name, value) in instance.parameters.iter() {
+                        write!(f, "  p@{:?}={:?}", name, value)?;
+                    }
+                    for (name, value) in instance.inputs.iter() {
+                        write!(f, "  i@{:?}={:?}", name, value)?;
+                    }
+                    for (name, value) in instance.outputs.iter() {
+                        write!(f, "  o@{:?}={:?}", name, value)?;
+                    }
+                    for (name, value) in instance.ios.iter() {
+                        write!(f, "  io@{:?}=", name)?;
+                        write_io_value(f, value)?;
+                    }
+                    write!(f, "}}")?;
+                }
 
                 CellRepr::TopInput(name, _size) => write!(f, "top_input {:?}", name)?,
                 CellRepr::TopOutput(name, value) => {
                     write!(f, "top_output {:?} ", name)?;
                     write_value(f, value)?;
                 }
-
-                _ => write!(f, "<unprintable>")?,
             }
 
             write!(f, "\n")?;

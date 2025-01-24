@@ -97,6 +97,20 @@ pub struct Value {
 }
 
 impl Value {
+    pub const EMPTY: Value = Value { nets: vec![] };
+
+    pub fn zero(width: usize) -> Self {
+        Self::from_iter(std::iter::repeat_n(Net::ZERO, width))
+    }
+
+    pub fn ones(width: usize) -> Self {
+        Self::from_iter(std::iter::repeat_n(Net::ONE, width))
+    }
+
+    pub fn undef(width: usize) -> Self {
+        Self::from_iter(std::iter::repeat_n(Net::UNDEF, width))
+    }
+
     pub(crate) fn cell(cell_index: usize, count: usize) -> Value {
         let mut nets = vec![];
         for net_index in 0..count {
@@ -121,6 +135,33 @@ impl Value {
         }
     }
 
+    pub fn as_net(&self) -> Option<Net> {
+        if self.len() == 1 {
+            Some(self[0])
+        } else {
+            None
+        }
+    }
+
+    pub fn unwrap_net(&self) -> Net {
+        self.as_net().unwrap()
+    }
+
+    pub fn concat(&self, other: impl Into<Value>) -> Self {
+        Self::from_iter(self.into_iter().chain(other.into().into_iter()))
+    }
+
+    pub fn zext(&self, width: usize) -> Self {
+        assert!(width >= self.len());
+        self.concat(Value::zero(width - self.len()))
+    }
+
+    pub fn sext(&self, width: usize) -> Self {
+        assert!(self.len() > 0);
+        assert!(width >= self.len());
+        Self::from_iter(self.into_iter().chain(std::iter::repeat_n(self[self.len() - 1], width - self.len())))
+    }
+
     pub fn visit(&self, mut f: impl FnMut(Net)) {
         for &net in self.nets.iter() {
             f(net)
@@ -132,28 +173,11 @@ impl Value {
             f(net)
         }
     }
+}
 
-    pub fn zero(width: usize) -> Self {
-        Self::from_iter(std::iter::repeat_n(Net::ZERO, width))
-    }
-
-    pub fn ones(width: usize) -> Self {
-        Self::from_iter(std::iter::repeat_n(Net::ONE, width))
-    }
-
-    pub fn undef(width: usize) -> Self {
-        Self::from_iter(std::iter::repeat_n(Net::UNDEF, width))
-    }
-
-    pub fn zext(&self, width: usize) -> Self {
-        assert!(width >= self.len());
-        Self::from_iter(self.into_iter().chain(std::iter::repeat_n(Net::ZERO, width - self.len())))
-    }
-
-    pub fn sext(&self, width: usize) -> Self {
-        assert!(self.len() > 0);
-        assert!(width >= self.len());
-        Self::from_iter(self.into_iter().chain(std::iter::repeat_n(self[self.len() - 1], width - self.len())))
+impl From<&Value> for Value {
+    fn from(value: &Value) -> Self {
+        value.clone()
     }
 }
 

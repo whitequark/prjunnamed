@@ -34,6 +34,16 @@ pub enum Bit {
     Net(usize),
 }
 
+impl From<Trit> for Bit {
+    fn from(value: Trit) -> Self {
+        match value {
+            Trit::Undef => Bit::Undef,
+            Trit::Zero => Bit::Zero,
+            Trit::One => Bit::One,
+        }
+    }
+}
+
 impl TryFrom<JsonValue> for Bit {
     type Error = SyntaxError;
 
@@ -75,11 +85,23 @@ impl BitVector {
     pub fn len(&self) -> usize {
         self.0.len()
     }
+
+    pub fn concat(&self, other: &BitVector) -> Self {
+        let mut bits = self.0.clone();
+        bits.extend(&other.0);
+        BitVector(bits)
+    }
 }
 
 impl From<Bit> for BitVector {
     fn from(value: Bit) -> Self {
         BitVector(vec![value])
+    }
+}
+
+impl From<Const> for BitVector {
+    fn from(value: Const) -> Self {
+        BitVector(value.into_iter().map(Into::into).collect::<Vec<_>>())
     }
 }
 
@@ -501,6 +523,7 @@ impl CellDetails {
     }
 
     pub fn add_to(mut self, name: &str, module: &mut Module) {
+        assert!(!module.cells.contains_key(name));
         self.hide_name = name.starts_with('$');
         module.cells.add(name, self)
     }
@@ -595,6 +618,7 @@ impl NetDetails {
     }
 
     pub fn add_to(mut self, name: &str, module: &mut Module) {
+        assert!(!module.netnames.contains_key(name));
         self.hide_name = name.starts_with('$');
         module.netnames.add(name, self)
     }

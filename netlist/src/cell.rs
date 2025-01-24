@@ -3,7 +3,7 @@
 //
 
 use core::ops::Range;
-use std::{borrow::Cow, collections::BTreeMap};
+use std::{borrow::Cow, collections::BTreeMap, fmt::Display};
 
 use crate::{Const, ControlNet, IoValue, Net, Value};
 
@@ -31,16 +31,7 @@ pub enum CellRepr {
     Or(Value, Value),
     Xor(Value, Value),
     Mux(Net, Value, Value),
-
-    Add(Value, Value),
-    Sub(Value, Value),
-    Mul(Value, Value),
-    UDiv(Value, Value),
-    UMod(Value, Value),
-    SDivTrunc(Value, Value),
-    SDivFloor(Value, Value),
-    SModTrunc(Value, Value),
-    SModFloor(Value, Value),
+    Adc(Value, Value, Net),
 
     Eq(Value, Value),
     ULt(Value, Value),
@@ -51,14 +42,20 @@ pub enum CellRepr {
     SShr(Value, Value, u32),
     XShr(Value, Value, u32),
 
-    // future possibilities: popcnt, count leading/trailing zeros, powers
+    Mul(Value, Value),
+    UDiv(Value, Value),
+    UMod(Value, Value),
+    SDivTrunc(Value, Value),
+    SDivFloor(Value, Value),
+    SModTrunc(Value, Value),
+    SModFloor(Value, Value),
 
+    // future possibilities: popcnt, count leading/trailing zeros, powers
     Dff(FlipFlop),
     Iob(IoBuffer),
     Other(Instance),
 
     // TODO: memory
-
     TopInput(String, usize),
     TopOutput(String, Value),
 }
@@ -165,18 +162,9 @@ impl CellRepr {
                 debug_assert_eq!(arg1.len(), arg2.len());
                 arg1.len()
             }
-
-            CellRepr::Add(arg1, arg2)
-            | CellRepr::Sub(arg1, arg2)
-            | CellRepr::Mul(arg1, arg2)
-            | CellRepr::UDiv(arg1, arg2)
-            | CellRepr::UMod(arg1, arg2)
-            | CellRepr::SDivTrunc(arg1, arg2)
-            | CellRepr::SDivFloor(arg1, arg2)
-            | CellRepr::SModTrunc(arg1, arg2)
-            | CellRepr::SModFloor(arg1, arg2) => {
+            CellRepr::Adc(arg1, arg2, _) => {
                 debug_assert_eq!(arg1.len(), arg2.len());
-                arg1.len()
+                arg1.len() + 1
             }
 
             CellRepr::Eq(_arg1, _arg2) => 1,
@@ -187,6 +175,17 @@ impl CellRepr {
             | CellRepr::UShr(arg1, _, _)
             | CellRepr::SShr(arg1, _, _)
             | CellRepr::XShr(arg1, _, _) => arg1.len(),
+
+            CellRepr::Mul(arg1, arg2)
+            | CellRepr::UDiv(arg1, arg2)
+            | CellRepr::UMod(arg1, arg2)
+            | CellRepr::SDivTrunc(arg1, arg2)
+            | CellRepr::SDivFloor(arg1, arg2)
+            | CellRepr::SModTrunc(arg1, arg2)
+            | CellRepr::SModFloor(arg1, arg2) => {
+                debug_assert_eq!(arg1.len(), arg2.len());
+                arg1.len()
+            }
 
             CellRepr::Dff(flip_flop) => flip_flop.output_len(),
             CellRepr::Iob(io_buffer) => io_buffer.output_len(),
@@ -218,13 +217,10 @@ impl CellRepr {
                 arg2.visit(&mut f);
             }
 
-            CellRepr::Add(arg1, arg2) => {
+            CellRepr::Adc(arg1, arg2, arg3) => {
                 arg1.visit(&mut f);
                 arg2.visit(&mut f);
-            }
-            CellRepr::Sub(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
+                arg3.visit(&mut f);
             }
             CellRepr::Mul(arg1, arg2) => {
                 arg1.visit(&mut f);
@@ -314,13 +310,10 @@ impl CellRepr {
                 arg2.visit_mut(&mut f);
             }
 
-            CellRepr::Add(arg1, arg2) => {
+            CellRepr::Adc(arg1, arg2, arg3) => {
                 arg1.visit_mut(&mut f);
                 arg2.visit_mut(&mut f);
-            }
-            CellRepr::Sub(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
+                arg3.visit_mut(&mut f);
             }
             CellRepr::Mul(arg1, arg2) => {
                 arg1.visit_mut(&mut f);
@@ -393,19 +386,47 @@ impl CellRepr {
 pub struct FlipFlop {
     pub data: Value,
     pub clock: ControlNet,
-    pub enable: ControlNet,
-    pub reset: ControlNet, // sync reset
-    pub reset_over_enable: bool,
     pub clear: ControlNet, // async reset
+    pub reset: ControlNet, // sync reset
+    pub enable: ControlNet,
+    pub reset_over_enable: bool,
 
-    pub init_value: Const,
-    pub reset_value: Const,
     pub clear_value: Const,
+    pub reset_value: Const,
+    pub init_value: Const,
 }
 
 impl FlipFlop {
     pub fn output_len(&self) -> usize {
         self.data.len()
+    }
+
+    pub fn has_clock(&self) -> bool {
+        !self.clock.is_const()
+    }
+
+    pub fn has_enable(&self) -> bool {
+        !self.enable.is_always(true)
+    }
+
+    pub fn has_reset(&self) -> bool {
+        !self.reset.is_always(false)
+    }
+
+    pub fn has_reset_value(&self) -> bool {
+        !self.reset_value.is_undef()
+    }
+
+    pub fn has_clear(&self) -> bool {
+        !self.clear.is_always(false)
+    }
+
+    pub fn has_clear_value(&self) -> bool {
+        !self.clear_value.is_undef()
+    }
+
+    pub fn has_init_value(&self) -> bool {
+        !self.init_value.is_undef()
     }
 
     pub fn visit(&self, mut f: impl FnMut(Net)) {
@@ -454,6 +475,17 @@ pub enum ParamValue {
     Int(i64),
     String(String),
     Float(f64),
+}
+
+impl Display for ParamValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParamValue::Const(value) => write!(f, "const({})", value),
+            ParamValue::Int(value) => write!(f, "int({})", value),
+            ParamValue::String(value) => write!(f, "string({:?})", value),
+            ParamValue::Float(value) => write!(f, "float({})", value),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

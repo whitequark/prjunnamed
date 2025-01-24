@@ -157,6 +157,10 @@ impl ControlNet {
         self.is_active() == Some(active)
     }
 
+    pub fn is_const(self) -> bool {
+        self.net().as_const().is_some()
+    }
+
     pub fn visit(self, f: impl FnMut(Net)) {
         match self {
             ControlNet::Pos(net) => net.visit(f),

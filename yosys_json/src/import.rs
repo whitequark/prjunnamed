@@ -64,7 +64,8 @@ struct ModuleImporter<'a> {
 }
 
 impl ModuleImporter<'_> {
-    fn drive(&mut self, bits: &yosys::BitVector, value: Value) {
+    fn drive(&mut self, bits: &yosys::BitVector, value: impl Into<Value>) {
+        let value = value.into();
         assert_eq!(bits.len(), value.len());
         for (&bit, net) in bits.iter().zip(value.into_iter()) {
             let yosys::Bit::Net(ynet) = bit else { unreachable!() };
@@ -79,17 +80,17 @@ impl ModuleImporter<'_> {
                 }
             }
             if let Some(&io_net) = self.io_nets.get(&ynet) {
-                self.design.add_cell(CellRepr::Iob(IoBuffer {
+                self.design.add_iob(IoBuffer {
                     enable: ControlNet::Pos(Net::ONE),
                     output: Value::from(net),
                     io: IoValue::from(io_net),
-                }));
+                });
             }
             self.driven_nets.insert(ynet);
         }
     }
 
-    fn port_drive(&mut self, cell: &yosys::CellDetails, port: &str, value: Value) {
+    fn port_drive(&mut self, cell: &yosys::CellDetails, port: &str, value: impl Into<Value>) {
         self.drive(cell.connections.get(port).unwrap(), value);
     }
 
@@ -100,10 +101,9 @@ impl ModuleImporter<'_> {
                 yosys::Bit::HiZ | yosys::Bit::Undef => Net::UNDEF,
                 yosys::Bit::Zero => Net::ZERO,
                 yosys::Bit::One => Net::ONE,
-                yosys::Bit::Net(ynet) => *self
-                    .nets
-                    .entry(ynet)
-                    .or_insert_with(|| self.design.add_cell(CellRepr::Buf(Value::undef(1))).output()[0]),
+                yosys::Bit::Net(ynet) => {
+                    *self.nets.entry(ynet).or_insert_with(|| self.design.add_buf(Value::undef(1)).unwrap_net())
+                }
             };
             nets.push(net);
         }
@@ -125,9 +125,7 @@ impl ModuleImporter<'_> {
     }
 
     fn port_control_net(&mut self, cell: &yosys::CellDetails, port: &str) -> ControlNet {
-        let value = self.port_value(cell, port);
-        assert_eq!(value.len(), 1);
-        let net = value[0];
+        let net = self.port_value(cell, port).unwrap_net();
         let polarity = cell.parameters.get(&format!("{port}_POLARITY")).unwrap().as_bool().unwrap();
         if polarity {
             ControlNet::Pos(net)
@@ -230,12 +228,12 @@ impl ModuleImporter<'_> {
             }
             match port.direction {
                 yosys::PortDirection::Input => {
-                    let value = self.design.add_cell(CellRepr::TopInput(port_name.clone(), port.bits.len())).output();
+                    let value = self.design.add_top_input(port_name, port.bits.len());
                     self.drive(&port.bits, value);
                 }
                 yosys::PortDirection::Output => {
                     let value = self.value(&port.bits);
-                    self.design.add_cell(CellRepr::TopOutput(port_name.clone(), value));
+                    self.design.add_top_output(port_name, value);
                 }
                 yosys::PortDirection::Inout => unreachable!(),
             }
@@ -250,9 +248,12 @@ impl ModuleImporter<'_> {
                 let a_signed = cell.parameters.get("A_SIGNED").unwrap().as_bool()?;
                 let a = self.value_ext(cell, "A", width, a_signed);
                 let value = match &cell.type_[..] {
-                    "$not" => self.design.add_cell(CellRepr::Not(a)).output(),
+                    "$not" => self.design.add_not(a),
                     "$pos" => a,
-                    "$neg" => self.design.add_cell(CellRepr::Sub(Value::zero(width), a)).output(),
+                    "$neg" => {
+                        let value = self.design.add_not(a);
+                        self.design.add_adc(value, Value::zero(width), Net::ONE)[..width].into()
+                    }
                     _ => unreachable!(),
                 };
                 self.port_drive(cell, "Y", value);
@@ -261,30 +262,27 @@ impl ModuleImporter<'_> {
                 let width = cell.parameters.get("Y_WIDTH").unwrap().as_i32()? as usize;
                 let a = self.port_value(cell, "A");
                 let mut value = match &cell.type_[..] {
-                    "$reduce_and" => self.design.add_cell(CellRepr::Eq(Value::ones(width), a)).output(),
-                    "$reduce_or" | "$reduce_bool" => {
-                        let val = self.design.add_cell(CellRepr::Eq(Value::zero(width), a)).output();
-                        self.design.add_cell(CellRepr::Not(val)).output()
-                    }
+                    "$reduce_and" => self.design.add_eq(Value::ones(width), a),
+                    "$reduce_or" | "$reduce_bool" => self.design.add_ne(Value::zero(width), a),
                     "$reduce_xor" => {
                         let mut val = Value::zero(1);
                         for bit in &a {
-                            val = self.design.add_cell(CellRepr::Xor(val, bit.into())).output();
+                            val = self.design.add_xor(val, bit);
                         }
                         val
                     }
                     "$reduce_xnor" => {
                         let mut val = Value::ones(1);
                         for bit in &a {
-                            val = self.design.add_cell(CellRepr::Xor(val, bit.into())).output();
+                            val = self.design.add_xor(val, bit);
                         }
                         val
                     }
-                    "$logic_not" => self.design.add_cell(CellRepr::Eq(Value::zero(width), a)).output(),
+                    "$logic_not" => self.design.add_eq(Value::zero(width), a),
                     _ => unreachable!(),
                 };
                 if width == 0 {
-                    value = Value::from_iter([]);
+                    value = Value::EMPTY;
                 } else if width > 1 {
                     value = value.zext(width);
                 }
@@ -299,27 +297,48 @@ impl ModuleImporter<'_> {
                 let a = self.value_ext(cell, "A", width, a_signed);
                 let b = self.value_ext(cell, "B", width, b_signed);
                 let value = match &cell.type_[..] {
-                    "$and" => self.design.add_cell(CellRepr::And(a, b)).output(),
-                    "$or" => self.design.add_cell(CellRepr::Or(a, b)).output(),
-                    "$xor" => self.design.add_cell(CellRepr::Xor(a, b)).output(),
+                    "$and" => self.design.add_and(a, b),
+                    "$or" => self.design.add_or(a, b),
+                    "$xor" => self.design.add_xor(a, b),
                     "$xnor" => {
-                        let val = self.design.add_cell(CellRepr::Xor(a, b)).output();
-                        self.design.add_cell(CellRepr::Not(val)).output()
+                        let val = self.design.add_xor(a, b);
+                        self.design.add_not(val)
                     }
-                    "$add" => self.design.add_cell(CellRepr::Add(a, b)).output(),
-                    "$sub" => self.design.add_cell(CellRepr::Sub(a, b)).output(),
-                    "$mul" => self.design.add_cell(CellRepr::Mul(a, b)).output(),
-                    "$div" | "$divfloor" if !a_signed => self.design.add_cell(CellRepr::UDiv(a, b)).output(),
-                    "$mod" | "$modfloor" if !a_signed => self.design.add_cell(CellRepr::UMod(a, b)).output(),
-                    "$div" => self.design.add_cell(CellRepr::SDivTrunc(a, b)).output(),
-                    "$mod" => self.design.add_cell(CellRepr::SModTrunc(a, b)).output(),
-                    "$divfloor" => self.design.add_cell(CellRepr::SDivFloor(a, b)).output(),
-                    "$modfloor" => self.design.add_cell(CellRepr::SModFloor(a, b)).output(),
+                    "$add" => self.design.add_adc(a, b, Net::ZERO)[..width].into(),
+                    "$sub" => {
+                        let inv_b = self.design.add_not(b);
+                        self.design.add_adc(a, inv_b, Net::ONE)[..width].into()
+                    }
+                    "$mul" => self.design.add_mul(a, b),
+                    "$div" | "$divfloor" if !a_signed => self.design.add_udiv(a, b),
+                    "$mod" | "$modfloor" if !a_signed => self.design.add_umod(a, b),
+                    "$div" => self.design.add_sdiv_trunc(a, b),
+                    "$mod" => self.design.add_smod_trunc(a, b),
+                    "$divfloor" => self.design.add_sdiv_floor(a, b),
+                    "$modfloor" => self.design.add_smod_floor(a, b),
                     _ => unreachable!(),
                 };
                 self.port_drive(cell, "Y", value);
             }
-            "$shl" | "$sshl" | "$shr" | "$sshr" | "$shiftx" => {
+            "$alu" => {
+                let width = cell.parameters.get("Y_WIDTH").unwrap().as_i32()? as usize;
+                let bi = self.port_value(cell, "BI").unwrap_net();
+                let ci = self.port_value(cell, "CI").unwrap_net();
+                let a_signed = cell.parameters.get("A_SIGNED").unwrap().as_bool()?;
+                let b_signed = cell.parameters.get("B_SIGNED").unwrap().as_bool()?;
+                let a = self.value_ext(cell, "A", width, a_signed);
+                let b = self.value_ext(cell, "B", width, b_signed);
+                let b_inv = self.design.add_not(&b);
+                let b = self.design.add_mux(bi, b_inv, &b);
+                let x = self.design.add_xor(&a, &b);
+                self.port_drive(cell, "X", x);
+                let y = self.design.add_adc(&a, &b, ci);
+                self.port_drive(cell, "Y", &y[..width]);
+                let xor = self.design.add_xor(&a[1..], &b[1..]);
+                let co = self.design.add_xor(xor, &y[1..]).concat(y[width]);
+                self.port_drive(cell, "CO", co);
+            }
+            "$shl" | "$sshl" | "$shr" | "$sshr" | "$shift" | "$shiftx" => {
                 todo!()
             }
             "$lt" | "$le" | "$gt" | "$ge" | "$eq" | "$ne" => {
@@ -333,23 +352,23 @@ impl ModuleImporter<'_> {
                 let a = self.value_ext(cell, "A", width, a_signed);
                 let b = self.value_ext(cell, "B", width, b_signed);
                 let (mut value, inv) = match &cell.type_[..] {
-                    "$lt" if !a_signed => (self.design.add_cell(CellRepr::ULt(a, b)).output(), false),
-                    "$gt" if !a_signed => (self.design.add_cell(CellRepr::ULt(b, a)).output(), false),
-                    "$le" if !a_signed => (self.design.add_cell(CellRepr::ULt(b, a)).output(), true),
-                    "$ge" if !a_signed => (self.design.add_cell(CellRepr::ULt(a, b)).output(), true),
-                    "$lt" if a_signed => (self.design.add_cell(CellRepr::SLt(a, b)).output(), false),
-                    "$gt" if a_signed => (self.design.add_cell(CellRepr::SLt(b, a)).output(), false),
-                    "$le" if a_signed => (self.design.add_cell(CellRepr::SLt(b, a)).output(), true),
-                    "$ge" if a_signed => (self.design.add_cell(CellRepr::SLt(a, b)).output(), true),
-                    "$eq" => (self.design.add_cell(CellRepr::Eq(a, b)).output(), false),
-                    "$ne" => (self.design.add_cell(CellRepr::Eq(a, b)).output(), true),
+                    "$lt" if !a_signed => (self.design.add_ult(a, b), false),
+                    "$gt" if !a_signed => (self.design.add_ult(b, a), false),
+                    "$le" if !a_signed => (self.design.add_ult(b, a), true),
+                    "$ge" if !a_signed => (self.design.add_ult(a, b), true),
+                    "$lt" if a_signed => (self.design.add_slt(a, b), false),
+                    "$gt" if a_signed => (self.design.add_slt(b, a), false),
+                    "$le" if a_signed => (self.design.add_slt(b, a), true),
+                    "$ge" if a_signed => (self.design.add_slt(a, b), true),
+                    "$eq" => (self.design.add_eq(a, b), false),
+                    "$ne" => (self.design.add_eq(a, b), true),
                     _ => unreachable!(),
                 };
                 if inv {
-                    value = self.design.add_cell(CellRepr::Not(value)).output();
+                    value = self.design.add_not(value);
                 }
                 if y_width == 0 {
-                    value = Value::from_iter([]);
+                    value = Value::EMPTY;
                 } else if width > 1 {
                     value = value.zext(width);
                 }
@@ -358,18 +377,18 @@ impl ModuleImporter<'_> {
             "$logic_and" | "$logic_or" => {
                 let y_width = cell.parameters.get("Y_WIDTH").unwrap().as_i32()? as usize;
                 let a = self.port_value(cell, "A");
-                let a = self.design.add_cell(CellRepr::Eq(Value::zero(a.len()), a)).output();
-                let a = self.design.add_cell(CellRepr::Not(a)).output();
+                let a = self.design.add_eq(Value::zero(a.len()), a);
+                let a = self.design.add_not(a);
                 let b = self.port_value(cell, "B");
-                let b = self.design.add_cell(CellRepr::Eq(Value::zero(b.len()), b)).output();
-                let b = self.design.add_cell(CellRepr::Not(b)).output();
+                let b = self.design.add_eq(Value::zero(b.len()), b);
+                let b = self.design.add_not(b);
                 let mut value = match &cell.type_[..] {
-                    "$logic_and" => self.design.add_cell(CellRepr::And(a, b)).output(),
-                    "$logic_or" => self.design.add_cell(CellRepr::Or(a, b)).output(),
+                    "$logic_and" => self.design.add_and(a, b),
+                    "$logic_or" => self.design.add_or(a, b),
                     _ => unreachable!(),
                 };
                 if y_width == 0 {
-                    value = Value::from_iter([]);
+                    value = Value::EMPTY;
                 } else if y_width > 1 {
                     value = value.zext(y_width);
                 }
@@ -380,8 +399,7 @@ impl ModuleImporter<'_> {
                 let b = self.port_value(cell, "B");
                 let s = self.port_value(cell, "S");
                 assert_eq!(a.len(), b.len());
-                assert_eq!(s.len(), 1);
-                let y = self.design.add_cell(CellRepr::Mux(s[0], b, a)).output();
+                let y = self.design.add_mux(s.unwrap_net(), b, a);
                 self.port_drive(cell, "Y", y);
             }
             "$bmux" => {
@@ -391,7 +409,7 @@ impl ModuleImporter<'_> {
                     assert_eq!(value.len() % 2, 0);
                     let lo = Value::from(&value[..(value.len() / 2)]);
                     let hi = Value::from(&value[(value.len() / 2)..]);
-                    value = self.design.add_cell(CellRepr::Mux(s, hi, lo)).output();
+                    value = self.design.add_mux(s, hi, lo);
                 }
                 self.port_drive(cell, "Y", value);
             }
@@ -401,21 +419,17 @@ impl ModuleImporter<'_> {
                 let sel = self.port_value(cell, "S");
                 assert_eq!(b.len(), value.len() * sel.len());
                 for (i, s) in sel.into_iter().enumerate() {
-                    value = self
-                        .design
-                        .add_cell(CellRepr::Mux(s, Value::from(&b[(i * value.len())..((i + 1) * value.len())]), value))
-                        .output();
+                    value = self.design.add_mux(s, &b[(i * value.len())..((i + 1) * value.len())], value);
                 }
                 self.port_drive(cell, "Y", value);
             }
             "$tribuf" => {
                 let output = self.port_value(cell, "A");
                 let enable = self.port_value(cell, "EN");
-                assert_eq!(enable.len(), 1);
-                let enable = ControlNet::Pos(enable[0]);
+                let enable = ControlNet::Pos(enable.unwrap_net());
                 let bits = cell.connections.get("Y").unwrap();
                 let io = self.io_value(bits);
-                let value = self.design.add_cell(CellRepr::Iob(IoBuffer { output, enable, io })).output();
+                let value = self.design.add_iob(IoBuffer { output, enable, io });
                 for (&bit, net) in bits.iter().zip(value.into_iter()) {
                     let yosys::Bit::Net(ynet) = bit else { unreachable!() };
                     assert!(!self.driven_nets.contains(&ynet));
@@ -450,20 +464,17 @@ impl ModuleImporter<'_> {
                 };
                 let clock = self.port_control_net(cell, "CLK");
                 let init_value = self.init_value(cell, "Q");
-                let q = self
-                    .design
-                    .add_cell(CellRepr::Dff(FlipFlop {
-                        data,
-                        clock,
-                        enable,
-                        reset,
-                        reset_over_enable: cell.type_ != "$sdffce",
-                        clear,
-                        init_value,
-                        reset_value,
-                        clear_value,
-                    }))
-                    .output();
+                let q = self.design.add_dff(FlipFlop {
+                    data,
+                    clock,
+                    enable,
+                    reset,
+                    reset_over_enable: cell.type_ != "$sdffce",
+                    clear,
+                    init_value,
+                    reset_value,
+                    clear_value,
+                });
                 self.port_drive(cell, "Q", q);
             }
             _ => {
@@ -497,18 +508,15 @@ impl ModuleImporter<'_> {
                     };
                     parameters.insert(name.clone(), val);
                 }
-                let output = self
-                    .design
-                    .add_cell(CellRepr::Other(Instance {
-                        reference: cell.type_.strip_prefix('\\').unwrap().to_string(),
-                        parameters,
-                        inputs,
-                        outputs,
-                        ios,
-                    }))
-                    .output();
+                let output = self.design.add_other(Instance {
+                    reference: cell.type_.strip_prefix('\\').unwrap().to_string(),
+                    parameters,
+                    inputs,
+                    outputs,
+                    ios,
+                });
                 for (bits, range) in out_bits {
-                    self.drive(bits, Value::from(&output[range]));
+                    self.drive(bits, &output[range]);
                 }
             }
         }
@@ -527,7 +535,7 @@ impl ModuleImporter<'_> {
                 CellRepr::Iob(IoBuffer {
                     output: Value::undef(1),
                     enable: ControlNet::Pos(Net::ZERO),
-                    io: IoValue::from(io_net),
+                    io: io_net.into(),
                 }),
             );
         }

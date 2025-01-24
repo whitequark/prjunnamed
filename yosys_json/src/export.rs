@@ -43,8 +43,16 @@ impl NetlistIndexer {
         }
     }
 
+    fn synthetic_net(&self) -> yosys::Bit {
+        yosys::Bit::Net(self.0.borrow_mut().next.advance())
+    }
+
     fn value(&self, value: &Value) -> yosys::BitVector {
         yosys::BitVector(value.into_iter().map(|n| self.net(n)).collect::<Vec<_>>())
+    }
+
+    fn synthetic_value(&self, size: usize) -> yosys::BitVector {
+        yosys::BitVector(std::iter::repeat_with(|| self.synthetic_net()).take(size).collect::<Vec<_>>())
     }
 
     fn io_net(&self, net: IoNet) -> yosys::Bit {
@@ -54,10 +62,6 @@ impl NetlistIndexer {
 
     fn io_value(&self, value: &IoValue) -> yosys::BitVector {
         yosys::BitVector(value.into_iter().map(|n| self.io_net(n)).collect::<Vec<_>>())
-    }
-
-    fn synthetic(&self) -> yosys::Bit {
-        yosys::Bit::Net(self.0.borrow_mut().next.advance())
     }
 }
 
@@ -96,7 +100,6 @@ fn export_module(design: Design) -> yosys::Module {
         match cell_ref.repr().as_ref() {
             CellRepr::Buf(arg) => ys_cell_unary(&mut ys_module, "$pos", arg),
             CellRepr::Not(arg) => ys_cell_unary(&mut ys_module, "$not", arg),
-
             CellRepr::And(arg1, arg2) => ys_cell_binary(&mut ys_module, "$and", arg1, arg2, false),
             CellRepr::Or(arg1, arg2) => ys_cell_binary(&mut ys_module, "$or", arg1, arg2, false),
             CellRepr::Xor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$xor", arg1, arg2, false),
@@ -107,16 +110,40 @@ fn export_module(design: Design) -> yosys::Module {
                 .input("S", indexer.net(*arg1))
                 .output("Y", indexer.value(&output))
                 .add_to(&format!("${}", cell_index), &mut ys_module),
-
-            CellRepr::Add(arg1, arg2) => ys_cell_binary(&mut ys_module, "$add", arg1, arg2, false),
-            CellRepr::Sub(arg1, arg2) => ys_cell_binary(&mut ys_module, "$sub", arg1, arg2, false),
-            CellRepr::Mul(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mul", arg1, arg2, false),
-            CellRepr::UDiv(arg1, arg2) => ys_cell_binary(&mut ys_module, "$div", arg1, arg2, false),
-            CellRepr::UMod(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mod", arg1, arg2, false),
-            CellRepr::SDivTrunc(arg1, arg2) => ys_cell_binary(&mut ys_module, "$div", arg1, arg2, true),
-            CellRepr::SDivFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$divfloor", arg1, arg2, true),
-            CellRepr::SModTrunc(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mod", arg1, arg2, true),
-            CellRepr::SModFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$modfloor", arg1, arg2, true),
+            CellRepr::Adc(arg1, arg2, arg3) => {
+                // The $alu cell isn't supported by `write_verilog`, so we have to pattern-match here.
+                match arg3.as_const() {
+                    Some(Trit::Zero) => {
+                        // no carry-in
+                        CellDetails::new("$add")
+                            .param("A_SIGNED", 0)
+                            .param("A_WIDTH", arg1.len())
+                            .param("B_SIGNED", 0)
+                            .param("B_WIDTH", arg2.len())
+                            .param("Y_WIDTH", output.len())
+                            .input("A", indexer.value(&arg1))
+                            .input("B", indexer.value(&arg2))
+                            .output("Y", indexer.value(&output))
+                            .add_to(&format!("${}", cell_index), &mut ys_module);
+                    }
+                    _ => {
+                        // generic
+                        let ys_a = Value::from(arg3).concat(arg1);
+                        let ys_b = Value::from(Net::ONE).concat(arg2);
+                        let ys_y = indexer.synthetic_value(1).concat(&indexer.value(&output));
+                        CellDetails::new("$add")
+                            .param("A_SIGNED", 0)
+                            .param("A_WIDTH", 1 + arg1.len())
+                            .param("B_SIGNED", 0)
+                            .param("B_WIDTH", 1 + arg2.len())
+                            .param("Y_WIDTH", 1 + output.len())
+                            .input("A", indexer.value(&ys_a))
+                            .input("B", indexer.value(&ys_b))
+                            .output("Y", ys_y)
+                            .add_to(&format!("${}", cell_index), &mut ys_module);
+                    }
+                }
+            }
 
             CellRepr::Eq(arg1, arg2) => ys_cell_binary(&mut ys_module, "$eq", arg1, arg2, false),
             CellRepr::ULt(arg1, arg2) => ys_cell_binary(&mut ys_module, "$lt", arg1, arg2, false),
@@ -127,26 +154,51 @@ fn export_module(design: Design) -> yosys::Module {
             CellRepr::SShr(_arg1, _arg2, _stride) => todo!(),
             CellRepr::XShr(_arg1, _arg2, _stride) => todo!(),
 
+            CellRepr::Mul(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mul", arg1, arg2, false),
+            CellRepr::UDiv(arg1, arg2) => ys_cell_binary(&mut ys_module, "$div", arg1, arg2, false),
+            CellRepr::UMod(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mod", arg1, arg2, false),
+            CellRepr::SDivTrunc(arg1, arg2) => ys_cell_binary(&mut ys_module, "$div", arg1, arg2, true),
+            CellRepr::SDivFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$divfloor", arg1, arg2, true),
+            CellRepr::SModTrunc(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mod", arg1, arg2, true),
+            CellRepr::SModFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$modfloor", arg1, arg2, true),
+
             CellRepr::Dff(flip_flop) => {
-                // Support for this case requires emulating synchronous reset using a mux.
-                assert!(
-                    flip_flop.clear.is_always(false) || flip_flop.reset.is_always(false),
-                    "Flip-flops with both synchronous and asynchronous reset are not implemented for Yosys JSON export"
-                );
-                let ys_cell = if !flip_flop.clear.is_always(false) {
-                    CellDetails::new("$adffe")
+                let ys_cell_type = match (
+                    flip_flop.has_clear(),
+                    flip_flop.has_reset(),
+                    flip_flop.has_enable(),
+                    flip_flop.reset_over_enable,
+                ) {
+                    // Support for this case requires emulating synchronous reset using a mux.
+                    (true, true, _, _) =>
+                        panic!("Flip-flops with both synchronous and asynchronous reset are not implemented for Yosys JSON export"),
+                    (true, false, false, _) => "$adff",
+                    (true, false, true, _) => "$adffe",
+                    (false, true, false, _) => "$sdff",
+                    (false, true, true, false) => "$sdffce",
+                    (false, true, true, true) => "$sdffe",
+                    (false, false, false, _) => "$dff",
+                    (false, false, true, _) => "$dffe",
+                };
+                let mut ys_cell = CellDetails::new(ys_cell_type);
+                if flip_flop.has_clear() {
+                    ys_cell = ys_cell
                         .param("ARST_POLARITY", flip_flop.clear.is_positive())
                         .param("ARST_VALUE", flip_flop.clear_value.clone())
-                        .input("ARST", indexer.net(flip_flop.clear.net()))
-                } else {
-                    CellDetails::new(if flip_flop.reset_over_enable { "$sdffe" } else { "$sdffce" })
+                        .input("ARST", indexer.net(flip_flop.clear.net()));
+                }
+                if flip_flop.has_reset() {
+                    ys_cell = ys_cell
                         .param("SRST_POLARITY", flip_flop.reset.is_positive())
                         .param("SRST_VALUE", flip_flop.reset_value.clone())
-                        .input("SRST", indexer.net(flip_flop.reset.net()))
-                };
+                        .input("SRST", indexer.net(flip_flop.reset.net()));
+                }
+                if flip_flop.has_enable() {
+                    ys_cell = ys_cell
+                        .param("EN_POLARITY", flip_flop.enable.is_positive())
+                        .input("EN", indexer.net(flip_flop.enable.net()));
+                }
                 ys_cell
-                    .param("EN_POLARITY", flip_flop.enable.is_positive())
-                    .input("EN", indexer.net(flip_flop.enable.net()))
                     .param("CLK_POLARITY", flip_flop.clock.is_positive())
                     .input("CLK", indexer.net(flip_flop.clock.net()))
                     .param("WIDTH", output.len())
@@ -156,13 +208,14 @@ fn export_module(design: Design) -> yosys::Module {
                 NetDetails::new(indexer.value(&output))
                     .attr("init", flip_flop.init_value.clone())
                     .add_to(&format!("{}$out", ys_cell_name), &mut ys_module);
+                continue; // skip default $out wire (init-less) creation
             }
 
             CellRepr::Iob(io_buffer) => {
                 let ys_enable = match io_buffer.enable {
                     ControlNet::Pos(net) => indexer.net(net),
                     ControlNet::Neg(net) => {
-                        let ys_enable_neg = indexer.synthetic();
+                        let ys_enable_neg = indexer.synthetic_net();
                         CellDetails::new("$not")
                             .param("A_SIGNED", 0)
                             .param("A_WIDTH", 1)
