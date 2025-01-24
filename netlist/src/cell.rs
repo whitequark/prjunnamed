@@ -17,6 +17,7 @@ pub(crate) enum Cell {
     And(Net, Net),
     Xor(Net, Net),
     Mux(Net, Net, Net), // a ? b : c
+    Adc(Net, Net, Net), // a + b + ci
 
     Coarse(Box<CellRepr>),
 }
@@ -30,8 +31,8 @@ pub enum CellRepr {
     And(Value, Value),
     Or(Value, Value),
     Xor(Value, Value),
-    Mux(Net, Value, Value),
-    Adc(Value, Value, Net),
+    Mux(Net, Value, Value), // a ? b : c
+    Adc(Value, Value, Net), // a + b + ci
 
     Eq(Value, Value),
     ULt(Value, Value),
@@ -70,6 +71,7 @@ impl Cell {
             Cell::And(arg1, arg2) => Cow::Owned(CellRepr::And(Value::from(arg1), Value::from(arg2))),
             Cell::Xor(arg1, arg2) => Cow::Owned(CellRepr::Xor(Value::from(arg1), Value::from(arg2))),
             Cell::Mux(arg1, arg2, arg3) => Cow::Owned(CellRepr::Mux(arg1, Value::from(arg2), Value::from(arg3))),
+            Cell::Adc(arg1, arg2, arg3) => Cow::Owned(CellRepr::Adc(Value::from(arg1), Value::from(arg2), arg3)),
 
             Cell::Coarse(ref coarse) => Cow::Borrowed(coarse),
         }
@@ -84,6 +86,7 @@ impl From<CellRepr> for Cell {
             CellRepr::And(arg1, arg2) if arg1.len() == 1 && arg2.len() == 1 => Cell::And(arg1[0], arg2[0]),
             CellRepr::Xor(arg1, arg2) if arg1.len() == 1 && arg2.len() == 1 => Cell::Xor(arg1[0], arg2[0]),
             CellRepr::Mux(arg1, arg2, arg3) if arg2.len() == 1 && arg3.len() == 1 => Cell::Mux(arg1, arg2[0], arg3[0]),
+            CellRepr::Adc(arg1, arg2, arg3) if arg1.len() == 1 && arg2.len() == 1 => Cell::Adc(arg1[0], arg2[0], arg3),
 
             coarse => Cell::Coarse(Box::new(coarse)),
         }
@@ -95,7 +98,12 @@ impl Cell {
         match self {
             Cell::Skip(_) => unreachable!(),
 
-            Cell::Buf(_) | Cell::Not(_) | Cell::And(_, _) | Cell::Xor(_, _) | Cell::Mux(_, _, _) => 1,
+            Cell::Buf(_)
+            | Cell::Not(_)
+            | Cell::And(_, _)
+            | Cell::Xor(_, _)
+            | Cell::Mux(_, _, _)
+            | Cell::Adc(_, _, _) => 1,
 
             Cell::Coarse(coarse) => coarse.output_len(),
         }
@@ -116,6 +124,11 @@ impl Cell {
                 arg2.visit(&mut f);
             }
             Cell::Mux(arg1, arg2, arg3) => {
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
+                arg3.visit(&mut f);
+            }
+            Cell::Adc(arg1, arg2, arg3) => {
                 arg1.visit(&mut f);
                 arg2.visit(&mut f);
                 arg3.visit(&mut f);
@@ -141,6 +154,11 @@ impl Cell {
                 arg2.visit_mut(&mut f);
             }
             Cell::Mux(arg1, arg2, arg3) => {
+                arg1.visit_mut(&mut f);
+                arg2.visit_mut(&mut f);
+                arg3.visit_mut(&mut f);
+            }
+            Cell::Adc(arg1, arg2, arg3) => {
                 arg1.visit_mut(&mut f);
                 arg2.visit_mut(&mut f);
                 arg3.visit_mut(&mut f);
@@ -478,7 +496,7 @@ pub enum ParamValue {
 }
 
 impl Display for ParamValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             ParamValue::Const(value) => write!(f, "const({})", value),
             ParamValue::Int(value) => write!(f, "int({})", value),
