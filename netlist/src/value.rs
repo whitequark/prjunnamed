@@ -6,7 +6,7 @@ use std::{
 
 use crate::{Net, Trit};
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Const {
     trits: Vec<Trit>,
 }
@@ -26,6 +26,18 @@ impl Const {
 
     pub fn len(&self) -> usize {
         self.trits.len()
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.trits.iter().all(|&trit| trit == Trit::Zero)
+    }
+
+    pub fn is_ones(&self) -> bool {
+        self.trits.iter().all(|&trit| trit == Trit::One)
+    }
+
+    pub fn is_undef(&self) -> bool {
+        self.trits.iter().all(|&trit| trit == Trit::Undef)
     }
 }
 
@@ -95,6 +107,18 @@ impl Value {
 
     pub fn len(&self) -> usize {
         self.nets.len()
+    }
+
+    pub fn as_const(&self) -> Option<Const> {
+        if self.nets.iter().all(|net| net.as_const().is_some()) {
+            let mut trits = vec![];
+            for net in self.nets.iter() {
+                trits.push(net.as_const().unwrap())
+            }
+            Some(Const { trits })
+        } else {
+            None
+        }
     }
 
     pub fn visit(&self, mut f: impl FnMut(Net)) {

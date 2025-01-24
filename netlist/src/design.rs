@@ -4,7 +4,7 @@ use std::fmt::Display;
 use std::ops::Range;
 
 use crate::cell::{Cell, CellRepr};
-use crate::{IoValue, Net, Trit, Value};
+use crate::{Const, ControlNet, FlipFlop, IoValue, Net, Trit, Value};
 
 #[derive(Debug)]
 pub struct Design {
@@ -173,6 +173,15 @@ impl Display for Design {
             }
         };
 
+        let write_control = |f: &mut std::fmt::Formatter, name: &str, control_net: &ControlNet| -> std::fmt::Result {
+            if control_net.is_positive() {
+                write!(f, "{}=", name)?;
+            } else {
+                write!(f, "!{}=", name)?;
+            }
+            write_net(f, control_net.net())
+        };
+
         let write_cell = |f: &mut std::fmt::Formatter, name: &str, args: &[&Value]| -> std::fmt::Result {
             write!(f, "{}", name)?;
             for arg in args {
@@ -217,7 +226,36 @@ impl Display for Design {
                 // CellRepr::SShr(arg1, arg2, stride) => todo!(),
                 // CellRepr::XShr(arg1, arg2, stride) => todo!(),
 
-                // CellRepr::Dff(flip_flop) => todo!(),
+                CellRepr::Dff(flip_flop) => {
+                    write_cell(f, "dff", &[&flip_flop.data])?;
+                    write_control(f, " clk", &flip_flop.clock)?;
+                    if !flip_flop.clear.is_always(false) {
+                        write_control(f, " clr", &flip_flop.clear)?;
+                        if flip_flop.clear_value != flip_flop.init_value {
+                            write!(f, ",{}", flip_flop.clear_value)?;
+                        }
+                    }
+                    if !flip_flop.reset.is_always(false) {
+                        write_control(f, " rst", &flip_flop.reset)?;
+                        if flip_flop.reset_value != flip_flop.init_value {
+                            write!(f, ",{}", flip_flop.reset_value)?;
+                        }
+                    }
+                    if !flip_flop.enable.is_always(true) {
+                        write_control(f, " en", &flip_flop.enable)?;
+                    }
+                    if !flip_flop.reset.is_always(false) && !flip_flop.enable.is_always(true) {
+                        if flip_flop.reset_over_enable {
+                            write!(f, " rst>en")?;
+                        } else {
+                            write!(f, " en>rst")?;
+                        }
+                    }
+                    if !flip_flop.init_value.is_undef() {
+                        write!(f, " init={}", flip_flop.init_value)?;
+                    }
+                }
+
                 // CellRepr::Iob(io_buffer) => todo!(),
                 // CellRepr::Other(instance) => todo!(),
 

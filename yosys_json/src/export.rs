@@ -130,10 +130,10 @@ fn export_module(design: Design) -> yosys::Module {
             CellRepr::Dff(flip_flop) => {
                 // Support for this case requires emulating synchronous reset using a mux.
                 assert!(
-                    !(flip_flop.clear.is_used() && flip_flop.reset.is_used()),
-                    "Flip-flops with both synchronous and asyncrhonous reset are not implemented for Yosys JSON export"
+                    flip_flop.clear.is_always(false) || flip_flop.reset.is_always(false),
+                    "Flip-flops with both synchronous and asynchronous reset are not implemented for Yosys JSON export"
                 );
-                let ys_cell = if flip_flop.clear.is_used() {
+                let ys_cell = if !flip_flop.clear.is_always(false) {
                     CellDetails::new("$adffe")
                         .param("ARST_POLARITY", flip_flop.clear.is_positive())
                         .param("ARST_VALUE", flip_flop.clear_value.clone())

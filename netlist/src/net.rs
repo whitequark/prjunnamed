@@ -153,12 +153,8 @@ impl ControlNet {
         }
     }
 
-    pub fn is_unused(self) -> bool {
-        matches!(self.is_active(), Some(false))
-    }
-
-    pub fn is_used(self) -> bool {
-        !self.is_unused()
+    pub fn is_always(self, active: bool) -> bool {
+        self.is_active() == Some(active)
     }
 
     pub fn visit(self, f: impl FnMut(Net)) {
