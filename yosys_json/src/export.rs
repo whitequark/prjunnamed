@@ -258,10 +258,10 @@ fn export_module(design: Design) -> yosys::Module {
                 ys_cell.add_to(&ys_cell_name, &mut ys_module);
             }
 
-            CellRepr::TopInput(port_name, _size) => {
+            CellRepr::Input(port_name, _size) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Input, indexer.value(&output)))
             }
-            CellRepr::TopOutput(port_name, value) => {
+            CellRepr::Output(port_name, value) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Output, indexer.value(value)))
             }
         };

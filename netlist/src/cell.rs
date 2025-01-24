@@ -57,8 +57,8 @@ pub enum CellRepr {
     Other(Instance),
 
     // TODO: memory
-    TopInput(String, usize),
-    TopOutput(String, Value),
+    Input(String, usize),
+    Output(String, Value),
 }
 
 impl Cell {
@@ -209,8 +209,8 @@ impl CellRepr {
             CellRepr::Iob(io_buffer) => io_buffer.output_len(),
             CellRepr::Other(instance) => instance.output_len(),
 
-            CellRepr::TopInput(_, width) => *width as usize,
-            CellRepr::TopOutput(_, _) => 0,
+            CellRepr::Input(_, width) => *width as usize,
+            CellRepr::Output(_, _) => 0,
         }
     }
 
@@ -301,8 +301,8 @@ impl CellRepr {
             CellRepr::Iob(io_buffer) => io_buffer.visit(&mut f),
             CellRepr::Other(instance) => instance.visit(&mut f),
 
-            CellRepr::TopInput(_, _) => (),
-            CellRepr::TopOutput(_, arg) => arg.visit(f),
+            CellRepr::Input(_, _) => (),
+            CellRepr::Output(_, arg) => arg.visit(f),
         }
     }
 
@@ -394,8 +394,8 @@ impl CellRepr {
             CellRepr::Iob(io_buffer) => io_buffer.visit_mut(&mut f),
             CellRepr::Other(instance) => instance.visit_mut(&mut f),
 
-            CellRepr::TopInput(_, _) => (),
-            CellRepr::TopOutput(_, arg) => arg.visit_mut(f),
+            CellRepr::Input(_, _) => (),
+            CellRepr::Output(_, arg) => arg.visit_mut(f),
         }
     }
 }

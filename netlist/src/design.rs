@@ -89,8 +89,8 @@ impl Design {
                 CellRepr::Dff(_)
                 | CellRepr::Iob(_)
                 | CellRepr::Other(_)
-                | CellRepr::TopInput(_, _)
-                | CellRepr::TopOutput(_, _) => {
+                | CellRepr::Input(_, _)
+                | CellRepr::Output(_, _) => {
                     queue.insert(index);
                 }
                 _ => (),
@@ -211,10 +211,10 @@ impl Design {
         add_other(arg: impl Into<Instance>) ->
             Other(arg.into());
 
-        add_top_input(name: impl Into<String>, width: usize) ->
-            TopInput(name.into(), width);
-        add_top_output(name: impl Into<String>, value: impl Into<Value>) :
-            TopOutput(name.into(), value.into());
+        add_input(name: impl Into<String>, width: usize) ->
+            Input(name.into(), width);
+        add_output(name: impl Into<String>, value: impl Into<Value>) :
+            Output(name.into(), value.into());
     }
 }
 
@@ -459,9 +459,9 @@ impl Display for Design {
                     write!(f, "}}")?;
                 }
 
-                CellRepr::TopInput(name, _size) => write!(f, "top_input {:?}", name)?,
-                CellRepr::TopOutput(name, value) => {
-                    write!(f, "top_output {:?} ", name)?;
+                CellRepr::Input(name, _size) => write!(f, "input {:?}", name)?,
+                CellRepr::Output(name, value) => {
+                    write!(f, "output {:?} ", name)?;
                     write_value(f, value)?;
                 }
             }

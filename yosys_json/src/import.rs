@@ -228,12 +228,12 @@ impl ModuleImporter<'_> {
             }
             match port.direction {
                 yosys::PortDirection::Input => {
-                    let value = self.design.add_top_input(port_name, port.bits.len());
+                    let value = self.design.add_input(port_name, port.bits.len());
                     self.drive(&port.bits, value);
                 }
                 yosys::PortDirection::Output => {
                     let value = self.value(&port.bits);
-                    self.design.add_top_output(port_name, value);
+                    self.design.add_output(port_name, value);
                 }
                 yosys::PortDirection::Inout => unreachable!(),
             }
