@@ -16,13 +16,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         print!("; {} (initial)\n{}", name, design);
 
         prjunnamed_generic::combine(design);
-        print!("; {} (combine)\n{}", name, design);
+        print!("; {} (combine 1)\n{}", name, design);
 
         prjunnamed_generic::lower(design);
         print!("; {} (lower)\n{}", name, design);
 
         prjunnamed_generic::iob_insert(design);
         print!("; {} (iob_insert)\n{}", name, design);
+
+        prjunnamed_generic::combine(design);
+        print!("; {} (combine 2)\n{}", name, design);
     }
 
     prjunnamed_yosys_json::export(&mut File::create(output)?, design_bundle)?;

@@ -241,6 +241,17 @@ impl ModuleImporter<'_> {
         Ok(())
     }
 
+    fn handle_names(&mut self) -> Result<(), Error> {
+        for (name, details) in self.module.netnames.iter() {
+            if details.hide_name {
+                continue;
+            }
+            let value = self.value(&details.bits);
+            self.design.add_name(name, value);
+        }
+        Ok(())
+    }
+
     fn handle_cell(&mut self, cell: &yosys::CellDetails) -> Result<(), Error> {
         match &cell.type_[..] {
             "$not" | "$pos" | "$neg" => {
@@ -262,8 +273,8 @@ impl ModuleImporter<'_> {
                 let width = cell.parameters.get("Y_WIDTH").unwrap().as_i32()? as usize;
                 let a = self.port_value(cell, "A");
                 let mut value = match &cell.type_[..] {
-                    "$reduce_and" => self.design.add_eq(Value::ones(width), a),
-                    "$reduce_or" | "$reduce_bool" => self.design.add_ne(Value::zero(width), a),
+                    "$reduce_and" => self.design.add_eq(Value::ones(a.len()), a),
+                    "$reduce_or" | "$reduce_bool" => self.design.add_ne(Value::zero(a.len()), a),
                     "$reduce_xor" => {
                         let mut val = Value::zero(1);
                         for bit in &a {
@@ -278,7 +289,7 @@ impl ModuleImporter<'_> {
                         }
                         val
                     }
-                    "$logic_not" => self.design.add_eq(Value::zero(width), a),
+                    "$logic_not" => self.design.add_eq(Value::zero(a.len()), a),
                     _ => unreachable!(),
                 };
                 if width == 0 {
@@ -605,6 +616,7 @@ fn import_module(module: &yosys::Module, design_io_ports: &BTreeSet<(&str, &str)
 
     importer.handle_init()?;
     importer.handle_ports()?;
+    importer.handle_names()?;
     for cell in module.cells.0.values() {
         importer.handle_cell(cell)?;
     }

@@ -59,6 +59,53 @@ pub enum CellRepr {
 
     Input(String, usize),
     Output(String, Value),
+    Name(String, Value),
+}
+
+impl CellRepr {
+    pub fn validate(&self) {
+        match self {
+            CellRepr::Buf(_) => (),
+            CellRepr::Not(_) => (),
+            CellRepr::And(arg1, arg2) |
+            CellRepr::Or(arg1, arg2) |
+            CellRepr::Xor(arg1, arg2) |
+            CellRepr::Mux(_, arg1, arg2) |
+            CellRepr::Adc(arg1, arg2, _) |
+            CellRepr::Eq(arg1, arg2) |
+            CellRepr::ULt(arg1, arg2) |
+            CellRepr::Mul(arg1, arg2) |
+            CellRepr::UDiv(arg1, arg2) |
+            CellRepr::UMod(arg1, arg2) => assert_eq!(arg1.len(), arg2.len()),
+            CellRepr::SLt(arg1, arg2) |
+            CellRepr::SDivTrunc(arg1, arg2) |
+            CellRepr::SDivFloor(arg1, arg2) |
+            CellRepr::SModTrunc(arg1, arg2) |
+            CellRepr::SModFloor(arg1, arg2) => {
+                assert_eq!(arg1.len(), arg2.len());
+                assert!(arg1.len() > 0);
+            }
+            CellRepr::Shl(_, _, _) => (),
+            CellRepr::UShr(_, _, _) => (),
+            CellRepr::SShr(arg1, _, _) => assert!(arg1.len() > 0),
+            CellRepr::XShr(_, _, _) => (),
+
+            CellRepr::Dff(flip_flop) => {
+                assert_eq!(flip_flop.data.len(), flip_flop.init_value.len());
+                assert_eq!(flip_flop.data.len(), flip_flop.clear_value.len());
+                assert_eq!(flip_flop.data.len(), flip_flop.reset_value.len());
+            }
+            CellRepr::Iob(io_buffer) => {
+                assert_eq!(io_buffer.output.len(), io_buffer.io.len());
+            }
+            CellRepr::Other(_instance) => {
+                // TODO
+            }
+            CellRepr::Input(_, _) => (),
+            CellRepr::Output(_, _) => (),
+            CellRepr::Name(_, _) => (),
+        }
+    }
 }
 
 impl Cell {
@@ -211,6 +258,7 @@ impl CellRepr {
 
             CellRepr::Input(_, width) => *width as usize,
             CellRepr::Output(_, _) => 0,
+            CellRepr::Name(_, _) => 0,
         }
     }
 
@@ -303,6 +351,7 @@ impl CellRepr {
 
             CellRepr::Input(_, _) => (),
             CellRepr::Output(_, arg) => arg.visit(f),
+            CellRepr::Name(_, arg) => arg.visit(f),
         }
     }
 
@@ -396,6 +445,7 @@ impl CellRepr {
 
             CellRepr::Input(_, _) => (),
             CellRepr::Output(_, arg) => arg.visit_mut(f),
+            CellRepr::Name(_, arg) => arg.visit_mut(f),
         }
     }
 }

@@ -39,6 +39,8 @@ pub fn combine(design: &mut Design) {
         [PMux@y [PAny]     [PUndef]   [PAny@b]]   => design.replace_value(y, b);
         [PMux@y [PAny]     [PAny@a]   [PAny@b]]   if (a == b) => design.replace_value(y, a);
 
+        [PMux@y [PNot [PAny@s]] [PAny@a] [PAny@b]] => design.replace_value(y, design.add_mux(s[0], b, a));
+
         [PAdc@y [PConst@a] [PConst@b] [PConst@c]] => design.replace_value(y, a.adc(b, c[0]));
         [PAdc@y [PAny@a]   [PZero]    [PZero]]    => design.replace_value(&y, a.zext(y.len()));
         [PAdc@y [PZero]    [PAny@b]   [PZero]]    => design.replace_value(&y, b.zext(y.len()));

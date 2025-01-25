@@ -12,7 +12,7 @@ fn lower_shift(
     let mut stride = stride as usize;
     let mut value = value.clone();
     for (i, bit) in shcnt.into_iter().enumerate() {
-        if value.len() < stride {
+        if stride < value.len() {
             let shval = shift(&value, stride);
             value = design.add_mux(bit, shval, value);
             stride *= 2;
@@ -120,5 +120,5 @@ pub fn lower(design: &mut Design) {
             _ => (),
         }
     }
-    design.apply();
+    design.compact();
 }

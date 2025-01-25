@@ -67,6 +67,7 @@ impl Design {
         None
     }
     pub fn add_cell(&self, cell: CellRepr) -> Value {
+        cell.validate();
         let mut changes = self.changes.borrow_mut();
         let index = self.cells.len() + changes.added_cells.len();
         let output_len = cell.output_len();
@@ -166,6 +167,7 @@ impl<'a> CellRef<'a> {
     }
 
     pub fn replace(&self, to_cell: CellRepr) {
+        to_cell.validate();
         let mut changes = self.design.changes.borrow_mut();
         assert!(changes.replaced_cells.insert(self.index, to_cell).is_none());
     }
@@ -274,6 +276,8 @@ impl Design {
             Input(name.into(), width);
         add_output(name: impl Into<String>, value: impl Into<Value>) :
             Output(name.into(), value.into());
+        add_name(name: impl Into<String>, value: impl Into<Value>) :
+            Name(name.into(), value.into());
     }
 
     pub fn add_ne(&mut self, arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value {
@@ -296,7 +300,8 @@ impl Design {
                 | CellRepr::Iob(_)
                 | CellRepr::Other(_)
                 | CellRepr::Input(_, _)
-                | CellRepr::Output(_, _) => {
+                | CellRepr::Output(_, _)
+                | CellRepr::Name(_, _) => {
                     queue.insert(index);
                 }
                 _ => (),
@@ -370,6 +375,9 @@ impl Display for Design {
         };
 
         let write_value = |f: &mut std::fmt::Formatter, value: &Value| -> std::fmt::Result {
+            if value.len() == 0 {
+                return write!(f, "{{}}");
+            }
             match self.find_cell(value[0]) {
                 Ok((cell_ref, _offset)) if *value == cell_ref.output() => {
                     write!(f, "%{}", cell_ident(cell_ref))
@@ -552,6 +560,10 @@ impl Display for Design {
                 CellRepr::Input(name, _size) => write!(f, "input {:?}", name)?,
                 CellRepr::Output(name, value) => {
                     write!(f, "output {:?} ", name)?;
+                    write_value(f, value)?;
+                }
+                CellRepr::Name(name, value) => {
+                    write!(f, "name {:?} ", name)?;
                     write_value(f, value)?;
                 }
             }
