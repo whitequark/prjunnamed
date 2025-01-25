@@ -65,6 +65,7 @@ struct ModuleImporter<'a> {
 
 impl ModuleImporter<'_> {
     fn drive(&mut self, bits: &yosys::BitVector, value: impl Into<Value>) {
+        self.design.apply();
         let value = value.into();
         assert_eq!(bits.len(), value.len());
         for (&bit, net) in bits.iter().zip(value.into_iter()) {
@@ -72,7 +73,7 @@ impl ModuleImporter<'_> {
             assert!(!self.driven_nets.contains(&ynet));
             match self.nets.entry(ynet) {
                 btree_map::Entry::Occupied(e) => {
-                    self.design.find_cell_mut(*e.get()).unwrap().0.replace(CellRepr::Buf(Value::from(net)));
+                    self.design.find_cell(*e.get()).unwrap().0.replace(CellRepr::Buf(Value::from(net)));
                 }
                 btree_map::Entry::Vacant(e) => {
                     e.insert(net);
@@ -476,12 +477,13 @@ impl ModuleImporter<'_> {
                 let bits = cell.connections.get("Y").unwrap();
                 let io = self.io_value(bits);
                 let value = self.design.add_iob(IoBuffer { output, enable, io });
+                self.design.apply();
                 for (&bit, net) in bits.iter().zip(value.into_iter()) {
                     let yosys::Bit::Net(ynet) = bit else { unreachable!() };
                     assert!(!self.driven_nets.contains(&ynet));
                     match self.nets.entry(ynet) {
                         btree_map::Entry::Occupied(e) => {
-                            self.design.find_cell_mut(*e.get()).unwrap().0.replace(CellRepr::Buf(Value::from(net)));
+                            self.design.find_cell(*e.get()).unwrap().0.replace(CellRepr::Buf(Value::from(net)));
                         }
                         btree_map::Entry::Vacant(e) => {
                             e.insert(net);
@@ -569,12 +571,13 @@ impl ModuleImporter<'_> {
     }
 
     fn handle_undriven_io_nets(&mut self) {
+        self.design.apply();
         for (&ynet, &io_net) in &self.io_nets {
             if self.driven_nets.contains(&ynet) {
                 continue;
             }
             let Some(&net) = self.nets.get(&ynet) else { continue };
-            self.design.find_cell_mut(net).unwrap().0.replace(CellRepr::Iob(IoBuffer {
+            self.design.find_cell(net).unwrap().0.replace(CellRepr::Iob(IoBuffer {
                 output: Value::undef(1),
                 enable: ControlNet::Pos(Net::ZERO),
                 io: io_net.into(),
@@ -606,6 +609,7 @@ fn import_module(module: &yosys::Module, design_io_ports: &BTreeSet<(&str, &str)
         importer.handle_cell(cell)?;
     }
     importer.handle_undriven_io_nets();
+    importer.design.apply();
 
     Ok(Some(importer.design))
 }

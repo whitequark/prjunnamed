@@ -1,6 +1,6 @@
 use std::fs::File;
 
-use prjunnamed_pass::combine;
+use prjunnamed_pass::{combine, iob_insert};
 use prjunnamed_yosys_json::{export, import};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -18,6 +18,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for design in design_bundle.values_mut() {
         print!("{}", design);
         combine(design);
+        iob_insert(design);
         design.compact();
         print!("{}", design);
     }
