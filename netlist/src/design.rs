@@ -1,8 +1,8 @@
 use std::ops::Range;
+use std::cell::RefCell;
 use std::borrow::Cow;
 use std::collections::{btree_map, BTreeMap, BTreeSet};
 use std::fmt::Display;
-use std::cell::RefCell;
 
 use crate::cell::{Cell, CellRepr};
 use crate::{ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, Trit, Value};
@@ -102,8 +102,10 @@ impl Design {
 
     pub fn replace_net(&self, from_net: impl Into<Net>, to_net: impl Into<Net>) {
         let (from_net, to_net) = (from_net.into(), to_net.into());
-        let mut changes = self.changes.borrow_mut();
-        assert_eq!(changes.replaced_nets.insert(from_net, to_net), None);
+        if from_net != to_net {
+            let mut changes = self.changes.borrow_mut();
+            assert_eq!(changes.replaced_nets.insert(from_net, to_net), None);
+        }
     }
 
     pub fn replace_value<'a, 'b>(&self, from_value: impl Into<Cow<'a, Value>>, to_value: impl Into<Cow<'b, Value>>) {
@@ -114,11 +116,30 @@ impl Design {
         }
     }
 
-    pub fn apply(&mut self) {
+    pub fn map_net(&self, net: impl Into<Net>) -> Net {
+        let changes = self.changes.borrow();
+        let net = net.into();
+        let mapped_net = *changes.replaced_nets.get(&net).unwrap_or(&net);
+        // Assume the caller might want to locate the cell behind the net.
+        match mapped_net.as_cell() {
+            Some(index) if index >= self.cells.len() => return net,
+            _ => return mapped_net
+        }
+    }
+
+    pub fn map_value(&self, value: impl Into<Value>) -> Value {
+        value.into().into_iter().map(|net| self.map_net(net)).collect::<Vec<_>>().into()
+    }
+
+    pub fn apply(&mut self) -> bool {
         let changes = self.changes.get_mut();
-        for (index, cell) in std::mem::take(&mut changes.replaced_cells) {
-            assert_eq!(self.cells[index].output_len(), cell.output_len());
-            self.cells[index] = cell.into();
+        let mut did_change = !changes.added_ios.is_empty() || !changes.added_cells.is_empty();
+        for (index, new_cell) in std::mem::take(&mut changes.replaced_cells) {
+            assert_eq!(self.cells[index].output_len(), new_cell.output_len());
+            if *self.cells[index].repr() != new_cell {
+                self.cells[index] = new_cell.into();
+                did_change = true;
+            }
         }
         self.ios.extend(std::mem::take(&mut changes.added_ios));
         self.cells.extend(std::mem::take(&mut changes.added_cells));
@@ -126,12 +147,16 @@ impl Design {
             for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, Cell::Skip(_))) {
                 cell.visit_mut(|net| {
                     while let Some(new_net) = changes.replaced_nets.get(net) {
-                        *net = *new_net;
+                        if *net != *new_net {
+                            *net = *new_net;
+                            did_change = true;
+                        }
                     }
                 });
             }
             changes.replaced_nets.clear();
         }
+        did_change
     }
 }
 
@@ -174,6 +199,11 @@ impl<'a> CellRef<'a> {
 
     pub fn unalive(&self) {
         self.replace(CellRepr::Buf(Value::undef(self.output_len())));
+    }
+
+    // Returns the same index as the one used by `Display` implementation.`
+    pub fn debug_index(&self) -> usize {
+        self.index
     }
 }
 
@@ -287,6 +317,43 @@ impl Design {
 }
 
 impl Design {
+    pub fn iter_cells_topo<'a>(&'a self) -> impl Iterator<Item = CellRef<'a>> {
+        let mut outgoing = BTreeMap::<usize, BTreeSet<usize>>::new();
+        let mut incoming = BTreeMap::<usize, BTreeSet<usize>>::new();
+        let mut queue = BTreeSet::new();
+        for (index, cell) in self.cells.iter().enumerate() {
+            if let Cell::Skip(_) = cell {
+                continue;
+            }
+            cell.visit(|net| {
+                if let Ok((cell_ref, _offset)) = self.find_cell(net) {
+                    incoming.entry(index).or_default().insert(cell_ref.index);
+                    outgoing.entry(cell_ref.index).or_default().insert(index);
+                }
+            });
+            match &*cell.repr() {
+                CellRepr::Dff(_) | CellRepr::Iob(_) | CellRepr::Other(_) | CellRepr::Input(_, _) => {
+                    queue.insert(index);
+                }
+                _ => (),
+            }
+        }
+
+        let mut order = vec![];
+        while let Some(from_index) = queue.pop_first() {
+            order.push(from_index);
+            for to_index in std::mem::take(outgoing.entry(from_index).or_default()) {
+                let incoming = incoming.entry(to_index).or_default();
+                incoming.remove(&from_index);
+                if incoming.is_empty() {
+                    queue.insert(to_index);
+                }
+            }
+        }
+
+        order.into_iter().map(|index| CellRef { design: self, index })
+    }
+
     pub fn compact(&mut self) {
         self.apply();
 
@@ -312,13 +379,12 @@ impl Design {
         while let Some(index) = queue.pop_first() {
             keep.insert(index);
             let cell = &self.cells[index];
-            cell.visit(|net| match self.find_cell(net) {
-                Ok((cell_ref, _offset)) => {
+            cell.visit(|net| {
+                if let Ok((cell_ref, _offset)) = self.find_cell(net) {
                     if !keep.contains(&cell_ref.index) {
                         queue.insert(cell_ref.index);
                     }
                 }
-                Err(_trit) => (),
             });
         }
 
@@ -349,25 +415,13 @@ impl Design {
 
 impl Display for Design {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let mut cell_index_map = BTreeMap::new();
-        for (index, cell) in self.cells.iter().enumerate() {
-            match cell {
-                Cell::Skip(_) => (),
-                _ => {
-                    cell_index_map.insert(index, cell_index_map.len());
-                }
-            }
-        }
-
-        let cell_ident = |cell_ref: CellRef| cell_index_map.get(&cell_ref.index).unwrap();
-
         let write_net = |f: &mut std::fmt::Formatter, net: Net| -> std::fmt::Result {
             match self.find_cell(net) {
                 Ok((cell_ref, offset)) => {
                     if cell_ref.output().len() == 1 {
-                        write!(f, "%{}", cell_ident(cell_ref))
+                        write!(f, "%{}", cell_ref.index)
                     } else {
-                        write!(f, "%{}.{}", cell_ident(cell_ref), offset)
+                        write!(f, "%{}+{}", cell_ref.index, offset)
                     }
                 }
                 Err(trit) => write!(f, "{}", trit),
@@ -378,24 +432,24 @@ impl Display for Design {
             if value.len() == 0 {
                 return write!(f, "{{}}");
             }
-            match self.find_cell(value[0]) {
-                Ok((cell_ref, _offset)) if *value == cell_ref.output() => {
-                    write!(f, "%{}", cell_ident(cell_ref))
-                }
-                _ => {
-                    if value.len() == 1 {
-                        write_net(f, value[0])
-                    } else {
-                        write!(f, "{{")?;
-                        for net in value {
-                            write!(f, " ")?;
-                            write_net(f, net)?;
-                        }
-                        write!(f, " }}")?;
-                        Ok(())
-                    }
+            if let Ok((cell_ref, _offset)) = self.find_cell(value[0]) {
+                if *value == cell_ref.output() {
+                    return write!(f, "%{}", cell_ref.index);
                 }
             }
+            if let Some(value) = value.as_const() {
+                return write!(f, "{}", value);
+            }
+            if value.len() == 1 {
+                return write_net(f, value[0]);
+            }
+            write!(f, "{{")?;
+            for net in value {
+                write!(f, " ")?;
+                write_net(f, net)?;
+            }
+            write!(f, " }}")?;
+            Ok(())
         };
 
         let write_control = |f: &mut std::fmt::Formatter, name: &str, control_net: &ControlNet| -> std::fmt::Result {
@@ -423,7 +477,7 @@ impl Display for Design {
                     if self.ios[name].len() == 1 {
                         write!(f, "{:?}", name)
                     } else {
-                        write!(f, "{:?}.{}", name, offset)
+                        write!(f, "{:?}+{}", name, offset)
                     }
                 }
                 None => write!(f, "<invalid>"),
@@ -458,13 +512,9 @@ impl Display for Design {
             write!(f, "#{:?}:{}\n", name, range.len())?;
         }
 
-        for (index, cell) in self.cells.iter().enumerate() {
-            if let Cell::Skip(_) = cell {
-                continue;
-            }
-
-            write!(f, "%{}:{} = ", cell_index_map.get(&index).unwrap(), cell.output_len())?;
-            match &*cell.repr() {
+        for cell_ref in self.iter_cells() {
+            write!(f, "%{}:{} = ", cell_ref.index, cell_ref.output_len())?;
+            match &*cell_ref.repr() {
                 CellRepr::Buf(arg) => write_cell(f, "buf", &[arg])?,
                 CellRepr::Not(arg) => write_cell(f, "not", &[arg])?,
                 CellRepr::And(arg1, arg2) => write_cell(f, "and", &[arg1, arg2])?,

@@ -14,7 +14,7 @@ pub fn iob_insert(design: &mut Design) {
                 design.add_iob(IoBuffer {
                     io: design.add_io(name, value.len()),
                     output: value.clone(),
-                    enable: ControlNet::Pos(Net::ONE)
+                    enable: ControlNet::Pos(Net::ONE),
                 });
                 cell.unalive();
             }

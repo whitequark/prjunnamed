@@ -1,10 +1,10 @@
 use std::ops::{Index, IndexMut, Range};
 use std::slice::SliceIndex;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct IoNet(pub u32);
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
 pub struct IoValue {
     nets: Vec<IoNet>,
 }

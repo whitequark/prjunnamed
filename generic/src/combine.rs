@@ -33,6 +33,10 @@ pub fn combine(design: &mut Design) {
         [PXor@y [PAny]     [PUndef]]   => design.replace_value(&y, Value::undef(y.len()));
         [PXor@y [PUndef]   [PAny]]     => design.replace_value(&y, Value::undef(y.len()));
 
+        [PXor@y [PNot [PAny@a]] [PNot [PAny@b]]]  => design.replace_value(&y, design.add_xor(a, b));
+        [PXor@y [PNot [PAny@a]] [PAny@b]]         => design.replace_value(&y, design.add_not(design.add_xor(a, b)));
+        [PXor@y [PAny@a]        [PNot [PAny@b]]]  => design.replace_value(&y, design.add_not(design.add_xor(a, b)));
+
         [PMux@y [POnes]    [PAny@a]   [PAny]]     => design.replace_value(y, a);
         [PMux@y [PZero]    [PAny]     [PAny@b]]   => design.replace_value(y, b);
         [PMux@y [PAny]     [PAny@a]   [PUndef]]   => design.replace_value(y, a);
@@ -47,21 +51,30 @@ pub fn combine(design: &mut Design) {
         [PAdc@y [PZero]    [PZero]    [PAny@c]]   => design.replace_value(&y, c.zext(y.len()));
 
         [PEq@y  [PConst@a] [PConst@b]] => design.replace_value(y, a.eq(b));
+        [PEq@y  [PAny@a]   [POnes]]    if (a.len() == 1) => design.replace_value(y, a);
+        [PEq@y  [POnes]    [PAny@a]]   if (a.len() == 1) => design.replace_value(y, a);
+        [PEq@y  [PAny@a]   [PZero]]    if (a.len() == 1) => design.replace_value(y, design.add_not(a));
+        [PEq@y  [PZero]    [PAny@a]]   if (a.len() == 1) => design.replace_value(y, design.add_not(a));
+        [PEq@y  [PAny@a]   [PAny@b]]   if (a == b) => design.replace_value(y, Trit::One);
+
         [PULt@y [PConst@a] [PConst@b]] => design.replace_value(y, a.ult(b));
+        [PULt@y [PAny]     [PZero]]    => design.replace_value(y, Trit::Zero);
+        [PULt@y [POnes]    [PAny]]     => design.replace_value(y, Trit::Zero);
+        [PULt@y [PAny@a]   [PAny@b]]   if (a == b) => design.replace_value(y, Trit::Zero);
+
         [PSLt@y [PConst@a] [PConst@b]] => design.replace_value(y, a.slt(b));
-
-        [PEq@y  [PAny@a] [PAny@b]]     if (a == b) => design.replace_value(y, Trit::One);
-        [PULt@y [PAny@a] [PAny@b]]     if (a == b) => design.replace_value(y, Trit::Zero);
-        [PSLt@y [PAny@a] [PAny@b]]     if (a == b) => design.replace_value(y, Trit::Zero);
-
-        [PULt@y [PAny]  [PZero]]       => design.replace_value(y, Trit::Zero);
-        [PULt@y [POnes] [PAny]]        => design.replace_value(y, Trit::Zero);
+        [PSLt@y [PAny@a]   [PAny@b]]   if (a == b) => design.replace_value(y, Trit::Zero);
     };
 
     for cell_ref in design.iter_cells() {
-        // rules(design, &cell_ref.output());
+        let mut matched = false;
         for net in &cell_ref.output() {
-            rules(design, &Value::from(net));
+            if rules(design, &Value::from(net)) {
+                matched = true;
+            }
+        }
+        if !matched {
+            rules(design, &cell_ref.output());
         }
     }
     design.compact();

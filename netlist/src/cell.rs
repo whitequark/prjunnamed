@@ -3,7 +3,7 @@
 //
 
 use core::ops::Range;
-use std::{borrow::Cow, collections::BTreeMap, fmt::Display};
+use std::{borrow::Cow, collections::BTreeMap, fmt::Display, hash::Hash};
 
 use crate::{Const, ControlNet, IoValue, Net, Value};
 
@@ -24,7 +24,7 @@ pub(crate) enum Cell {
 
 // General representation of a cell. Canonicalized to use a space-optimized representation
 // wherever possible.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum CellRepr {
     Buf(Value),
     Not(Value),
@@ -67,21 +67,21 @@ impl CellRepr {
         match self {
             CellRepr::Buf(_) => (),
             CellRepr::Not(_) => (),
-            CellRepr::And(arg1, arg2) |
-            CellRepr::Or(arg1, arg2) |
-            CellRepr::Xor(arg1, arg2) |
-            CellRepr::Mux(_, arg1, arg2) |
-            CellRepr::Adc(arg1, arg2, _) |
-            CellRepr::Eq(arg1, arg2) |
-            CellRepr::ULt(arg1, arg2) |
-            CellRepr::Mul(arg1, arg2) |
-            CellRepr::UDiv(arg1, arg2) |
-            CellRepr::UMod(arg1, arg2) => assert_eq!(arg1.len(), arg2.len()),
-            CellRepr::SLt(arg1, arg2) |
-            CellRepr::SDivTrunc(arg1, arg2) |
-            CellRepr::SDivFloor(arg1, arg2) |
-            CellRepr::SModTrunc(arg1, arg2) |
-            CellRepr::SModFloor(arg1, arg2) => {
+            CellRepr::And(arg1, arg2)
+            | CellRepr::Or(arg1, arg2)
+            | CellRepr::Xor(arg1, arg2)
+            | CellRepr::Mux(_, arg1, arg2)
+            | CellRepr::Adc(arg1, arg2, _)
+            | CellRepr::Eq(arg1, arg2)
+            | CellRepr::ULt(arg1, arg2)
+            | CellRepr::Mul(arg1, arg2)
+            | CellRepr::UDiv(arg1, arg2)
+            | CellRepr::UMod(arg1, arg2) => assert_eq!(arg1.len(), arg2.len()),
+            CellRepr::SLt(arg1, arg2)
+            | CellRepr::SDivTrunc(arg1, arg2)
+            | CellRepr::SDivFloor(arg1, arg2)
+            | CellRepr::SModTrunc(arg1, arg2)
+            | CellRepr::SModFloor(arg1, arg2) => {
                 assert_eq!(arg1.len(), arg2.len());
                 assert!(arg1.len() > 0);
             }
@@ -185,7 +185,6 @@ impl Cell {
         }
     }
 
-    #[allow(dead_code)]
     pub(crate) fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
             Cell::Skip(_) => unreachable!(),
@@ -262,7 +261,7 @@ impl CellRepr {
         }
     }
 
-    pub(crate) fn visit(&self, mut f: impl FnMut(Net)) {
+    pub fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
             CellRepr::Buf(arg) | CellRepr::Not(arg) => arg.visit(&mut f),
             CellRepr::And(arg1, arg2) => {
@@ -355,8 +354,7 @@ impl CellRepr {
         }
     }
 
-    #[allow(dead_code)]
-    pub(crate) fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
+    pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
             CellRepr::Buf(arg) | CellRepr::Not(arg) => arg.visit_mut(&mut f),
             CellRepr::And(arg1, arg2) => {
@@ -450,7 +448,7 @@ impl CellRepr {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FlipFlop {
     pub data: Value,
     pub clock: ControlNet,
@@ -514,7 +512,7 @@ impl FlipFlop {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct IoBuffer {
     pub io: IoValue,
     pub output: Value,
@@ -545,6 +543,32 @@ pub enum ParamValue {
     Float(f64),
 }
 
+impl PartialEq for ParamValue {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Const(lft), Self::Const(rgt)) => lft == rgt,
+            (Self::Int(lft), Self::Int(rgt)) => lft == rgt,
+            (Self::String(lft), Self::String(rgt)) => lft == rgt,
+            (Self::Float(lft), Self::Float(rgt)) => lft.to_bits() == rgt.to_bits(),
+            _ => false,
+        }
+    }
+}
+
+impl Eq for ParamValue {}
+
+impl Hash for ParamValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            ParamValue::Const(val) => val.hash(state),
+            ParamValue::Int(val) => val.hash(state),
+            ParamValue::String(val) => val.hash(state),
+            ParamValue::Float(val) => val.to_bits().hash(state),
+        }
+    }
+}
+
 impl Display for ParamValue {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
@@ -556,7 +580,7 @@ impl Display for ParamValue {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Instance {
     pub reference: String,
     pub parameters: BTreeMap<String, ParamValue>,

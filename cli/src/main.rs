@@ -18,17 +18,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         prjunnamed_generic::combine(design);
         print!("; {} (combine 1)\n{}", name, design);
 
+        prjunnamed_generic::merge(design);
+        print!("; {} (merge 1)\n{}", name, design);
+
         prjunnamed_generic::lower(design);
         print!("; {} (lower)\n{}", name, design);
 
-        prjunnamed_generic::iob_insert(design);
-        print!("; {} (iob_insert)\n{}", name, design);
-
         prjunnamed_generic::combine(design);
         print!("; {} (combine 2)\n{}", name, design);
+
+        prjunnamed_generic::merge(design);
+        print!("; {} (merge 2)\n{}", name, design);
+
+        // prjunnamed_generic::iob_insert(design);
+        // print!("; {} (iob_insert)\n{}", name, design);
     }
 
-    prjunnamed_yosys_json::export(&mut File::create(output)?, design_bundle)?;
+    if !output.is_empty() {
+        prjunnamed_yosys_json::export(&mut File::create(output)?, design_bundle)?;
+    }
 
     Ok(())
 }

@@ -20,6 +20,7 @@ macro_rules! netlist_rules {
         let pattern = netlist_rules!( @NEW@ [ $($pat)* ] );
         if let Some(netlist_rules!( @PAT@ [ $($pat)* ] )) = pattern.execute($design, $value) {
             if true $( && $cond )? {
+                // println!("-> {}", stringify!([ $($pat)* ] $( if $cond )?));
                 $run;
                 return true
             }

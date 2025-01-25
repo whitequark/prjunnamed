@@ -7,7 +7,7 @@ use std::{
 
 use crate::{Net, Trit};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Const {
     trits: Vec<Trit>,
 }
@@ -234,7 +234,7 @@ impl<I: SliceIndex<[Trit]>> IndexMut<I> for Const {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Value {
     nets: Vec<Net>,
 }
@@ -361,7 +361,7 @@ impl Value {
         if shcnt >= self.len() {
             return Value::zero(self.len());
         }
-        return Value::from(&self[shcnt..]).zext(self.len())
+        return Value::from(&self[shcnt..]).zext(self.len());
     }
 
     pub fn sshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -373,7 +373,7 @@ impl Value {
         if shcnt >= self.len() {
             return Value::from(self.msb()).sext(self.len());
         }
-        return Value::from(&self[shcnt..]).sext(self.len())
+        return Value::from(&self[shcnt..]).sext(self.len());
     }
 
     pub fn xshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -385,13 +385,21 @@ impl Value {
         if shcnt >= self.len() {
             return Value::undef(self.len());
         }
-        return Value::from(&self[shcnt..]).concat(Value::undef(shcnt))
+        return Value::from(&self[shcnt..]).concat(Value::undef(shcnt));
     }
 }
 
-impl From<&Value> for Value {
-    fn from(value: &Value) -> Self {
-        value.clone()
+impl Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "Value(")?;
+        for (index, net) in self.nets.iter().enumerate() {
+            if index != 0 {
+                write!(f, ", ")?;
+            }
+            write!(f, "{:?}", net)?;
+        }
+        write!(f, ")")?;
+        Ok(())
     }
 }
 
@@ -406,6 +414,27 @@ impl<I: SliceIndex<[Net]>> Index<I> for Value {
 impl<I: SliceIndex<[Net]>> IndexMut<I> for Value {
     fn index_mut(&mut self, index: I) -> &mut Self::Output {
         &mut self.nets[index]
+    }
+}
+
+impl FromIterator<Net> for Value {
+    fn from_iter<T: IntoIterator<Item = Net>>(iter: T) -> Self {
+        Value { nets: iter.into_iter().collect() }
+    }
+}
+
+impl IntoIterator for &Value {
+    type Item = Net;
+    type IntoIter = std::vec::IntoIter<Net>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.nets.clone().into_iter()
+    }
+}
+
+impl From<&Value> for Value {
+    fn from(value: &Value) -> Self {
+        value.clone()
     }
 }
 
@@ -448,35 +477,6 @@ impl From<&Const> for Value {
 impl From<Const> for Value {
     fn from(value: Const) -> Self {
         Value::from(&value)
-    }
-}
-
-impl FromIterator<Net> for Value {
-    fn from_iter<T: IntoIterator<Item = Net>>(iter: T) -> Self {
-        Value { nets: iter.into_iter().collect() }
-    }
-}
-
-impl IntoIterator for &Value {
-    type Item = Net;
-    type IntoIter = std::vec::IntoIter<Net>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.nets.clone().into_iter()
-    }
-}
-
-impl Debug for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Value(")?;
-        for (index, net) in self.nets.iter().enumerate() {
-            if index != 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{:?}", net)?;
-        }
-        write!(f, ")")?;
-        Ok(())
     }
 }
 

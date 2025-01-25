@@ -69,7 +69,8 @@ fn export_module(design: Design) -> yosys::Module {
     let indexer = NetlistIndexer::new();
     let mut ys_module = yosys::Module::new();
 
-    for (cell_index, cell_ref) in design.iter_cells().enumerate() {
+    for cell_ref in design.iter_cells() {
+        let cell_index = cell_ref.debug_index();
         let output = cell_ref.output();
 
         let ys_cell_name = format!("${}", cell_index);
@@ -301,9 +302,7 @@ fn export_module(design: Design) -> yosys::Module {
             CellRepr::Output(port_name, value) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Output, indexer.value(value)))
             }
-            CellRepr::Name(name, value) => {
-                ys_module.netnames.add(name, NetDetails::new(indexer.value(value)))
-            }
+            CellRepr::Name(name, value) => ys_module.netnames.add(name, NetDetails::new(indexer.value(value))),
         };
 
         NetDetails::new(indexer.value(&output)).add_to(&format!("{}$out", ys_cell_name), &mut ys_module);

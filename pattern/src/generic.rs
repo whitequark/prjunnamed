@@ -47,7 +47,7 @@ macro_rules! pattern {
                 )+
                 $body
                 $(
-                    let $cap = match self.$cap.execute($design, &Value::from_iter($cap)) {
+                    let $cap = match self.$cap.execute($design, &$design.map_value(Value::from_iter($cap))) {
                         Some(capture) => capture,
                         _ => return None
                     };
@@ -63,12 +63,13 @@ macro_rules! pattern {
         pattern! {
             cell $patname(cap: P1) => |design, value| {
                 for net in value {
-                    match design.find_cell(net) {
-                        Ok((cell_ref, offset)) => match &*cell_ref.repr() {
+                    if let Ok((cell_ref, offset)) = design.find_cell(net) {
+                        match &*cell_ref.repr() {
                             CellRepr::$cellname(value) => cap.push(value[offset]),
-                            _ => return None,
-                        },
-                        Err(_trit) => return None,
+                            _ => return None
+                        }
+                    } else {
+                        return None
                     }
                 }
             };
@@ -81,15 +82,16 @@ macro_rules! pattern {
         pattern! {
             cell $patname(cap1: P1, cap2: P2) => |design, value| {
                 for net in value {
-                    match design.find_cell(net) {
-                        Ok((cell_ref, offset)) => match &*cell_ref.repr() {
+                    if let Ok((cell_ref, offset)) = design.find_cell(net) {
+                        match &*cell_ref.repr() {
                             CellRepr::$cellname(val1, val2) => {
                                 cap1.push(val1[offset]);
                                 cap2.push(val2[offset]);
                             }
-                            _ => return None,
-                        },
-                        Err(_trit) => return None,
+                            _ => return None
+                        }
+                    } else {
+                        return None
                     }
                 }
             };
@@ -102,15 +104,16 @@ macro_rules! pattern {
         pattern! {
             cell $patname(cap1: P1, cap2: P2) => |design, value| {
                 if value.len() != 1 { return None }
-                match design.find_cell(value[0]) {
-                    Ok((cell_ref, _offset)) => match &*cell_ref.repr() {
+                if let Ok((cell_ref, _offset)) = design.find_cell(value[0]) {
+                    match &*cell_ref.repr() {
                         CellRepr::$cellname(val1, val2) => {
                             cap1 = Vec::from_iter(val1);
                             cap2 = Vec::from_iter(val2);
                         }
-                        _ => return None,
-                    },
-                    Err(_trit) => return None,
+                        _ => return None
+                    }
+                } else {
+                    return None
                 }
             };
 
@@ -122,15 +125,16 @@ macro_rules! pattern {
         pattern! {
             cell $patname(cap1: P1, cap2: P2) => |design, value| {
                 if value.len() == 0 { return None }
-                match design.find_cell(value[0]) {
-                    Ok((cell_ref, 0)) => match &*cell_ref.repr() {
+                if let Ok((cell_ref, 0)) = design.find_cell(value[0]) {
+                    match &*cell_ref.repr() {
                         CellRepr::$cellname(val1, val2) if cell_ref.output() == *value => {
                             cap1 = Vec::from_iter(val1);
                             cap2 = Vec::from_iter(val2);
                         }
                         _ => return None
-                    },
-                    _ => return None
+                    }
+                } else {
+                    return None
                 }
             };
 
@@ -169,8 +173,8 @@ pattern! {
     cell PMux(cap1: P1, cap2: P2, cap3: P3) => |design, value| {
         if value.len() == 0 { return None }
         for net in value {
-            match design.find_cell(net) {
-                Ok((cell_ref, offset)) => match &*cell_ref.repr() {
+            if let Ok((cell_ref, offset)) = design.find_cell(net) {
+                match &*cell_ref.repr() {
                     CellRepr::Mux(val1, val2, val3) => {
                         if cap1.len() == 0 {
                             cap1.push(*val1);
@@ -181,24 +185,26 @@ pattern! {
                         cap3.push(val3[offset]);
                     }
                     _ => return None,
-                },
-                Err(_trit) => return None,
+                }
+            } else {
+                return None
             }
         }
     };
 
     cell PAdc(cap1: P1, cap2: P2, cap3: P3) => |design, value| {
         if value.len() == 0 { return None }
-        match design.find_cell(value[0]) {
-            Ok((cell_ref, 0)) => match &*cell_ref.repr() {
+        if let Ok((cell_ref, 0)) = design.find_cell(value[0]) {
+            match &*cell_ref.repr() {
                 CellRepr::Adc(val1, val2, val3) if cell_ref.output() == *value => {
                     cap1 = Vec::from_iter(val1);
                     cap2 = Vec::from_iter(val2);
                     cap3 = vec![*val3];
                 }
                 _ => return None
-            },
-            _ => return None
+            }
+        } else {
+            return None
         }
     };
 

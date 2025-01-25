@@ -193,7 +193,7 @@ impl Debug for Net {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ControlNet {
     Pos(Net),
     Neg(Net),
