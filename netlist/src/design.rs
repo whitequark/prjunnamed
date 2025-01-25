@@ -99,12 +99,14 @@ impl Design {
         CellIter { design: self, index: 0 }
     }
 
-    pub fn replace_net(&self, from_net: Net, to_net: Net) {
+    pub fn replace_net(&self, from_net: impl Into<Net>, to_net: impl Into<Net>) {
+        let (from_net, to_net) = (from_net.into(), to_net.into());
         let mut changes = self.changes.borrow_mut();
         assert_eq!(changes.replaced_nets.insert(from_net, to_net), None);
     }
 
-    pub fn replace_value(&self, from_value: &Value, to_value: &Value) {
+    pub fn replace_value<'a, 'b>(&self, from_value: impl Into<Cow<'a, Value>>, to_value: impl Into<Cow<'b, Value>>) {
+        let (from_value, to_value) = (from_value.into(), to_value.into());
         assert_eq!(from_value.len(), to_value.len());
         for (from_net, to_net) in from_value.into_iter().zip(to_value.into_iter()) {
             self.replace_net(from_net, to_net);
@@ -113,22 +115,22 @@ impl Design {
 
     pub fn apply(&mut self) {
         let changes = self.changes.get_mut();
-        if !changes.replaced_nets.is_empty() {
-            for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, Cell::Skip(_))) {
-                cell.visit_mut(|net| {
-                    if let Some(new_net) = changes.replaced_nets.get(net) {
-                        *net = *new_net;
-                    }
-                });
-            }
-            changes.replaced_nets.clear();
-        }
         for (index, cell) in std::mem::take(&mut changes.replaced_cells) {
             assert_eq!(self.cells[index].output_len(), cell.output_len());
             self.cells[index] = cell.into();
         }
         self.ios.extend(std::mem::take(&mut changes.added_ios));
         self.cells.extend(std::mem::take(&mut changes.added_cells));
+        if !changes.replaced_nets.is_empty() {
+            for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, Cell::Skip(_))) {
+                cell.visit_mut(|net| {
+                    while let Some(new_net) = changes.replaced_nets.get(net) {
+                        *net = *new_net;
+                    }
+                });
+            }
+            changes.replaced_nets.clear();
+        }
     }
 }
 
@@ -151,12 +153,12 @@ impl<'a> CellRef<'a> {
         self.design.cells[self.index].repr()
     }
 
-    pub fn output(&self) -> Value {
-        Value::cell(self.index, self.output_len())
-    }
-
     pub fn output_len(&self) -> usize {
         self.design.cells[self.index].output_len()
+    }
+
+    pub fn output(&self) -> Value {
+        Value::cell(self.index, self.output_len())
     }
 
     pub fn visit(&self, f: impl FnMut(Net)) {
@@ -282,6 +284,8 @@ impl Design {
 
 impl Design {
     pub fn compact(&mut self) {
+        self.apply();
+
         let mut queue = BTreeSet::new();
         for (index, cell) in self.cells.iter().enumerate() {
             if let Cell::Skip(_) = cell {

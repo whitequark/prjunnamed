@@ -416,7 +416,7 @@ impl ModuleImporter<'_> {
                 }
                 if y_width == 0 {
                     value = Value::EMPTY;
-                } else if width > 1 {
+                } else if y_width > 1 {
                     value = value.zext(width);
                 }
                 self.port_drive(cell, "Y", value);
@@ -556,7 +556,7 @@ impl ModuleImporter<'_> {
                     parameters.insert(name.clone(), val);
                 }
                 let output = self.design.add_other(Instance {
-                    reference: cell.type_.strip_prefix('\\').unwrap().to_string(),
+                    reference: cell.type_.strip_prefix('\\').unwrap_or(cell.type_.as_str()).to_string(),
                     parameters,
                     inputs,
                     outputs,

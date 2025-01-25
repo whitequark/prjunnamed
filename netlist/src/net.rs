@@ -1,10 +1,27 @@
-use std::{fmt::Debug, u32};
+use std::{fmt::Debug, borrow::Cow};
+use crate::Const;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Trit {
     Undef,
     Zero,
     One,
+}
+
+impl Trit {
+    pub fn mux<'a, 'b>(self, arg1: impl Into<Cow<'a, Const>>, arg2: impl Into<Cow<'b, Const>>) -> Const {
+        let arg1 = arg1.into();
+        let arg2 = arg2.into();
+        match self {
+            Trit::One => arg1.into_owned(),
+            Trit::Zero => arg2.into_owned(),
+            Trit::Undef => {
+                Const::from_iter(
+                    arg1.into_iter().zip(arg2.into_iter()).map(|(x, y)| if x == y { x } else { Trit::Undef }),
+                )
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for Trit {
@@ -22,6 +39,61 @@ impl From<bool> for Trit {
         match value {
             false => Trit::Zero,
             true => Trit::One,
+        }
+    }
+}
+
+impl std::ops::Not for Trit {
+    type Output = Trit;
+
+    fn not(self) -> Self::Output {
+        match self {
+            Trit::One => Trit::Zero,
+            Trit::Zero => Trit::One,
+            Trit::Undef => Trit::Undef,
+        }
+    }
+}
+
+impl std::ops::BitAnd<Trit> for Trit {
+    type Output = Trit;
+
+    fn bitand(self, rhs: Trit) -> Self::Output {
+        match (self, rhs) {
+            (Trit::Zero, _) => Trit::Zero,
+            (_, Trit::Zero) => Trit::Zero,
+            (Trit::Undef, _) => Trit::Undef,
+            (_, Trit::Undef) => Trit::Undef,
+            (Trit::One, Trit::One) => Trit::One,
+        }
+    }
+}
+
+impl std::ops::BitOr<Trit> for Trit {
+    type Output = Trit;
+
+    fn bitor(self, rhs: Trit) -> Self::Output {
+        match (self, rhs) {
+            (Trit::One, _) => Trit::One,
+            (_, Trit::One) => Trit::One,
+            (Trit::Undef, _) => Trit::Undef,
+            (_, Trit::Undef) => Trit::Undef,
+            (Trit::Zero, Trit::Zero) => Trit::Zero,
+        }
+    }
+}
+
+impl std::ops::BitXor<Trit> for Trit {
+    type Output = Trit;
+
+    fn bitxor(self, rhs: Trit) -> Self::Output {
+        match (self, rhs) {
+            (Trit::Undef, _) => Trit::Undef,
+            (_, Trit::Undef) => Trit::Undef,
+            (Trit::One, Trit::One) => Trit::Zero,
+            (Trit::One, Trit::Zero) => Trit::One,
+            (Trit::Zero, Trit::One) => Trit::One,
+            (Trit::Zero, Trit::Zero) => Trit::Zero,
         }
     }
 }

@@ -1,5 +1,5 @@
 [package]
-name = "prjunnamed-pass"
+name = "prjunnamed-pattern"
 edition.workspace = true
 version.workspace = true
 license.workspace = true

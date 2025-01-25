@@ -1,5 +1,5 @@
 [package]
-name = "cli"
+name = "prjunnamed-generic"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -8,6 +8,4 @@ authors.workspace = true
 
 [dependencies]
 prjunnamed-netlist.workspace = true
-prjunnamed-generic.workspace = true
-prjunnamed-yosys_json.workspace = true
-argparse.workspace = true
+prjunnamed-pattern.workspace = true

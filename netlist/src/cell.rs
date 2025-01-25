@@ -43,6 +43,7 @@ pub enum CellRepr {
     SShr(Value, Value, u32),
     XShr(Value, Value, u32),
 
+    // future possibilities: popcnt, count leading/trailing zeros, powers
     Mul(Value, Value),
     UDiv(Value, Value),
     UMod(Value, Value),
@@ -51,12 +52,11 @@ pub enum CellRepr {
     SModTrunc(Value, Value),
     SModFloor(Value, Value),
 
-    // future possibilities: popcnt, count leading/trailing zeros, powers
+    // TODO: memory
     Dff(FlipFlop),
     Iob(IoBuffer),
     Other(Instance),
 
-    // TODO: memory
     Input(String, usize),
     Output(String, Value),
 }

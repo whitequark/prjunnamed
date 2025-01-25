@@ -2,6 +2,7 @@ use std::{
     fmt::{Debug, Display},
     ops::{Index, IndexMut},
     slice::SliceIndex,
+    borrow::Cow,
 };
 
 use crate::{Net, Trit};
@@ -40,6 +41,14 @@ impl Const {
         self.trits.iter().all(|&trit| trit == Trit::Undef)
     }
 
+    pub fn has_undef(&self) -> bool {
+        self.trits.iter().any(|&trit| trit == Trit::Undef)
+    }
+
+    pub fn msb(&self) -> Trit {
+        self.trits[self.len() - 1]
+    }
+
     pub fn from_uint(val: u128, bits: usize) -> Self {
         let mut trits = vec![];
         if bits < 128 {
@@ -50,6 +59,102 @@ impl Const {
             trits.push(trit);
         }
         Self { trits }
+    }
+
+    pub fn not(&self) -> Const {
+        Const::from_iter(self.into_iter().map(|x| !x))
+    }
+
+    pub fn and<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
+        let other = other.into();
+        assert_eq!(self.len(), other.len());
+        Const::from_iter(self.into_iter().zip(other.into_iter()).map(|(x, y)| x & y))
+    }
+
+    pub fn or<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
+        let other = other.into();
+        assert_eq!(self.len(), other.len());
+        Const::from_iter(self.into_iter().zip(other.into_iter()).map(|(x, y)| x | y))
+    }
+
+    pub fn xor<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
+        let other = other.into();
+        assert_eq!(self.len(), other.len());
+        Const::from_iter(self.into_iter().zip(other.into_iter()).map(|(x, y)| x ^ y))
+    }
+
+    pub fn adc<'a>(&self, other: impl Into<Cow<'a, Const>>, ci: Trit) -> Const {
+        let other = other.into();
+        assert_eq!(self.len(), other.len());
+        let mut sum = vec![];
+        let mut carry = ci;
+        for (x, y) in self.into_iter().zip(other.into_iter()) {
+            let (s, co) = match (x, y, carry) {
+                (Trit::Undef, _, _) => (Trit::Undef, Trit::Undef),
+                (_, Trit::Undef, _) => (Trit::Undef, Trit::Undef),
+                (_, _, Trit::Undef) => (Trit::Undef, Trit::Undef),
+                (Trit::Zero, Trit::Zero, s) => (s, Trit::Zero),
+                (Trit::Zero, s, Trit::Zero) => (s, Trit::Zero),
+                (s, Trit::Zero, Trit::Zero) => (s, Trit::Zero),
+                (Trit::One, Trit::One, s) => (s, Trit::One),
+                (Trit::One, s, Trit::One) => (s, Trit::One),
+                (s, Trit::One, Trit::One) => (s, Trit::One),
+            };
+            carry = co;
+            sum.push(s);
+        }
+        sum.push(carry);
+        Const::from_iter(sum)
+    }
+
+    pub fn eq<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Trit {
+        let other = other.into();
+        assert_eq!(self.len(), other.len());
+        let mut undef = false;
+        for (x, y) in self.into_iter().zip(other.into_iter()) {
+            if x == Trit::Undef || y == Trit::Undef {
+                undef = true;
+            } else if x != y {
+                return Trit::Zero;
+            }
+        }
+        if undef {
+            Trit::Undef
+        } else {
+            Trit::One
+        }
+    }
+
+    pub fn ult<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Trit {
+        let other = other.into();
+        assert_eq!(self.len(), other.len());
+        if self.has_undef() || other.has_undef() {
+            Trit::Undef
+        } else {
+            for (x, y) in self.into_iter().zip(other.into_iter()).rev() {
+                if x != y {
+                    return Trit::from(x < y);
+                }
+            }
+            Trit::Zero
+        }
+    }
+
+    pub fn slt<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Trit {
+        let other = other.into();
+        assert_eq!(self.len(), other.len());
+        if self.has_undef() || other.has_undef() {
+            Trit::Undef
+        } else if self.msb() != other.msb() {
+            Trit::from(self.msb() > other.msb())
+        } else {
+            for (x, y) in self.into_iter().zip(other.into_iter()).rev() {
+                if x != y {
+                    return Trit::from(x < y);
+                }
+            }
+            Trit::Zero
+        }
     }
 }
 
@@ -103,9 +208,50 @@ impl Display for Const {
     }
 }
 
+impl<'a> From<&'a Const> for Cow<'a, Const> {
+    fn from(value: &'a Const) -> Self {
+        Cow::Borrowed(value)
+    }
+}
+
+impl<'a> From<Const> for Cow<'a, Const> {
+    fn from(value: Const) -> Self {
+        Cow::Owned(value)
+    }
+}
+
+impl<I: SliceIndex<[Trit]>> Index<I> for Const {
+    type Output = I::Output;
+
+    fn index(&self, index: I) -> &Self::Output {
+        &self.trits[index]
+    }
+}
+
+impl<I: SliceIndex<[Trit]>> IndexMut<I> for Const {
+    fn index_mut(&mut self, index: I) -> &mut Self::Output {
+        &mut self.trits[index]
+    }
+}
+
 #[derive(Clone, PartialEq, Eq)]
 pub struct Value {
     nets: Vec<Net>,
+}
+
+fn shift_count(val: &Const, stride: u32) -> usize {
+    let stride = stride as usize;
+    let mut res: usize = 0;
+    for (i, trit) in val.into_iter().enumerate() {
+        if trit == Trit::One {
+            if i >= usize::BITS as usize {
+                return usize::MAX;
+            } else {
+                res |= 1 << i;
+            }
+        }
+    }
+    res.checked_mul(stride).unwrap_or(usize::MAX)
 }
 
 impl Value {
@@ -135,6 +281,14 @@ impl Value {
         self.nets.len()
     }
 
+    pub fn lsb(&self) -> Net {
+        self[0]
+    }
+
+    pub fn msb(&self) -> Net {
+        self[self.len() - 1]
+    }
+
     pub fn as_const(&self) -> Option<Const> {
         if self.nets.iter().all(|net| net.as_const().is_some()) {
             let mut trits = vec![];
@@ -159,7 +313,7 @@ impl Value {
         self.as_net().unwrap()
     }
 
-    pub fn concat(&self, other: impl Into<Value>) -> Self {
+    pub fn concat<'a>(&self, other: impl Into<Cow<'a, Value>>) -> Self {
         Self::from_iter(self.into_iter().chain(other.into().into_iter()))
     }
 
@@ -184,6 +338,54 @@ impl Value {
         for net in self.nets.iter_mut() {
             f(net)
         }
+    }
+
+    pub fn shl<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
+        let other = other.into();
+        if other.has_undef() {
+            return Value::undef(self.len());
+        }
+        let shcnt = shift_count(&*other, stride);
+        if shcnt >= self.len() {
+            return Value::zero(self.len());
+        }
+        return Value::zero(shcnt).concat(Value::from(&self[..self.len() - shcnt]));
+    }
+
+    pub fn ushr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
+        let other = other.into();
+        if other.has_undef() {
+            return Value::undef(self.len());
+        }
+        let shcnt = shift_count(&*other, stride);
+        if shcnt >= self.len() {
+            return Value::zero(self.len());
+        }
+        return Value::from(&self[shcnt..]).zext(self.len())
+    }
+
+    pub fn sshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
+        let other = other.into();
+        if other.has_undef() {
+            return Value::undef(self.len());
+        }
+        let shcnt = shift_count(&*other, stride);
+        if shcnt >= self.len() {
+            return Value::from(self.msb()).sext(self.len());
+        }
+        return Value::from(&self[shcnt..]).sext(self.len())
+    }
+
+    pub fn xshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
+        let other = other.into();
+        if other.has_undef() {
+            return Value::undef(self.len());
+        }
+        let shcnt = shift_count(&*other, stride);
+        if shcnt >= self.len() {
+            return Value::undef(self.len());
+        }
+        return Value::from(&self[shcnt..]).concat(Value::undef(shcnt))
     }
 }
 
@@ -216,6 +418,12 @@ impl From<Net> for Value {
 impl From<&Net> for Value {
     fn from(net: &Net) -> Self {
         Value { nets: vec![*net] }
+    }
+}
+
+impl From<Trit> for Value {
+    fn from(trit: Trit) -> Self {
+        Value { nets: vec![Net::from(trit)] }
     }
 }
 
@@ -269,6 +477,42 @@ impl Debug for Value {
         }
         write!(f, ")")?;
         Ok(())
+    }
+}
+
+impl From<Value> for Cow<'_, Value> {
+    fn from(value: Value) -> Self {
+        Cow::Owned(value)
+    }
+}
+
+impl From<Net> for Cow<'_, Value> {
+    fn from(value: Net) -> Self {
+        Cow::Owned(Value::from(value))
+    }
+}
+
+impl From<Trit> for Cow<'_, Value> {
+    fn from(value: Trit) -> Self {
+        Cow::Owned(Value::from(Net::from(value)))
+    }
+}
+
+impl From<&Const> for Cow<'_, Value> {
+    fn from(value: &Const) -> Self {
+        Cow::Owned(Value::from(value))
+    }
+}
+
+impl From<Const> for Cow<'_, Value> {
+    fn from(value: Const) -> Self {
+        Cow::Owned(Value::from(value))
+    }
+}
+
+impl<'a> From<&'a Value> for Cow<'a, Value> {
+    fn from(value: &'a Value) -> Self {
+        Cow::Borrowed(value)
     }
 }
 

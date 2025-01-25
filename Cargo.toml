@@ -2,14 +2,16 @@
 resolver = "3"
 members = [
     "netlist",
-    "pass",
+    "pattern",
+    "generic",
     "yosys_json",
     "cli",
 ]
 
 [workspace.dependencies]
 prjunnamed-netlist.path = "netlist"
-prjunnamed-pass.path = "pass"
+prjunnamed-pattern.path = "pattern"
+prjunnamed-generic.path = "generic"
 prjunnamed-yosys_json.path = "yosys_json"
 argparse = "0.2"
 json = "0.12"
