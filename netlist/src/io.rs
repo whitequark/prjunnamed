@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::ops::{Index, IndexMut, Range};
 use std::slice::SliceIndex;
 
@@ -10,6 +11,12 @@ pub struct IoValue {
 }
 
 impl IoValue {
+    pub const EMPTY: IoValue = IoValue { nets: vec![] };
+
+    pub fn from_range(range: Range<u32>) -> Self {
+        Self { nets: range.map(|i| IoNet(i)).collect() }
+    }
+
     pub fn len(&self) -> usize {
         self.nets.len()
     }
@@ -18,14 +25,20 @@ impl IoValue {
         self.nets.iter().copied()
     }
 
-    pub fn from_range(range: Range<u32>) -> Self {
-        Self { nets: range.map(|i| IoNet(i)).collect() }
+    pub fn concat<'a>(&self, other: impl Into<Cow<'a, IoValue>>) -> Self {
+        Self::from_iter(self.iter().chain(other.into().iter()))
     }
 }
 
 impl From<IoNet> for IoValue {
     fn from(value: IoNet) -> Self {
         Self { nets: vec![value] }
+    }
+}
+
+impl From<IoNet> for Cow<'_, IoValue> {
+    fn from(value: IoNet) -> Self {
+        Cow::Owned(IoValue::from(value))
     }
 }
 

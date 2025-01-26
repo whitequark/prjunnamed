@@ -1,4 +1,4 @@
-use std::{borrow::Cow, fmt::{Debug, Display}};
+use std::{borrow::Cow, fmt::{Debug, Display}, str::FromStr};
 use crate::{Const, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -39,6 +39,19 @@ impl From<bool> for Trit {
         match value {
             false => Trit::Zero,
             true => Trit::One,
+        }
+    }
+}
+
+impl FromStr for Trit {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "X" => Ok(Trit::Undef),
+            "0" => Ok(Trit::Zero),
+            "1" => Ok(Trit::One),
+            _ => Err(())
         }
     }
 }

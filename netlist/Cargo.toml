@@ -9,3 +9,6 @@ lints.workspace = true
 
 [features]
 trace = []
+
+[dependencies]
+yap.workspace = true

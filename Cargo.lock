@@ -36,6 +36,9 @@ dependencies = [
 [[package]]
 name = "prjunnamed-netlist"
 version = "0.1.0"
+dependencies = [
+ "yap",
+]
 
 [[package]]
 name = "prjunnamed-pattern"
@@ -50,5 +53,10 @@ version = "0.1.0"
 dependencies = [
  "json",
  "prjunnamed-netlist",
- "prjunnamed-pattern",
 ]
+
+[[package]]
+name = "yap"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bfe269e7b803a5e8e20cbd97860e136529cd83bf2c9c6d37b142467e7e1f051f"

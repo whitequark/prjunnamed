@@ -567,8 +567,8 @@ impl ModuleImporter<'_> {
                     parameters.insert(name.clone(), val);
                 }
                 let output = self.design.add_other(Instance {
-                    reference: cell.type_.strip_prefix('\\').unwrap_or(cell.type_.as_str()).to_string(),
-                    parameters,
+                    kind: cell.type_.strip_prefix('\\').unwrap_or(cell.type_.as_str()).to_string(),
+                    params: parameters,
                     inputs,
                     outputs,
                     ios,
@@ -597,12 +597,7 @@ impl ModuleImporter<'_> {
     }
 
     fn finalize(&mut self) {
-        use prjunnamed_pattern::{netlist_rules, patterns::*};
-
-        for cell_ref in self.design.iter_cells() {
-            let rules = netlist_rules! { [PBuf [PAny@a]] => a; };
-            rules(&self.design, &cell_ref.output());
-        }
+        self.design.replace_bufs();
         self.design.compact();
     }
 }

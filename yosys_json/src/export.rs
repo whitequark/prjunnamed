@@ -280,8 +280,8 @@ fn export_module(design: Design) -> yosys::Module {
             }
 
             CellRepr::Other(instance) => {
-                let mut ys_cell = CellDetails::new(&format!("\\{}", instance.reference));
-                for (name, value) in instance.parameters.iter() {
+                let mut ys_cell = CellDetails::new(&format!("\\{}", instance.kind));
+                for (name, value) in instance.params.iter() {
                     ys_cell = ys_cell.param(&name, value);
                 }
                 for (name, value) in instance.inputs.iter() {

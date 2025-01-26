@@ -1,8 +1,5 @@
 use std::{
-    fmt::{Debug, Display},
-    ops::{Index, IndexMut},
-    slice::SliceIndex,
-    borrow::Cow,
+    borrow::Cow, fmt::{Debug, Display}, ops::{Index, IndexMut}, slice::SliceIndex, str::FromStr
 };
 
 use crate::{Net, Trit};
@@ -187,6 +184,20 @@ impl From<Trit> for Const {
 impl From<Vec<Trit>> for Const {
     fn from(trits: Vec<Trit>) -> Self {
         Const { trits }
+    }
+}
+
+impl FromStr for Const {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let mut trits = vec![];
+        let mut chars = s.chars();
+        while let Some(char) = chars.next() {
+            trits.push(Trit::from_str(&String::from(char))?)
+        }
+        trits.reverse();
+        Ok(Const { trits })
     }
 }
 

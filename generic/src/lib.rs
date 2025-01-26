@@ -18,7 +18,9 @@ pub fn canonicalize(design: &mut Design) {
         let did_merge = merge::merge(design);
         let did_split = split::split(design);
         if !(did_simplify || did_merge || did_split) {
-            eprintln!(">canonicalize done");
+            if cfg!(feature = "trace") {
+                eprintln!(">canonicalize done");
+            }
             break;
         }
     }

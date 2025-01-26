@@ -1,9 +1,5 @@
-// on design:
-// - number of iovalues and naming for that
-//
-
 use core::ops::Range;
-use std::{borrow::Cow, collections::BTreeMap, fmt::Display, hash::Hash};
+use std::{borrow::Cow, collections::BTreeMap, hash::Hash};
 
 use crate::{Const, ControlNet, IoValue, Net, Value};
 
@@ -154,8 +150,8 @@ impl Cell {
             | Cell::And(_, _)
             | Cell::Or(_, _)
             | Cell::Xor(_, _)
-            | Cell::Mux(_, _, _)
-            | Cell::Adc(_, _, _) => 1,
+            | Cell::Mux(_, _, _) => 1,
+            Cell::Adc(_, _, _) => 2,
 
             Cell::Coarse(coarse) => coarse.output_len(),
         }
@@ -552,8 +548,8 @@ impl IoBuffer {
 pub enum ParamValue {
     Const(Const),
     Int(i64),
-    String(String),
     Float(f64),
+    String(String),
 }
 
 impl PartialEq for ParamValue {
@@ -561,8 +557,8 @@ impl PartialEq for ParamValue {
         match (self, other) {
             (Self::Const(lft), Self::Const(rgt)) => lft == rgt,
             (Self::Int(lft), Self::Int(rgt)) => lft == rgt,
-            (Self::String(lft), Self::String(rgt)) => lft == rgt,
             (Self::Float(lft), Self::Float(rgt)) => lft.to_bits() == rgt.to_bits(),
+            (Self::String(lft), Self::String(rgt)) => lft == rgt,
             _ => false,
         }
     }
@@ -576,27 +572,16 @@ impl Hash for ParamValue {
         match self {
             ParamValue::Const(val) => val.hash(state),
             ParamValue::Int(val) => val.hash(state),
-            ParamValue::String(val) => val.hash(state),
             ParamValue::Float(val) => val.to_bits().hash(state),
-        }
-    }
-}
-
-impl Display for ParamValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            ParamValue::Const(value) => write!(f, "const({})", value),
-            ParamValue::Int(value) => write!(f, "int({})", value),
-            ParamValue::String(value) => write!(f, "string({:?})", value),
-            ParamValue::Float(value) => write!(f, "float({})", value),
+            ParamValue::String(val) => val.hash(state),
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Instance {
-    pub reference: String,
-    pub parameters: BTreeMap<String, ParamValue>,
+    pub kind: String,
+    pub params: BTreeMap<String, ParamValue>,
     pub inputs: BTreeMap<String, Value>,
     pub outputs: BTreeMap<String, Range<usize>>,
     pub ios: BTreeMap<String, IoValue>,
