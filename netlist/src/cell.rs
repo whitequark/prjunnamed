@@ -15,6 +15,7 @@ pub(crate) enum Cell {
     Buf(Net),
     Not(Net),
     And(Net, Net),
+    Or(Net, Net),
     Xor(Net, Net),
     Mux(Net, Net, Net), // a ? b : c
     Adc(Net, Net, Net), // a + b + ci
@@ -117,6 +118,7 @@ impl Cell {
             Cell::Buf(arg) => Cow::Owned(CellRepr::Buf(Value::from(arg))),
             Cell::Not(arg) => Cow::Owned(CellRepr::Not(Value::from(arg))),
             Cell::And(arg1, arg2) => Cow::Owned(CellRepr::And(Value::from(arg1), Value::from(arg2))),
+            Cell::Or(arg1, arg2) => Cow::Owned(CellRepr::Or(Value::from(arg1), Value::from(arg2))),
             Cell::Xor(arg1, arg2) => Cow::Owned(CellRepr::Xor(Value::from(arg1), Value::from(arg2))),
             Cell::Mux(arg1, arg2, arg3) => Cow::Owned(CellRepr::Mux(arg1, Value::from(arg2), Value::from(arg3))),
             Cell::Adc(arg1, arg2, arg3) => Cow::Owned(CellRepr::Adc(Value::from(arg1), Value::from(arg2), arg3)),
@@ -132,6 +134,7 @@ impl From<CellRepr> for Cell {
             CellRepr::Buf(arg) if arg.len() == 1 => Cell::Buf(arg[0]),
             CellRepr::Not(arg) if arg.len() == 1 => Cell::Not(arg[0]),
             CellRepr::And(arg1, arg2) if arg1.len() == 1 && arg2.len() == 1 => Cell::And(arg1[0], arg2[0]),
+            CellRepr::Or(arg1, arg2) if arg1.len() == 1 && arg2.len() == 1 => Cell::Or(arg1[0], arg2[0]),
             CellRepr::Xor(arg1, arg2) if arg1.len() == 1 && arg2.len() == 1 => Cell::Xor(arg1[0], arg2[0]),
             CellRepr::Mux(arg1, arg2, arg3) if arg2.len() == 1 && arg3.len() == 1 => Cell::Mux(arg1, arg2[0], arg3[0]),
             CellRepr::Adc(arg1, arg2, arg3) if arg1.len() == 1 && arg2.len() == 1 => Cell::Adc(arg1[0], arg2[0], arg3),
@@ -149,6 +152,7 @@ impl Cell {
             Cell::Buf(_)
             | Cell::Not(_)
             | Cell::And(_, _)
+            | Cell::Or(_, _)
             | Cell::Xor(_, _)
             | Cell::Mux(_, _, _)
             | Cell::Adc(_, _, _) => 1,
@@ -164,6 +168,10 @@ impl Cell {
             Cell::Buf(arg) => arg.visit(&mut f),
             Cell::Not(arg) => arg.visit(&mut f),
             Cell::And(arg1, arg2) => {
+                arg1.visit(&mut f);
+                arg2.visit(&mut f);
+            }
+            Cell::Or(arg1, arg2) => {
                 arg1.visit(&mut f);
                 arg2.visit(&mut f);
             }
@@ -193,6 +201,10 @@ impl Cell {
             Cell::Buf(arg) => arg.visit_mut(&mut f),
             Cell::Not(arg) => arg.visit_mut(&mut f),
             Cell::And(arg1, arg2) => {
+                arg1.visit_mut(&mut f);
+                arg2.visit_mut(&mut f);
+            }
+            Cell::Or(arg1, arg2) => {
                 arg1.visit_mut(&mut f);
                 arg2.visit_mut(&mut f);
             }

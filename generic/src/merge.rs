@@ -74,6 +74,11 @@ pub fn merge(design: &mut Design) {
             CellRepr::Mul(arg1, arg2) => numberer.commutative_binary(CellRepr::Mul, arg1, arg2, &output),
             _ => numberer.find_or_insert(cell_repr, output.clone()),
         };
+        if cfg!(feature = "trace") {
+            if output != canon {
+                eprintln!(">merge {} => {}", design.display_value(&output), design.display_value(&canon));
+            }
+        }
         design.replace_value(output, canon);
     }
     design.compact();
