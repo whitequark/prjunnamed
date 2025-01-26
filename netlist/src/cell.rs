@@ -85,6 +85,7 @@ impl CellRepr {
                 assert_eq!(arg1.len(), arg2.len());
                 assert!(arg1.len() > 0);
             }
+
             CellRepr::Shl(_, _, _) => (),
             CellRepr::UShr(_, _, _) => (),
             CellRepr::SShr(arg1, _, _) => assert!(arg1.len() > 0),

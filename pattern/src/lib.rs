@@ -30,8 +30,13 @@ macro_rules! netlist_rules {
         let pattern = netlist_rules!( @NEW@ [ $($pat)* ] );
         match pattern.execute($design, $value) {
             Some(netlist_rules!( @PAT@ [ $($pat)* ] )) if true $( && $guard )? => {
-                println!("-> {}", stringify!([ $($pat)* ] $( if $guard )?));
-                $design.replace_value($value, $replace);
+                let replace = $replace;
+                println!("{}: {} => {}",
+                    stringify!([ $($pat)* ] $( if $guard )?),
+                    $design.display_value(&$value.clone()),
+                    $design.display_value(&Value::from(replace.clone()))
+                );
+                $design.replace_value($value, replace);
                 return true
             }
             _ => ()
@@ -52,6 +57,7 @@ macro_rules! netlist_rules {
 mod traits;
 mod simple;
 mod bitwise;
+mod shift;
 mod arithmetic;
 
 pub use traits::NetOrValue;
@@ -59,5 +65,6 @@ pub use traits::NetOrValue;
 pub mod patterns {
     pub use crate::simple::*;
     pub use crate::bitwise::*;
+    pub use crate::shift::*;
     pub use crate::arithmetic::*;
 }

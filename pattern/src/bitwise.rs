@@ -103,20 +103,21 @@ impl<T: NetOrValue, P1: Pattern<Net>, P2: Pattern<T>, P3: Pattern<T>> Pattern<T>
             if let Ok((cell_ref, offset)) = design.find_cell(net) {
                 if let CellRepr::Mux(arg1, arg2, arg3) = &*cell_ref.repr() {
                     if !NetOrValue::accumulate(&mut cap1, *arg1) {
-                        return None
+                        return None;
                     }
                     assert!(T::accumulate(&mut cap2, arg2[offset]));
                     assert!(T::accumulate(&mut cap3, arg3[offset]));
                 } else {
-                    return None
+                    return None;
                 }
             } else {
-                return None
+                return None;
             }
         }
-        self.0.execute(design, &cap1.unwrap()).and_then(|cap1|
-            self.1.execute(design, &cap2.unwrap()).and_then(|cap2|
-                self.2.execute(design, &cap3.unwrap()).and_then(|cap3|
-                    Some((target.clone(), cap1, cap2, cap3)))))
+        self.0.execute(design, &cap1.unwrap()).and_then(|cap1| {
+            self.1.execute(design, &cap2.unwrap()).and_then(|cap2| {
+                self.2.execute(design, &cap3.unwrap()).and_then(|cap3| Some((target.clone(), cap1, cap2, cap3)))
+            })
+        })
     }
 }

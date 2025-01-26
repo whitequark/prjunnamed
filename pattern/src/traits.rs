@@ -34,7 +34,7 @@ impl NetOrValue for Net {
     fn accumulate(capture: &mut Option<Self>, net: Net) -> bool {
         match capture {
             Some(_) => return false,
-            None => *capture = Some(net)
+            None => *capture = Some(net),
         }
         true
     }

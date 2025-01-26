@@ -45,6 +45,22 @@ impl Const {
         self.trits.iter().any(|&trit| trit == Trit::Undef)
     }
 
+    pub fn as_power_of_two(&self) -> Option<u32> {
+        let mut res = None;
+        for (i, trit) in self.trits.iter().copied().enumerate() {
+            if trit == Trit::Undef {
+                return None;
+            }
+            if trit == Trit::One {
+                if res.is_some() {
+                    return None;
+                }
+                res = Some(i as u32);
+            }
+        }
+        res
+    }
+
     pub fn msb(&self) -> Trit {
         self.trits[self.len() - 1]
     }
@@ -220,6 +236,12 @@ impl<'a> From<Const> for Cow<'a, Const> {
     }
 }
 
+impl<'a> From<Trit> for Cow<'a, Const> {
+    fn from(value: Trit) -> Self {
+        Cow::Owned(Const::from(value))
+    }
+}
+
 impl<I: SliceIndex<[Trit]>> Index<I> for Const {
     type Output = I::Output;
 
@@ -287,6 +309,10 @@ impl Value {
 
     pub fn msb(&self) -> Net {
         self[self.len() - 1]
+    }
+
+    pub fn has_undef(&self) -> bool {
+        self.nets.iter().any(|&net| net == Net::UNDEF)
     }
 
     pub fn as_const(&self) -> Option<Const> {

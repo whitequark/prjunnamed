@@ -123,7 +123,7 @@ impl Design {
         // Assume the caller might want to locate the cell behind the net.
         match mapped_net.as_cell() {
             Some(index) if index >= self.cells.len() => return net,
-            _ => return mapped_net
+            _ => return mapped_net,
         }
     }
 
@@ -413,63 +413,115 @@ impl Design {
     }
 }
 
-impl Display for Design {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        let write_net = |f: &mut std::fmt::Formatter, net: Net| -> std::fmt::Result {
-            match self.find_cell(net) {
-                Ok((cell_ref, offset)) => {
-                    if cell_ref.output().len() == 1 {
-                        write!(f, "%{}", cell_ref.index)
-                    } else {
-                        write!(f, "%{}+{}", cell_ref.index, offset)
-                    }
-                }
-                Err(trit) => write!(f, "{}", trit),
-            }
-        };
+struct DisplayFn<'a, F: for<'b> Fn(&Design, &mut std::fmt::Formatter<'b>) -> std::fmt::Result>(&'a Design, F);
 
-        let write_value = |f: &mut std::fmt::Formatter, value: &Value| -> std::fmt::Result {
-            if value.len() == 0 {
-                return write!(f, "{{}}");
+impl<F: Fn(&Design, &mut std::fmt::Formatter) -> std::fmt::Result> Display for DisplayFn<'_, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        self.1(self.0, f)
+    }
+}
+
+impl Design {
+    fn write_net(&self, f: &mut std::fmt::Formatter, net: Net) -> std::fmt::Result {
+        if let Some(index) = net.as_cell() {
+            if index >= self.cells.len() {
+                return write!(f, "%_{}", index);
             }
-            if let Ok((cell_ref, _offset)) = self.find_cell(value[0]) {
-                if *value == cell_ref.output() {
-                    if value.len() == 1 {
-                        return write!(f, "%{}", cell_ref.index);
-                    } else {
-                        return write!(f, "%{}:{}", cell_ref.index, value.len());
-                    }
+        }
+        match self.find_cell(net) {
+            Ok((cell_ref, offset)) => {
+                if cell_ref.output().len() == 1 {
+                    write!(f, "%{}", cell_ref.index)
+                } else {
+                    write!(f, "%{}+{}", cell_ref.index, offset)
                 }
             }
-            if let Some(value) = value.as_const() {
-                return write!(f, "{}", value);
-            }
-            if value.len() == 1 {
-                return write_net(f, value[0]);
-            }
+            Err(trit) => write!(f, "{}", trit),
+        }
+    }
+
+    fn write_value(&self, f: &mut std::fmt::Formatter, value: &Value) -> std::fmt::Result {
+        if value.len() == 0 {
+            return write!(f, "{{}}");
+        } else if value.len() == 1 {
+            return self.write_net(f, value[0]);
+        } else if let Some(value) = value.as_const() {
+            return write!(f, "{}", value);
+        } else if value.into_iter().any(|net| net.as_cell().map(|index| index >= self.cells.len()).unwrap_or(false)) {
+            // Value contains newly added cells that we can't look up. Don't try to make
+            // the display nicer, just make sure it doesn't panic.
             write!(f, "{{")?;
             for net in value {
                 write!(f, " ")?;
-                write_net(f, net)?;
+                self.write_net(f, net)?;
             }
             write!(f, " }}")?;
-            Ok(())
-        };
+            return Ok(());
+        } else if let Ok((cell_ref, _offset)) = self.find_cell(value[0]) {
+            if *value == cell_ref.output() {
+                if value.len() == 1 {
+                    return write!(f, "%{}", cell_ref.index);
+                } else {
+                    return write!(f, "%{}:{}", cell_ref.index, value.len());
+                }
+            }
+        }
 
-        let write_control = |f: &mut std::fmt::Formatter, name: &str, control_net: &ControlNet| -> std::fmt::Result {
+        write!(f, "{{")?;
+        let mut index = 0;
+        while index < value.len() {
+            write!(f, " ")?;
+            if let Ok((cell_ref_a, 0)) = self.find_cell(value[index]) {
+                let count = value[index..]
+                    .iter()
+                    .enumerate()
+                    .take_while(|(addend, net)| {
+                        if let Ok((cell_ref_b, offset_b)) = self.find_cell(**net) {
+                            cell_ref_a == cell_ref_b && *addend == offset_b
+                        } else {
+                            false
+                        }
+                    })
+                    .count();
+                if count > 0 {
+                    write!(f, "%{}:{}", cell_ref_a.index, count)?;
+                    index += count;
+                    continue;
+                }
+            }
+            self.write_net(f, value[index])?;
+            index += 1;
+        }
+        write!(f, " }}")
+    }
+
+    pub fn display_net<'a>(&'a self, net: impl Into<Net>) -> impl Display + 'a {
+        let net = net.into();
+        DisplayFn(self, move |design: &Design, f| design.write_net(f, net))
+    }
+
+    pub fn display_value<'a, 'b: 'a>(&'a self, value: impl Into<Cow<'b, Value>>) -> impl Display + 'a {
+        let value = value.into().to_owned();
+        DisplayFn(self, move |design: &Design, f| design.write_value(f, &value))
+    }
+}
+
+impl Display for Design {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let write_control = |f: &mut std::fmt::Formatter, name: &str, control_net: ControlNet| -> std::fmt::Result {
             if control_net.is_positive() {
                 write!(f, "{}=", name)?;
             } else {
                 write!(f, "!{}=", name)?;
-            }
-            write_net(f, control_net.net())
+            };
+            self.write_net(f, control_net.net())
         };
 
         let write_cell = |f: &mut std::fmt::Formatter, name: &str, args: &[&Value]| -> std::fmt::Result {
             write!(f, "{}", name)?;
             for arg in args {
                 write!(f, " ")?;
-                write_value(f, arg)?;
+                self.write_value(f, arg)?;
             }
             Ok(())
         };
@@ -505,9 +557,9 @@ impl Display for Design {
         let write_shift =
             |f: &mut std::fmt::Formatter, name: &str, arg1: &Value, arg2: &Value, stride: u32| -> std::fmt::Result {
                 write!(f, "{} ", name)?;
-                write_value(f, arg1)?;
+                self.write_value(f, arg1)?;
                 write!(f, " ")?;
-                write_value(f, arg2)?;
+                self.write_value(f, arg2)?;
                 write!(f, " {stride}")?;
                 Ok(())
             };
@@ -526,19 +578,19 @@ impl Display for Design {
                 CellRepr::Xor(arg1, arg2) => write_cell(f, "xor", &[arg1, arg2])?,
                 CellRepr::Mux(arg1, arg2, arg3) => {
                     write!(f, "mux ")?;
-                    write_net(f, *arg1)?;
+                    self.write_net(f, *arg1)?;
                     write!(f, " ")?;
-                    write_value(f, arg2)?;
+                    self.write_value(f, arg2)?;
                     write!(f, " ")?;
-                    write_value(f, arg3)?;
+                    self.write_value(f, arg3)?;
                 }
                 CellRepr::Adc(arg1, arg2, arg3) => {
                     write!(f, "adc ")?;
-                    write_value(f, arg1)?;
+                    self.write_value(f, arg1)?;
                     write!(f, " ")?;
-                    write_value(f, arg2)?;
+                    self.write_value(f, arg2)?;
                     write!(f, " ")?;
-                    write_net(f, *arg3)?;
+                    self.write_net(f, *arg3)?;
                 }
 
                 CellRepr::Eq(arg1, arg2) => write_cell(f, "eq", &[arg1, arg2])?,
@@ -560,21 +612,21 @@ impl Display for Design {
 
                 CellRepr::Dff(flip_flop) => {
                     write_cell(f, "dff", &[&flip_flop.data])?;
-                    write_control(f, " clk", &flip_flop.clock)?;
+                    write_control(f, " clk", flip_flop.clock)?;
                     if flip_flop.has_clear() {
-                        write_control(f, " clr", &flip_flop.clear)?;
+                        write_control(f, " clr", flip_flop.clear)?;
                         if flip_flop.clear_value != flip_flop.init_value {
                             write!(f, ",{}", flip_flop.clear_value)?;
                         }
                     }
                     if flip_flop.has_reset() {
-                        write_control(f, " rst", &flip_flop.reset)?;
+                        write_control(f, " rst", flip_flop.reset)?;
                         if flip_flop.reset_value != flip_flop.init_value {
                             write!(f, ",{}", flip_flop.reset_value)?;
                         }
                     }
                     if flip_flop.has_enable() {
-                        write_control(f, " en", &flip_flop.enable)?;
+                        write_control(f, " en", flip_flop.enable)?;
                     }
                     if flip_flop.has_reset() && flip_flop.has_enable() {
                         if flip_flop.reset_over_enable {
@@ -589,7 +641,7 @@ impl Display for Design {
                 }
                 CellRepr::Iob(io_buffer) => {
                     write_cell(f, "iob", &[&io_buffer.output])?;
-                    write_control(f, " en", &io_buffer.enable)?;
+                    write_control(f, " en", io_buffer.enable)?;
                     write!(f, " io=")?;
                     write_io_value(f, &io_buffer.io)?;
                 }
@@ -614,11 +666,11 @@ impl Display for Design {
                 CellRepr::Input(name, _size) => write!(f, "input {:?}", name)?,
                 CellRepr::Output(name, value) => {
                     write!(f, "output {:?} ", name)?;
-                    write_value(f, value)?;
+                    self.write_value(f, value)?;
                 }
                 CellRepr::Name(name, value) => {
                     write!(f, "name {:?} ", name)?;
-                    write_value(f, value)?;
+                    self.write_value(f, value)?;
                 }
             }
 

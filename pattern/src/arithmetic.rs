@@ -14,7 +14,9 @@ impl<P1: Pattern<Value>, P2: Pattern<Value>, P3: Pattern<Net>> Pattern<Value> fo
     type Capture = (Value, P1::Capture, P2::Capture, P3::Capture);
 
     fn execute(&self, design: &Design, target: &Value) -> Option<Self::Capture> {
-        if target.len() == 0 { return None }
+        if target.len() == 0 {
+            return None;
+        }
         let (cap1, cap2, cap3);
         if let Ok((cell_ref, _offset)) = design.find_cell(target.iter().next().unwrap()) {
             if let CellRepr::Adc(arg1, arg2, arg3) = &*cell_ref.repr() {
@@ -23,18 +25,19 @@ impl<P1: Pattern<Value>, P2: Pattern<Value>, P3: Pattern<Net>> Pattern<Value> fo
                     cap2 = arg2.clone();
                     cap3 = *arg3;
                 } else {
-                    return None
+                    return None;
                 }
             } else {
-                return None
+                return None;
             }
         } else {
-            return None
+            return None;
         }
-        self.0.execute(design, &cap1).and_then(|cap1|
-            self.1.execute(design, &cap2).and_then(|cap2|
-                self.2.execute(design, &cap3).and_then(|cap3|
-                    Some((target.clone(), cap1, cap2, cap3)))))
+        self.0.execute(design, &cap1).and_then(|cap1| {
+            self.1.execute(design, &cap2).and_then(|cap2| {
+                self.2.execute(design, &cap3).and_then(|cap3| Some((target.clone(), cap1, cap2, cap3)))
+            })
+        })
     }
 }
 
