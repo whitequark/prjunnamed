@@ -6,8 +6,6 @@ pub trait Pattern<Target> {
     fn execute(&self, design: &Design, target: &Target) -> Option<Self::Capture>;
 }
 
-pub const _TRACE_RULES: bool = cfg!(feature = "trace");
-
 #[macro_export]
 macro_rules! netlist_rules {
     { [ $($rule:tt)* ] $($rest:tt)* } => {
@@ -33,7 +31,8 @@ macro_rules! netlist_rules {
         match pattern.execute($design, $value) {
             Some(netlist_rules!( @PAT@ [ $($pat)* ] )) if true $( && $guard )? => {
                 let replace = $replace;
-                if $crate::_TRACE_RULES {
+                #[allow(unexpected_cfgs)]
+                if cfg!(feature = "trace") {
                     eprintln!(">match {}: {} => {}",
                         stringify!([ $($pat)* ] $( if $guard )?),
                         $design.display_value(&*$value),

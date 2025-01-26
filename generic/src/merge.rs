@@ -25,20 +25,32 @@ impl Numberer {
         F: Fn(Value) -> CellRepr,
     {
         let mut result = Value::EMPTY;
-        for (out_net, arg_net) in out.into_iter().zip(arg.into_iter()) {
+        for (out_net, arg_net) in out.iter().zip(arg.iter()) {
             let bit_cell_repr = rebuild(Value::from(arg_net));
             result = result.concat(self.find_or_insert(bit_cell_repr, Value::from(out_net)));
         }
         result
     }
 
-    fn bitwise_binary<F>(&mut self, rebuild: F, arg1: Value, arg2: Value, out: &Value) -> Value
+    fn bitwise_binary_commutative<F>(&mut self, rebuild: F, arg1: Value, arg2: Value, out: &Value) -> Value
     where
         F: Fn(Value, Value) -> CellRepr,
     {
         let mut result = Value::EMPTY;
-        for (out_net, (arg1_net, arg2_net)) in out.into_iter().zip(arg1.into_iter().zip(arg2.into_iter())) {
+        for (out_net, (arg1_net, arg2_net)) in out.iter().zip(arg1.iter().zip(arg2.iter())) {
             let (arg1_net, arg2_net) = if arg1_net <= arg2_net { (arg1_net, arg2_net) } else { (arg2_net, arg1_net) };
+            let bit_cell_repr = rebuild(Value::from(arg1_net), Value::from(arg2_net));
+            result = result.concat(self.find_or_insert(bit_cell_repr, Value::from(out_net)));
+        }
+        result
+    }
+
+    fn bitwise_binary_noncommutative<F>(&mut self, rebuild: F, arg1: Value, arg2: Value, out: &Value) -> Value
+    where
+        F: Fn(Value, Value) -> CellRepr,
+    {
+        let mut result = Value::EMPTY;
+        for (out_net, (arg1_net, arg2_net)) in out.iter().zip(arg1.iter().zip(arg2.iter())) {
             let bit_cell_repr = rebuild(Value::from(arg1_net), Value::from(arg2_net));
             result = result.concat(self.find_or_insert(bit_cell_repr, Value::from(out_net)));
         }
@@ -55,7 +67,7 @@ impl Numberer {
     }
 }
 
-pub fn merge(design: &mut Design) {
+pub fn merge(design: &mut Design) -> bool {
     let mut numberer = Numberer::new();
     for cell_ref in design.iter_cells_topo().filter(consider_for_merge) {
         let mut cell_repr = cell_ref.repr().into_owned();
@@ -64,9 +76,11 @@ pub fn merge(design: &mut Design) {
         let canon = match cell_repr {
             CellRepr::Buf(arg) => numberer.bitwise_unary(CellRepr::Buf, arg, &output),
             CellRepr::Not(arg) => numberer.bitwise_unary(CellRepr::Not, arg, &output),
-            CellRepr::And(arg1, arg2) => numberer.bitwise_binary(CellRepr::And, arg1, arg2, &output),
-            CellRepr::Or(arg1, arg2) => numberer.bitwise_binary(CellRepr::Or, arg1, arg2, &output),
-            CellRepr::Xor(arg1, arg2) => numberer.bitwise_binary(CellRepr::Xor, arg1, arg2, &output),
+            CellRepr::And(arg1, arg2) => numberer.bitwise_binary_commutative(CellRepr::And, arg1, arg2, &output),
+            CellRepr::Or(arg1, arg2) => numberer.bitwise_binary_commutative(CellRepr::Or, arg1, arg2, &output),
+            CellRepr::Xor(arg1, arg2) => numberer.bitwise_binary_commutative(CellRepr::Xor, arg1, arg2, &output),
+            CellRepr::Mux(arg1, arg2, arg3) => numberer.bitwise_binary_noncommutative(
+                |arg2, arg3| CellRepr::Mux(arg1, arg2, arg3), arg2, arg3, &output),
             CellRepr::Adc(arg1, arg2, arg3) => {
                 numberer.commutative_binary(|arg1, arg2| CellRepr::Adc(arg1, arg2, arg3), arg1, arg2, &output)
             }
@@ -81,5 +95,5 @@ pub fn merge(design: &mut Design) {
         }
         design.replace_value(output, canon);
     }
-    design.compact();
+    design.compact()
 }

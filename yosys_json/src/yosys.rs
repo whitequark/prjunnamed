@@ -101,7 +101,7 @@ impl From<Bit> for BitVector {
 
 impl From<Const> for BitVector {
     fn from(value: Const) -> Self {
-        BitVector(value.into_iter().map(Into::into).collect::<Vec<_>>())
+        BitVector(value.iter().map(Into::into).collect::<Vec<_>>())
     }
 }
 
@@ -145,7 +145,7 @@ impl MetadataValue {
         match self {
             Self::Const(value) if value.len() == 32 => {
                 let mut i32_value = 0;
-                for (index, trit) in value.into_iter().enumerate() {
+                for (index, trit) in value.iter().enumerate() {
                     match trit {
                         Trit::One => i32_value |= 1 << index,
                         Trit::Zero => (),
@@ -286,7 +286,7 @@ impl From<MetadataValue> for JsonValue {
                 MetadataValueClass::Other => (value + " ").into(),
             },
             MetadataValue::Const(value) => value
-                .into_iter()
+                .iter()
                 .rev()
                 .map(|trit| match trit {
                     Trit::Undef => "x",

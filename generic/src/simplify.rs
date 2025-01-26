@@ -1,7 +1,7 @@
 use prjunnamed_netlist::{Design, Trit, Value};
 use prjunnamed_pattern::{netlist_rules, patterns::*};
 
-pub fn combine(design: &mut Design) {
+pub fn simplify(design: &mut Design) -> bool {
     let rules = netlist_rules! {
         let design;
 
@@ -35,6 +35,9 @@ pub fn combine(design: &mut Design) {
         [PMux [PAny]     [PAny@a]   [PUndef]]       => a;
         [PMux [PAny]     [PUndef]   [PAny@b]]       => b;
         [PMux [PAny]     [PAny@a]   [PAny@b]]       if (a == b) => a;
+
+        [PMux@y [PAny@s] [POnes]    [PZero]]        => Value::from(s).sext(y.len());
+        [PMux@y [PAny@s] [PZero]    [POnes]]        => design.add_not(s).sext(y.len());
 
         [PAnd [PNot [PAny@a]] [PNot [PAny@b]]]      => design.add_not(design.add_or (a, b));
         [POr  [PNot [PAny@a]] [PNot [PAny@b]]]      => design.add_not(design.add_and(a, b));
@@ -116,17 +119,12 @@ pub fn combine(design: &mut Design) {
         [PSModFloor@y [PAny]  [PZero]]  => Value::undef(y.len());
     };
 
-    loop {
-        for value in design.iter_cells().map(|cell_ref| cell_ref.output()) {
-            // Fine rules are more powerful, but some rules are coarse-only.
-            if rules(design, &value) { continue }
-            for net in &value {
-                rules(design, &Value::from(net));
-            }
+    for value in design.iter_cells().map(|cell_ref| cell_ref.output()) {
+        // Fine rules are more powerful, but some rules are coarse-only.
+        if rules(design, &value) { continue }
+        for net in &value {
+            rules(design, &Value::from(net));
         }
-        if !design.apply() {
-            break;
-        }
-        design.compact();
     }
+    design.compact()
 }

@@ -11,7 +11,7 @@ fn lower_shift(
 ) {
     let mut stride = stride as usize;
     let mut value = value.clone();
-    for (i, bit) in shcnt.into_iter().enumerate() {
+    for (i, bit) in shcnt.iter().enumerate() {
         if stride < value.len() {
             let shval = shift(&value, stride);
             value = design.add_mux(bit, shval, value);
@@ -29,6 +29,9 @@ fn lower_shift(
 }
 
 pub fn lower(design: &mut Design) {
+    if cfg!(feature = "trace") {
+        eprintln!(">lower"); // FIXME: more detailed tracing
+    }
     for cell in design.iter_cells() {
         match &*cell.repr() {
             CellRepr::Eq(a, b) => {
@@ -100,14 +103,14 @@ pub fn lower(design: &mut Design) {
             }
             CellRepr::Mul(a, b) => {
                 let mut value = Value::zero(a.len());
-                for (i, bit) in b.into_iter().enumerate() {
+                for (i, bit) in b.iter().enumerate() {
                     value = design.add_adc(
                         value,
                         Value::zero(i).concat(design.add_mux(bit, a, Value::zero(a.len()))),
                         Net::ZERO,
                     );
                 }
-                cell.replace(CellRepr::Buf(value));
+                cell.replace(CellRepr::Buf(value.slice(..a.len())));
             }
             CellRepr::UDiv(..)
             | CellRepr::UMod(..)

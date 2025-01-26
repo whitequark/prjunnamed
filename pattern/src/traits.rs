@@ -49,7 +49,7 @@ impl NetOrValue for Value {
     }
 
     fn iter(&self) -> impl Iterator<Item = Net> {
-        self.into_iter()
+        self.iter()
     }
 
     fn as_const(&self) -> Option<Const> {

@@ -14,6 +14,10 @@ impl IoValue {
         self.nets.len()
     }
 
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = IoNet> + DoubleEndedIterator + ExactSizeIterator + 'a {
+        self.nets.iter().copied()
+    }
+
     pub fn from_range(range: Range<u32>) -> Self {
         Self { nets: range.map(|i| IoNet(i)).collect() }
     }

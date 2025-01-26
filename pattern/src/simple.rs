@@ -49,7 +49,7 @@ impl<T: NetOrValue> Pattern<T> for PAllConst {
 
     fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
         match target.as_const() {
-            Some(value) if value.into_iter().all(|net| net == self.0) => Some(((),)),
+            Some(value) if value.iter().all(|net| net == self.0) => Some(((),)),
             _ => None,
         }
     }

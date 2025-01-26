@@ -17,7 +17,7 @@ impl Trit {
             Trit::Zero => arg2.into_owned(),
             Trit::Undef => {
                 Const::from_iter(
-                    arg1.into_iter().zip(arg2.into_iter()).map(|(x, y)| if x == y { x } else { Trit::Undef }),
+                    arg1.iter().zip(arg2.iter()).map(|(x, y)| if x == y { x } else { Trit::Undef }),
                 )
             }
         }

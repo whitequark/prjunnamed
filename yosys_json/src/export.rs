@@ -48,7 +48,7 @@ impl NetlistIndexer {
     }
 
     fn value(&self, value: &Value) -> yosys::BitVector {
-        yosys::BitVector(value.into_iter().map(|n| self.net(n)).collect::<Vec<_>>())
+        yosys::BitVector(value.iter().map(|n| self.net(n)).collect::<Vec<_>>())
     }
 
     fn synthetic_value(&self, size: usize) -> yosys::BitVector {
@@ -61,7 +61,7 @@ impl NetlistIndexer {
     }
 
     fn io_value(&self, value: &IoValue) -> yosys::BitVector {
-        yosys::BitVector(value.into_iter().map(|n| self.io_net(n)).collect::<Vec<_>>())
+        yosys::BitVector(value.iter().map(|n| self.io_net(n)).collect::<Vec<_>>())
     }
 }
 

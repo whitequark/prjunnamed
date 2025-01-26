@@ -29,6 +29,10 @@ impl Const {
         self.trits.len()
     }
 
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Trit> + DoubleEndedIterator + ExactSizeIterator + 'a {
+        self.trits.iter().copied()
+    }
+
     pub fn is_zero(&self) -> bool {
         self.trits.iter().all(|&trit| trit == Trit::Zero)
     }
@@ -78,25 +82,25 @@ impl Const {
     }
 
     pub fn not(&self) -> Const {
-        Const::from_iter(self.into_iter().map(|x| !x))
+        Const::from_iter(self.iter().map(|x| !x))
     }
 
     pub fn and<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
         let other = other.into();
         assert_eq!(self.len(), other.len());
-        Const::from_iter(self.into_iter().zip(other.into_iter()).map(|(x, y)| x & y))
+        Const::from_iter(self.iter().zip(other.iter()).map(|(x, y)| x & y))
     }
 
     pub fn or<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
         let other = other.into();
         assert_eq!(self.len(), other.len());
-        Const::from_iter(self.into_iter().zip(other.into_iter()).map(|(x, y)| x | y))
+        Const::from_iter(self.iter().zip(other.iter()).map(|(x, y)| x | y))
     }
 
     pub fn xor<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
         let other = other.into();
         assert_eq!(self.len(), other.len());
-        Const::from_iter(self.into_iter().zip(other.into_iter()).map(|(x, y)| x ^ y))
+        Const::from_iter(self.iter().zip(other.iter()).map(|(x, y)| x ^ y))
     }
 
     pub fn adc<'a>(&self, other: impl Into<Cow<'a, Const>>, ci: Trit) -> Const {
@@ -104,7 +108,7 @@ impl Const {
         assert_eq!(self.len(), other.len());
         let mut sum = vec![];
         let mut carry = ci;
-        for (x, y) in self.into_iter().zip(other.into_iter()) {
+        for (x, y) in self.iter().zip(other.iter()) {
             let (s, co) = match (x, y, carry) {
                 (Trit::Undef, _, _) => (Trit::Undef, Trit::Undef),
                 (_, Trit::Undef, _) => (Trit::Undef, Trit::Undef),
@@ -127,7 +131,7 @@ impl Const {
         let other = other.into();
         assert_eq!(self.len(), other.len());
         let mut undef = false;
-        for (x, y) in self.into_iter().zip(other.into_iter()) {
+        for (x, y) in self.iter().zip(other.iter()) {
             if x == Trit::Undef || y == Trit::Undef {
                 undef = true;
             } else if x != y {
@@ -147,7 +151,7 @@ impl Const {
         if self.has_undef() || other.has_undef() {
             Trit::Undef
         } else {
-            for (x, y) in self.into_iter().zip(other.into_iter()).rev() {
+            for (x, y) in self.iter().zip(other.iter()).rev() {
                 if x != y {
                     return Trit::from(x < y);
                 }
@@ -164,7 +168,7 @@ impl Const {
         } else if self.msb() != other.msb() {
             Trit::from(self.msb() > other.msb())
         } else {
-            for (x, y) in self.into_iter().zip(other.into_iter()).rev() {
+            for (x, y) in self.iter().zip(other.iter()).rev() {
                 if x != y {
                     return Trit::from(x < y);
                 }
@@ -264,7 +268,7 @@ pub struct Value {
 fn shift_count(val: &Const, stride: u32) -> usize {
     let stride = stride as usize;
     let mut res: usize = 0;
-    for (i, trit) in val.into_iter().enumerate() {
+    for (i, trit) in val.iter().enumerate() {
         if trit == Trit::One {
             if i >= usize::BITS as usize {
                 return usize::MAX;
@@ -301,6 +305,10 @@ impl Value {
 
     pub fn len(&self) -> usize {
         self.nets.len()
+    }
+
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Net> + DoubleEndedIterator + ExactSizeIterator + 'a {
+        self.nets.iter().copied()
     }
 
     pub fn lsb(&self) -> Net {
@@ -340,7 +348,7 @@ impl Value {
     }
 
     pub fn concat<'a>(&self, other: impl Into<Cow<'a, Value>>) -> Self {
-        Self::from_iter(self.into_iter().chain(other.into().into_iter()))
+        Self::from_iter(self.iter().chain(other.into().iter()))
     }
 
     pub fn zext(&self, width: usize) -> Self {
@@ -351,7 +359,11 @@ impl Value {
     pub fn sext(&self, width: usize) -> Self {
         assert!(self.len() > 0);
         assert!(width >= self.len());
-        Self::from_iter(self.into_iter().chain(std::iter::repeat_n(self[self.len() - 1], width - self.len())))
+        Self::from_iter(self.iter().chain(std::iter::repeat_n(self[self.len() - 1], width - self.len())))
+    }
+
+    pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Value {
+        Value::from(&self[(range.start_bound().cloned(), range.end_bound().cloned())])
     }
 
     pub fn visit(&self, mut f: impl FnMut(Net)) {
@@ -387,7 +399,7 @@ impl Value {
         if shcnt >= self.len() {
             return Value::zero(self.len());
         }
-        return Value::from(&self[shcnt..]).zext(self.len());
+        return Value::from(&self[shcnt..]).zext(self.len())
     }
 
     pub fn sshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -399,7 +411,7 @@ impl Value {
         if shcnt >= self.len() {
             return Value::from(self.msb()).sext(self.len());
         }
-        return Value::from(&self[shcnt..]).sext(self.len());
+        return Value::from(&self[shcnt..]).sext(self.len())
     }
 
     pub fn xshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -411,7 +423,7 @@ impl Value {
         if shcnt >= self.len() {
             return Value::undef(self.len());
         }
-        return Value::from(&self[shcnt..]).concat(Value::undef(shcnt));
+        return Value::from(&self[shcnt..]).concat(Value::undef(shcnt))
     }
 }
 

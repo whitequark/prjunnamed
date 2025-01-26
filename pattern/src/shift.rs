@@ -1,6 +1,6 @@
 use prjunnamed_netlist::{CellRepr, Design, Value};
 
-use crate::{NetOrValue, Pattern};
+use crate::Pattern;
 
 macro_rules! shift_patterns {
     {} => {};

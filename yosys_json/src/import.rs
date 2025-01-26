@@ -68,7 +68,7 @@ impl ModuleImporter<'_> {
         self.design.apply();
         let value = value.into();
         assert_eq!(bits.len(), value.len());
-        for (&bit, net) in bits.iter().zip(value.into_iter()) {
+        for (&bit, net) in bits.iter().zip(value.iter()) {
             let yosys::Bit::Net(ynet) = bit else { unreachable!() };
             assert!(!self.driven_nets.contains(&ynet));
             match self.nets.entry(ynet) {
@@ -162,7 +162,7 @@ impl ModuleImporter<'_> {
             if init.len() != net_details.bits.len() {
                 Err(yosys::MetadataTypeError)?;
             }
-            for (&bit, binit) in net_details.bits.iter().zip(init.into_iter()) {
+            for (&bit, binit) in net_details.bits.iter().zip(init.iter()) {
                 if binit == Trit::Undef {
                     continue;
                 }
@@ -463,7 +463,7 @@ impl ModuleImporter<'_> {
             "$bmux" => {
                 let mut value = self.port_value(cell, "A");
                 let sel = self.port_value(cell, "S");
-                for s in sel.into_iter().rev() {
+                for s in sel.iter().rev() {
                     assert_eq!(value.len() % 2, 0);
                     let lo = Value::from(&value[..(value.len() / 2)]);
                     let hi = Value::from(&value[(value.len() / 2)..]);
@@ -476,7 +476,7 @@ impl ModuleImporter<'_> {
                 let b = self.port_value(cell, "B");
                 let sel = self.port_value(cell, "S");
                 assert_eq!(b.len(), value.len() * sel.len());
-                for (i, s) in sel.into_iter().enumerate() {
+                for (i, s) in sel.iter().enumerate() {
                     value = self.design.add_mux(s, &b[(i * value.len())..((i + 1) * value.len())], value);
                 }
                 self.port_drive(cell, "Y", value);
@@ -489,7 +489,7 @@ impl ModuleImporter<'_> {
                 let io = self.io_value(bits);
                 let value = self.design.add_iob(IoBuffer { output, enable, io });
                 self.design.apply();
-                for (&bit, net) in bits.iter().zip(value.into_iter()) {
+                for (&bit, net) in bits.iter().zip(value.iter()) {
                     let yosys::Bit::Net(ynet) = bit else { unreachable!() };
                     assert!(!self.driven_nets.contains(&ynet));
                     match self.nets.entry(ynet) {

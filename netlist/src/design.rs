@@ -111,7 +111,7 @@ impl Design {
     pub fn replace_value<'a, 'b>(&self, from_value: impl Into<Cow<'a, Value>>, to_value: impl Into<Cow<'b, Value>>) {
         let (from_value, to_value) = (from_value.into(), to_value.into());
         assert_eq!(from_value.len(), to_value.len());
-        for (from_net, to_net) in from_value.into_iter().zip(to_value.into_iter()) {
+        for (from_net, to_net) in from_value.iter().zip(to_value.iter()) {
             self.replace_net(from_net, to_net);
         }
     }
@@ -128,7 +128,7 @@ impl Design {
     }
 
     pub fn map_value(&self, value: impl Into<Value>) -> Value {
-        value.into().into_iter().map(|net| self.map_net(net)).collect::<Vec<_>>().into()
+        value.into().iter().map(|net| self.map_net(net)).collect::<Vec<_>>().into()
     }
 
     pub fn apply(&mut self) -> bool {
@@ -354,8 +354,8 @@ impl Design {
         order.into_iter().map(|index| CellRef { design: self, index })
     }
 
-    pub fn compact(&mut self) {
-        self.apply();
+    pub fn compact(&mut self) -> bool {
+        let did_change = self.apply();
 
         let mut queue = BTreeSet::new();
         for (index, cell) in self.cells.iter().enumerate() {
@@ -363,8 +363,7 @@ impl Design {
                 continue;
             }
             match &*cell.repr() {
-                CellRepr::Dff(_)
-                | CellRepr::Iob(_)
+                CellRepr::Iob(_)
                 | CellRepr::Other(_)
                 | CellRepr::Input(_, _)
                 | CellRepr::Output(_, _)
@@ -410,6 +409,8 @@ impl Design {
                 }
             });
         }
+
+        did_change
     }
 }
 
@@ -447,7 +448,7 @@ impl Design {
             return self.write_net(f, value[0]);
         } else if let Some(value) = value.as_const() {
             return write!(f, "{}", value);
-        } else if value.into_iter().any(|net| net.as_cell().map(|index| index >= self.cells.len()).unwrap_or(false)) {
+        } else if value.iter().any(|net| net.as_cell().map(|index| index >= self.cells.len()).unwrap_or(false)) {
             // Value contains newly added cells that we can't look up. Don't try to make
             // the display nicer, just make sure it doesn't panic.
             write!(f, "{{")?;

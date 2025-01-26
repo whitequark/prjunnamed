@@ -1,5 +1,7 @@
 use std::fs::File;
 
+use prjunnamed_generic::{canonicalize, lower};
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut input = String::new();
     let mut output = String::new();
@@ -12,28 +14,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut design_bundle = prjunnamed_yosys_json::import(&mut File::open(input)?)?;
 
-    #[cfg(feature = "trace")] {}
-
     for (name, design) in design_bundle.iter_mut() {
         print!("; {} (initial)\n{}\n", name, design);
 
-        prjunnamed_generic::combine(design);
-        print!("; {} (combine 1)\n{}\n", name, design);
+        canonicalize(design);
 
-        prjunnamed_generic::merge(design);
-        print!("; {} (merge 1)\n{}\n", name, design);
+        lower(design);
 
-        prjunnamed_generic::lower(design);
-        print!("; {} (lower)\n{}\n", name, design);
+        canonicalize(design);
 
-        prjunnamed_generic::combine(design);
-        print!("; {} (combine 2)\n{}\n", name, design);
-
-        prjunnamed_generic::merge(design);
-        print!("; {} (merge 2)\n{}\n", name, design);
-
-        // prjunnamed_generic::iob_insert(design);
-        // print!("; {} (iob_insert)\n{}\n", name, design);
+        print!("; {} (final)\n{}\n", name, design);
     }
 
     if !output.is_empty() {
