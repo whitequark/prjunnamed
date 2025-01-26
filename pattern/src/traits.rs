@@ -1,6 +1,8 @@
+use std::fmt::{Debug, Display};
+
 use prjunnamed_netlist::{Const, Net, Value};
 
-pub trait NetOrValue: Clone + Sized {
+pub trait NetOrValue: Sized + Clone + Debug + Display {
     fn len(&self) -> usize;
     fn iter(&self) -> impl Iterator<Item = Net>;
     fn as_const(&self) -> Option<Const>;
@@ -33,6 +35,7 @@ impl NetOrValue for Net {
 
     fn accumulate(capture: &mut Option<Self>, net: Net) -> bool {
         match capture {
+            Some(captured_net) if *captured_net == net => return true,
             Some(_) => return false,
             None => *capture = Some(net),
         }

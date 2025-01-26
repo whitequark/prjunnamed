@@ -1,4 +1,4 @@
-use std::{fmt::Debug, borrow::Cow};
+use std::{borrow::Cow, fmt::{Debug, Display}};
 use crate::{Const, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -196,6 +196,20 @@ impl Debug for Net {
             _ => {
                 let cell_index = self.index.checked_sub(Net::FIRST_CELL).unwrap();
                 write!(f, "Net::from_cell({cell_index})")
+            }
+        }
+    }
+}
+
+impl Display for Net {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Net { index: 0 } => write!(f, "0"),
+            Net { index: 1 } => write!(f, "1"),
+            Net { index: u32::MAX } => write!(f, "X"),
+            _ => {
+                let cell_index = self.index.checked_sub(Net::FIRST_CELL).unwrap();
+                write!(f, "%{}", cell_index)
             }
         }
     }

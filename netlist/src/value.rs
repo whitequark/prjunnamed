@@ -429,6 +429,22 @@ impl Debug for Value {
     }
 }
 
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        if self.len() == 0 {
+            write!(f, "{{}}")
+        } else if self.len() == 1 {
+            write!(f, "{}", self[0])
+        } else {
+            write!(f, "{{")?;
+            for net in self.nets.iter() {
+                write!(f, " {}", net)?;
+            }
+            write!(f, " }}")
+        }
+    }
+}
+
 impl<I: SliceIndex<[Net]>> Index<I> for Value {
     type Output = I::Output;
 

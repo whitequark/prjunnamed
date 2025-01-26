@@ -119,14 +119,9 @@ pub fn combine(design: &mut Design) {
     loop {
         for value in design.iter_cells().map(|cell_ref| cell_ref.output()) {
             // Fine rules are more powerful, but some rules are coarse-only.
-            let mut matched = false;
+            if rules(design, &value) { continue }
             for net in &value {
-                if rules(design, &Value::from(net)) {
-                    matched = true;
-                }
-            }
-            if !matched {
-                rules(design, &value);
+                rules(design, &Value::from(net));
             }
         }
         if !design.apply() {
