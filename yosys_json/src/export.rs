@@ -1,5 +1,5 @@
 use json::JsonValue;
-use std::{cell::RefCell, collections::BTreeMap};
+use std::{cell::RefCell, collections::BTreeMap, io::BufWriter};
 
 use crate::yosys::{self, CellDetails, NetDetails, PortDetails};
 use prjunnamed_netlist::{CellRepr, ControlNet, Design, IoNet, IoValue, Net, Trit, Value, Const};
@@ -319,5 +319,5 @@ pub fn export(writer: &mut impl std::io::Write, designs: BTreeMap<String, Design
     let ys_design = yosys::Design { creator: "prjunnamed".into(), modules: ys_modules.into() };
 
     let json = JsonValue::from(ys_design);
-    json.write_pretty(writer, /*spaces=*/ 4)
+    json.write_pretty(&mut BufWriter::new(writer), /*spaces=*/ 4)
 }
