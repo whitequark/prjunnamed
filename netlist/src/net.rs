@@ -1,5 +1,5 @@
 use std::{fmt::Debug, borrow::Cow};
-use crate::Const;
+use crate::{Const, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Trit {
@@ -176,6 +176,14 @@ impl From<Trit> for Net {
             Trit::Zero => Self::ZERO,
             Trit::One => Self::ONE,
         }
+    }
+}
+
+impl TryFrom<Value> for Net {
+    type Error = ();
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        value.as_net().ok_or(())
     }
 }
 

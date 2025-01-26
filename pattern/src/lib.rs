@@ -1,29 +1,40 @@
-pub trait Pattern {
+use prjunnamed_netlist::Design;
+
+pub trait Pattern<Target> {
     type Capture;
 
-    fn execute(&self, design: &prjunnamed_netlist::Design, value: &prjunnamed_netlist::Value) -> Option<Self::Capture>;
+    fn execute(&self, design: &Design, target: &Target) -> Option<Self::Capture>;
 }
 
 #[macro_export]
 macro_rules! netlist_rules {
-    { with($design:ident); [ $($pat:tt)* ] => $run:expr; $($rest:tt)* } => {
-        |$design: &prjunnamed_netlist::Design, value: &prjunnamed_netlist::Value| -> bool {
-            use prjunnamed_pattern::Pattern;
-            if value.len() > 0 {
-                netlist_rules! { @RULE@ $design value [ $($pat)* ] => $run; $($rest)* }
-            }
-            false
+    { [ $($rule:tt)* ] $($rest:tt)* } => {
+        |design: &prjunnamed_netlist::Design, value: &prjunnamed_netlist::Value| -> bool {
+            netlist_rules! { @TOP@ design value [ $($rule)* ] $($rest)* }
         }
     };
+    { let $design:ident; $($rest:tt)* } => {
+        |$design: &prjunnamed_netlist::Design, value: &prjunnamed_netlist::Value| -> bool {
+            netlist_rules! { @TOP@ $design value $($rest)* }
+        }
+    };
+    { @TOP@  $design:ident $value:ident $($rest:tt)* } => {
+        if $value.len() > 0 {
+            use prjunnamed_pattern::Pattern;
+            netlist_rules! { @RULE@ $design $value $($rest)* }
+        }
+        false
+    };
     { @RULE@ $design:ident $value:ident } => {};
-    { @RULE@ $design:ident $value:ident [ $($pat:tt)* ] $( if $cond:tt )? => $run:expr; $($rest:tt)* } => {
+    { @RULE@ $design:ident $value:ident [ $($pat:tt)* ] $( if $guard:tt )? => $replace:expr; $($rest:tt)* } => {
         let pattern = netlist_rules!( @NEW@ [ $($pat)* ] );
-        if let Some(netlist_rules!( @PAT@ [ $($pat)* ] )) = pattern.execute($design, $value) {
-            if true $( && $cond )? {
-                // println!("-> {}", stringify!([ $($pat)* ] $( if $cond )?));
-                $run;
+        match pattern.execute($design, $value) {
+            Some(netlist_rules!( @PAT@ [ $($pat)* ] )) if true $( && $guard )? => {
+                println!("-> {}", stringify!([ $($pat)* ] $( if $guard )?));
+                $design.replace_value($value, $replace);
                 return true
             }
+            _ => ()
         }
         netlist_rules! { @RULE@ $design $value $($rest)* }
     };
@@ -38,4 +49,15 @@ macro_rules! netlist_rules {
     };
 }
 
-pub mod generic;
+mod traits;
+mod simple;
+mod bitwise;
+mod arithmetic;
+
+pub use traits::NetOrValue;
+
+pub mod patterns {
+    pub use crate::simple::*;
+    pub use crate::bitwise::*;
+    pub use crate::arithmetic::*;
+}

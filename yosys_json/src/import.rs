@@ -595,6 +595,16 @@ impl ModuleImporter<'_> {
             }));
         }
     }
+
+    fn finalize(&mut self) {
+        use prjunnamed_pattern::{netlist_rules, patterns::*};
+
+        for cell_ref in self.design.iter_cells() {
+            let rules = netlist_rules! { [PBuf [PAny@a]] => a; };
+            rules(&self.design, &cell_ref.output());
+        }
+        self.design.compact();
+    }
 }
 
 fn import_module(module: &yosys::Module, design_io_ports: &BTreeSet<(&str, &str)>) -> Result<Option<Design>, Error> {
@@ -621,7 +631,7 @@ fn import_module(module: &yosys::Module, design_io_ports: &BTreeSet<(&str, &str)
         importer.handle_cell(cell)?;
     }
     importer.handle_undriven_io_nets();
-    importer.design.apply();
+    importer.finalize();
 
     Ok(Some(importer.design))
 }

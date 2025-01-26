@@ -1,81 +1,87 @@
 use prjunnamed_netlist::{Design, Trit, Value};
-use prjunnamed_pattern::{netlist_rules, generic::*};
+use prjunnamed_pattern::{netlist_rules, patterns::*};
 
 pub fn combine(design: &mut Design) {
     let rules = netlist_rules! {
-        with(design);
+        let design;
 
-        [PBuf@y [PAny@a]]              => design.replace_value(y, a);
+        [PBuf [PAny@a]]              => a;
 
-        [PNot@y [PConst@a]]            => design.replace_value(y, a.not());
-        [PNot@y [PNot [PAny@a]]]       => design.replace_value(y, a);
+        [PNot [PConst@a]]            => a.not();
+        [PNot [PNot [PAny@a]]]       => a;
 
-        [PAnd@y [PConst@a] [PConst@b]] => design.replace_value(y, a.and(b));
-        [PAnd@y [PAny@a]   [POnes]]    => design.replace_value(y, a);
-        [PAnd@y [POnes]    [PAny@a]]   => design.replace_value(y, a);
-        [PAnd@y [PAny]     [PZero]]    => design.replace_value(&y, Value::zero(y.len()));
-        [PAnd@y [PZero]    [PAny]]     => design.replace_value(&y, Value::zero(y.len()));
+        [PAnd [PConst@a] [PConst@b]] => a.and(b);
+        [PAnd [PAny@a]   [POnes]]    => a;
+        [PAnd [POnes]    [PAny@a]]   => a;
+        [PAnd [PAny@a]   [PZero]]    => Value::zero(a.len());
+        [PAnd [PZero]    [PAny@a]]   => Value::zero(a.len());
 
-        [POr@y  [PConst@a] [PConst@b]] => design.replace_value(y, a.or(b));
-        [POr@y  [PAny@a]   [PZero]]    => design.replace_value(y, a);
-        [POr@y  [PZero]    [PAny@a]]   => design.replace_value(y, a);
-        [POr@y  [PAny]     [POnes]]    => design.replace_value(&y, Value::ones(y.len()));
-        [POr@y  [POnes]    [PAny]]     => design.replace_value(&y, Value::ones(y.len()));
+        [POr  [PConst@a] [PConst@b]] => a.or(b);
+        [POr  [PAny@a]   [PZero]]    => a;
+        [POr  [PZero]    [PAny@a]]   => a;
+        [POr  [PAny@a]   [POnes]]    => Value::ones(a.len());
+        [POr  [POnes]    [PAny@a]]   => Value::ones(a.len());
 
-        [PAnd@y [PNot [PAny@a]] [PNot [PAny@b]]]  => design.replace_value(y, design.add_not(design.add_or (a, b)));
-        [POr@y  [PNot [PAny@a]] [PNot [PAny@b]]]  => design.replace_value(y, design.add_not(design.add_and(a, b)));
+        [PXor [PConst@a] [PConst@b]] => a.xor(b);
+        [PXor [PAny@a]   [PZero]]    => a;
+        [PXor [PZero]    [PAny@a]]   => a;
+        [PXor [PAny@a]   [POnes]]    => design.add_not(a);
+        [PXor [POnes]    [PAny@a]]   => design.add_not(a);
+        [PXor [PAny@a]   [PUndef]]   => Value::undef(a.len());
+        [PXor [PUndef]   [PAny@a]]   => Value::undef(a.len());
 
-        [PXor@y [PConst@a] [PConst@b]] => design.replace_value(y, a.xor(b));
-        [PXor@y [PAny@a]   [PZero]]    => design.replace_value(y, a);
-        [PXor@y [PZero]    [PAny@a]]   => design.replace_value(y, a);
-        [PXor@y [PAny@a]   [POnes]]    => design.replace_value(y, design.add_not(a));
-        [PXor@y [POnes]    [PAny@a]]   => design.replace_value(y, design.add_not(a));
-        [PXor@y [PAny]     [PUndef]]   => design.replace_value(&y, Value::undef(y.len()));
-        [PXor@y [PUndef]   [PAny]]     => design.replace_value(&y, Value::undef(y.len()));
+        [PMux [POnes]    [PAny@a]   [PAny]]       => a;
+        [PMux [PZero]    [PAny]     [PAny@b]]     => b;
+        [PMux [PAny]     [PAny@a]   [PUndef]]     => a;
+        [PMux [PAny]     [PUndef]   [PAny@b]]     => b;
+        [PMux [PAny]     [PAny@a]   [PAny@b]]     if (a == b) => a;
 
-        [PXor@y [PNot [PAny@a]] [PNot [PAny@b]]]  => design.replace_value(&y, design.add_xor(a, b));
-        [PXor@y [PNot [PAny@a]] [PAny@b]]         => design.replace_value(&y, design.add_not(design.add_xor(a, b)));
-        [PXor@y [PAny@a]        [PNot [PAny@b]]]  => design.replace_value(&y, design.add_not(design.add_xor(a, b)));
+        [PAnd [PNot [PAny@a]] [PNot [PAny@b]]]    => design.add_not(design.add_or (a, b));
+        [POr  [PNot [PAny@a]] [PNot [PAny@b]]]    => design.add_not(design.add_and(a, b));
 
-        [PMux@y [POnes]    [PAny@a]   [PAny]]     => design.replace_value(y, a);
-        [PMux@y [PZero]    [PAny]     [PAny@b]]   => design.replace_value(y, b);
-        [PMux@y [PAny]     [PAny@a]   [PUndef]]   => design.replace_value(y, a);
-        [PMux@y [PAny]     [PUndef]   [PAny@b]]   => design.replace_value(y, b);
-        [PMux@y [PAny]     [PAny@a]   [PAny@b]]   if (a == b) => design.replace_value(y, a);
+        [PXor [PNot [PAny@a]] [PNot [PAny@b]]]    => design.add_xor(a, b);
+        [PXor [PNot [PAny@a]] [PAny@b]]           => design.add_not(design.add_xor(a, b));
+        [PXor [PAny@a]        [PNot [PAny@b]]]    => design.add_not(design.add_xor(a, b));
 
-        [PMux@y [PNot [PAny@s]] [PAny@a] [PAny@b]] => design.replace_value(y, design.add_mux(s[0], b, a));
+        [PMux [PNot [PAny@s]] [PAny@a] [PAny@b]]  => design.add_mux(s, b, a);
 
-        [PAdc@y [PConst@a] [PConst@b] [PConst@c]] => design.replace_value(y, a.adc(b, c[0]));
-        [PAdc@y [PAny@a]   [PZero]    [PZero]]    => design.replace_value(&y, a.zext(y.len()));
-        [PAdc@y [PZero]    [PAny@b]   [PZero]]    => design.replace_value(&y, b.zext(y.len()));
-        [PAdc@y [PZero]    [PZero]    [PAny@c]]   => design.replace_value(&y, c.zext(y.len()));
+        [PAdc   [PConst@a] [PConst@b] [PConst@c]] => a.adc(b, c);
+        [PAdc@y [PAny@a]   [PZero]    [PZero]]    => a.zext(y.len());
+        [PAdc@y [PZero]    [PAny@b]   [PZero]]    => b.zext(y.len());
+        [PAdc@y [PZero]    [PZero]    [PAny@c]]   => Value::from(c).zext(y.len());
 
-        [PEq@y  [PConst@a] [PConst@b]] => design.replace_value(y, a.eq(b));
-        [PEq@y  [PAny@a]   [POnes]]    if (a.len() == 1) => design.replace_value(y, a);
-        [PEq@y  [POnes]    [PAny@a]]   if (a.len() == 1) => design.replace_value(y, a);
-        [PEq@y  [PAny@a]   [PZero]]    if (a.len() == 1) => design.replace_value(y, design.add_not(a));
-        [PEq@y  [PZero]    [PAny@a]]   if (a.len() == 1) => design.replace_value(y, design.add_not(a));
-        [PEq@y  [PAny@a]   [PAny@b]]   if (a == b) => design.replace_value(y, Trit::One);
+        [PEq  [PConst@a] [PConst@b]] => a.eq(b);
+        [PEq  [PAny@a]   [POnes]]    if (a.len() == 1) => a;
+        [PEq  [POnes]    [PAny@a]]   if (a.len() == 1) => a;
+        [PEq  [PAny@a]   [PZero]]    if (a.len() == 1) => design.add_not(a);
+        [PEq  [PZero]    [PAny@a]]   if (a.len() == 1) => design.add_not(a);
+        [PEq  [PAny@a]   [PAny@b]]   if (a == b) => Trit::One;
 
-        [PULt@y [PConst@a] [PConst@b]] => design.replace_value(y, a.ult(b));
-        [PULt@y [PAny]     [PZero]]    => design.replace_value(y, Trit::Zero);
-        [PULt@y [POnes]    [PAny]]     => design.replace_value(y, Trit::Zero);
-        [PULt@y [PAny@a]   [PAny@b]]   if (a == b) => design.replace_value(y, Trit::Zero);
+        [PULt [PConst@a] [PConst@b]] => a.ult(b);
+        [PULt [PAny]     [PZero]]    => Trit::Zero;
+        [PULt [POnes]    [PAny]]     => Trit::Zero;
+        [PULt [PAny@a]   [PAny@b]]   if (a == b) => Trit::Zero;
 
-        [PSLt@y [PConst@a] [PConst@b]] => design.replace_value(y, a.slt(b));
-        [PSLt@y [PAny@a]   [PAny@b]]   if (a == b) => design.replace_value(y, Trit::Zero);
+        [PSLt [PConst@a] [PConst@b]] => a.slt(b);
+        [PSLt [PAny@a]   [PAny@b]]   if (a == b) => Trit::Zero;
     };
 
-    for cell_ref in design.iter_cells() {
-        let mut matched = false;
-        for net in &cell_ref.output() {
-            if rules(design, &Value::from(net)) {
-                matched = true;
+    loop {
+        for value in design.iter_cells().map(|cell_ref| cell_ref.output()) {
+            // Fine rules are more powerful, but some rules are coarse-only.
+            let mut matched = false;
+            for net in &value {
+                if rules(design, &Value::from(net)) {
+                    matched = true;
+                }
+            }
+            if !matched {
+                rules(design, &value);
             }
         }
-        if !matched {
-            rules(design, &cell_ref.output());
+        if !design.apply() {
+            break
         }
+        design.compact();
     }
-    design.compact();
 }

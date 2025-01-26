@@ -434,7 +434,11 @@ impl Display for Design {
             }
             if let Ok((cell_ref, _offset)) = self.find_cell(value[0]) {
                 if *value == cell_ref.output() {
-                    return write!(f, "%{}", cell_ref.index);
+                    if value.len() == 1 {
+                        return write!(f, "%{}", cell_ref.index);
+                    } else {
+                        return write!(f, "%{}:{}", cell_ref.index, value.len());
+                    }
                 }
             }
             if let Some(value) = value.as_const() {

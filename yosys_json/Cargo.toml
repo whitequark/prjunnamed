@@ -8,4 +8,5 @@ authors.workspace = true
 
 [dependencies]
 prjunnamed-netlist.workspace = true
+prjunnamed-pattern.workspace = true
 json.workspace = true
