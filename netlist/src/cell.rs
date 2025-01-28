@@ -4,7 +4,7 @@ use std::{borrow::Cow, collections::BTreeMap, hash::Hash};
 use crate::{Const, ControlNet, IoValue, Net, Value};
 
 // Space-optimized representation of a cell, for compact AIGs.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub(crate) enum Cell {
     Skip(u32),
 

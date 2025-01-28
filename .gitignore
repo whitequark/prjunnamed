@@ -4,6 +4,7 @@
 *.dot
 *.log
 *.ys
+*.smt2
 *.profraw
 *.profdata
 lcov.info

@@ -541,6 +541,15 @@ impl IntoIterator for &Value {
     }
 }
 
+impl IntoIterator for Value {
+    type Item = Net;
+    type IntoIter = std::vec::IntoIter<Net>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.nets.into_iter()
+    }
+}
+
 impl From<&Value> for Value {
     fn from(value: &Value) -> Self {
         value.clone()
@@ -622,6 +631,14 @@ impl From<Const> for Cow<'_, Value> {
 impl<'a> From<&'a Value> for Cow<'a, Value> {
     fn from(value: &'a Value) -> Self {
         Cow::Borrowed(value)
+    }
+}
+
+impl Extend<Net> for Value {
+    fn extend<T: IntoIterator<Item = Net>>(&mut self, iter: T) {
+        for net in iter {
+            self.nets.push(net);
+        }
     }
 }
 

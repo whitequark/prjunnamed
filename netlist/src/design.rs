@@ -8,14 +8,14 @@ use std::str::FromStr;
 use crate::cell::{Cell, CellRepr};
 use crate::{ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Trit, Value};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Design {
     ios: BTreeMap<String, Range<u32>>,
     cells: Vec<Cell>,
     changes: RefCell<ChangeQueue>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct ChangeQueue {
     next_io: u32,
     added_ios: BTreeMap<String, Range<u32>>,
@@ -749,27 +749,27 @@ impl Display for Design {
 
         if cfg!(feature = "trace") {
             let (mut coarse_cells, mut skip_cells, mut fine_cells) = (0, 0, 0);
-            let (mut coarse_bytes, mut skip_bytes, mut fine_bytes) = (0, 0, 0);
             for cell in self.cells.iter() {
                 match cell {
-                    Cell::Coarse(cell) => {
+                    Cell::Coarse(_) => {
                         coarse_cells += 1;
-                        coarse_bytes += std::mem::size_of_val(cell);
                     }
                     Cell::Skip(_) => {
                         skip_cells += 1;
-                        skip_bytes += std::mem::size_of_val(cell);
                     }
                     _ => {
                         fine_cells += 1;
-                        fine_bytes += std::mem::size_of_val(cell);
                     }
                 }
             }
-            let total_cells = coarse_cells + skip_cells + fine_cells;
-            let total_bytes = coarse_bytes + skip_bytes + fine_bytes;
-            writeln!(f, "; {} cells ({} coarse, {} skip, {} fine)", total_cells, coarse_cells, skip_cells, fine_cells)?;
-            writeln!(f, "; {} bytes ({} coarse, {} skip, {} fine)", total_bytes, coarse_bytes, skip_bytes, fine_bytes)?;
+            writeln!(
+                f,
+                "; {} cells ({} coarse, {} fine) + {} skips",
+                coarse_cells + fine_cells,
+                coarse_cells,
+                fine_cells,
+                skip_cells
+            )?;
         }
 
         Ok(())

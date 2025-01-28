@@ -148,8 +148,9 @@ mod test {
                 let mut $design = Design::new();
                 $design.add_output("y", $build);
                 $design.apply();
+                let design_before = $design.clone();
                 simplify(&mut $design);
-                assert_netlist!($design, rules);
+                assert_netlist!($design, rules, "simplify failed on:\n{}\nresult:{}", design_before, $design);
             )+
         };
     }
@@ -158,7 +159,7 @@ mod test {
         ["0", "1", "X", "00", "11", "XX", "01", "10"].into_iter().map(Const::from_str)
     }
 
-    fn iter_hasx_consts() -> impl Iterator<Item = Const> {
+    fn iter_has_undef_consts() -> impl Iterator<Item = Const> {
         ["X", "XX", "0X", "X1"].into_iter().map(Const::from_str)
     }
 
@@ -426,7 +427,7 @@ mod test {
                 |ds| ds.add_ult(Value::ones(size), ds.add_input("a", size));
                 [PZero] => true;
             );
-            for a in iter_hasx_consts().filter(|c| c.len() == size) {
+            for a in iter_has_undef_consts().filter(|c| c.len() == size) {
                 assert_simplify!(
                     |ds| ds.add_ult(&a, ds.add_input("a", size)),
                     |ds| ds.add_ult(ds.add_input("a", size), &a);
@@ -453,7 +454,7 @@ mod test {
     #[test]
     fn test_slt_fold() {
         for size in [1, 2] {
-            for a in iter_hasx_consts().filter(|c| c.len() == size) {
+            for a in iter_has_undef_consts().filter(|c| c.len() == size) {
                 assert_simplify!(
                     |ds| ds.add_slt(&a, ds.add_input("a", size)),
                     |ds| ds.add_slt(ds.add_input("a", size), &a);

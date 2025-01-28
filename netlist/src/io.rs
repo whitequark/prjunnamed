@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::fmt::Display;
 use std::ops::{Index, IndexMut, Range};
 use std::slice::SliceIndex;
 
@@ -68,5 +69,11 @@ impl IntoIterator for &IoValue {
 
     fn into_iter(self) -> Self::IntoIter {
         self.nets.clone().into_iter()
+    }
+}
+
+impl Display for IoNet {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "#{}", self.0)
     }
 }

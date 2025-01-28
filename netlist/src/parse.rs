@@ -482,7 +482,8 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
 fn parse_line(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
     if one_of!(t;
         parse_io(t).is_some(),
-        parse_cell(t).is_some()
+        parse_cell(t).is_some(),
+        { parse_space(t); t.token('\n') }
     ) {
         t.context_mut().design.apply();
         true
@@ -511,6 +512,7 @@ fn parse_without_compacting(source: &str) -> Result<Design, ParseError> {
     let context = Context::new();
     let mut tokens = source.into_tokens().with_context(context);
     while parse_line(&mut tokens) {}
+    parse_space(&mut tokens);
     let (mut tokens, context) = tokens.into_parts();
     if !tokens.eof() {
         return Err(ParseError { source: String::from(source), offset: tokens.location().offset() });
@@ -535,6 +537,12 @@ mod test {
 
     fn roundtrip(text: &str) {
         onewaytrip(text, text); // one way both ways
+    }
+
+    #[test]
+    fn test_empty() {
+        super::parse("\n").unwrap();
+        super::parse("\n  ").unwrap();
     }
 
     #[test]

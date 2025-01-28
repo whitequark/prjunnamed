@@ -4,6 +4,7 @@ members = [
     "netlist",
     "pattern",
     "generic",
+    "smt2",
     "yosys_json",
     "cli",
 ]
@@ -12,8 +13,11 @@ members = [
 prjunnamed-netlist.path = "netlist"
 prjunnamed-pattern.path = "pattern"
 prjunnamed-generic.path = "generic"
+prjunnamed-smt2.path = "smt2"
 prjunnamed-yosys_json.path = "yosys_json"
 yap = "0.12.0"
+easy-smt = "0.2"
+env_logger = "0.11"
 argparse = "0.2"
 json = "0.12"
 
