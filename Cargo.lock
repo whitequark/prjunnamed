@@ -160,6 +160,7 @@ version = "0.1.0"
 dependencies = [
  "prjunnamed-netlist",
  "prjunnamed-pattern",
+ "prjunnamed-smt2",
 ]
 
 [[package]]
@@ -182,7 +183,6 @@ version = "0.1.0"
 dependencies = [
  "easy-smt",
  "env_logger",
- "prjunnamed-generic",
  "prjunnamed-netlist",
 ]
 

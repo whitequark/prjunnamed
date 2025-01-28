@@ -31,18 +31,43 @@ macro_rules! netlist_matches {
     { @RULE@ $design:ident $value:ident } => { None };
     { @RULE@ $design:ident $value:ident [ $($pat:tt)+ ] $( if $guard:expr )? => $result:expr; $($rest:tt)* } => {
         {
-            let pattern = prjunnamed_pattern::netlist_matches!( @NEW@ [ $($pat)+ ] );
-            match pattern.execute($design, $value) {
-                Some(prjunnamed_pattern::netlist_matches!( @PAT@ [ $($pat)+ ] )) if true $( && $guard )? => {
-                    if cfg!(feature = "trace") {
-                        eprintln!(">match {}: {}",
-                            stringify!([ $($pat)* ] $( if $guard )?),
-                            $design.display_value(&*$value)
-                        );
+            'block: {
+                let pattern = prjunnamed_pattern::netlist_matches!( @NEW@ [ $($pat)+ ] );
+                match pattern.execute($design, $value) {
+                    Some(prjunnamed_pattern::netlist_matches!( @PAT@ [ $($pat)+ ] )) $( if $guard )? => {
+                        if cfg!(feature = "trace") {
+                            eprintln!(">match {}: {}",
+                                stringify!([ $($pat)* ] $( if $guard )?),
+                                $design.display_value(&*$value)
+                            );
+                        }
+                        break 'block Some($result.into())
                     }
-                    Some($result.into())
+                    _ => ()
                 }
-                _ => prjunnamed_pattern::netlist_matches! { @RULE@ $design $value $($rest)* }
+                prjunnamed_pattern::netlist_matches! { @RULE@ $design $value $($rest)* }
+            }
+        }
+    };
+    { @RULE@ $design:ident $value:ident [ $($pat:tt)+ ] if let $gpat:pat = $gexpr:expr => $result:expr; $($rest:tt)* } => {
+        {
+            'block: {
+                let pattern = prjunnamed_pattern::netlist_matches!( @NEW@ [ $($pat)+ ] );
+                match pattern.execute($design, $value) {
+                    Some(prjunnamed_pattern::netlist_matches!( @PAT@ [ $($pat)+ ] )) => {
+                        if let $gpat = $gexpr {
+                            if cfg!(feature = "trace") {
+                                eprintln!(">match {}: {}",
+                                    stringify!([ $($pat)* ] if let $gpat = $gexpr),
+                                    $design.display_value(&*$value)
+                                );
+                            }
+                            break 'block Some($result.into())
+                        }
+                    }
+                    _ => ()
+                }
+                prjunnamed_pattern::netlist_matches! { @RULE@ $design $value $($rest)* }
             }
         }
     };
@@ -91,7 +116,7 @@ macro_rules! netlist_replace {
 
 #[macro_export]
 macro_rules! assert_netlist {
-    ($design:expr , $check:expr $( , $( $assertarg:tt)+ )?) => {
+    ( $design:expr , $check:expr $( , $( $assertarg:tt)+ )? ) => {
         {
             $design.apply();
             let mut matches = $design.iter_cells().all(|cell_ref| {

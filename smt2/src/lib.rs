@@ -214,8 +214,6 @@ impl<'a, 'b> SmtEmitter<'a, 'b> {
 }
 
 pub fn verify_transformation(design: &mut Design, transform: impl FnOnce(&mut Design)) -> io::Result<()> {
-    env_logger::init(); // use `RUST_LOG="easy_smt=trace"`
-
     let mut context = ContextBuilder::new().solver("z3", ["-smt2", "-in"]).build()?;
 
     let (inputs_before, outputs_before) = SmtEmitter::new(design, &mut context, "before").emit()?;

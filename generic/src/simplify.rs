@@ -1,35 +1,40 @@
-use prjunnamed_netlist::{Design, Trit, Value};
+use prjunnamed_netlist::{Design, Net, Trit, Value};
 use prjunnamed_pattern::{netlist_replace, patterns::*};
 
 pub fn simplify(design: &mut Design) -> bool {
     let rules = netlist_replace! {
         let design;
 
-        [PBuf [PAny@a]]              => a;
+        [PNot [PConst@a]]               => a.not();
+        [PNot [PNot [PAny@a]]]          => a;
 
-        [PNot [PConst@a]]            => a.not();
-        [PNot [PNot [PAny@a]]]       => a;
+        [PAnd [PConst@a] [PConst@b]]    => a.and(b);
+        [PAnd [PAny@a]   [POnes]]       => a;
+        [PAnd [POnes]    [PAny@a]]      => a;
+        [PAnd [PAny@a]   [PZero]]       => Value::zero(a.len());
+        [PAnd [PZero]    [PAny@a]]      => Value::zero(a.len());
 
-        [PAnd [PConst@a] [PConst@b]] => a.and(b);
-        [PAnd [PAny@a]   [POnes]]    => a;
-        [PAnd [POnes]    [PAny@a]]   => a;
-        [PAnd [PAny@a]   [PZero]]    => Value::zero(a.len());
-        [PAnd [PZero]    [PAny@a]]   => Value::zero(a.len());
+        [POr  [PConst@a] [PConst@b]]    => a.or(b);
+        [POr  [PAny@a]   [PZero]]       => a;
+        [POr  [PZero]    [PAny@a]]      => a;
+        [POr  [PAny@a]   [POnes]]       => Value::ones(a.len());
+        [POr  [POnes]    [PAny@a]]      => Value::ones(a.len());
 
-        [POr  [PConst@a] [PConst@b]] => a.or(b);
-        [POr  [PAny@a]   [PZero]]    => a;
-        [POr  [PZero]    [PAny@a]]   => a;
-        [POr  [PAny@a]   [POnes]]    => Value::ones(a.len());
-        [POr  [POnes]    [PAny@a]]   => Value::ones(a.len());
+        [PXor [PConst@a] [PConst@b]]    => a.xor(b);
+        [PXor [PAny@a]   [PZero]]       => a;
+        [PXor [PZero]    [PAny@a]]      => a;
+        [PXor [PAny@a]   [POnes]]       => design.add_not(a);
+        [PXor [POnes]    [PAny@a]]      => design.add_not(a);
+        [PXor [PAny@a]   [PUndef]]      => Value::undef(a.len());
+        [PXor [PUndef]   [PAny@a]]      => Value::undef(a.len());
+        [PXor [PAny@a]   [PAny@b]]      if a == b => Value::zero(a.len());
 
-        [PXor [PConst@a] [PConst@b]] => a.xor(b);
-        [PXor [PAny@a]   [PZero]]    => a;
-        [PXor [PZero]    [PAny@a]]   => a;
-        [PXor [PAny@a]   [POnes]]    => design.add_not(a);
-        [PXor [POnes]    [PAny@a]]   => design.add_not(a);
-        [PXor [PAny@a]   [PUndef]]   => Value::undef(a.len());
-        [PXor [PUndef]   [PAny@a]]   => Value::undef(a.len());
-        [PXor [PAny@a]   [PAny@b]]   if a == b => Value::zero(a.len());
+        [PAnd [PAny@a] [PNot [PAny@b]]] if a == b => Value::zero(a.len());
+        [PAnd [PNot [PAny@a]] [PAny@b]] if a == b => Value::zero(a.len());
+        [POr  [PAny@a] [PNot [PAny@b]]] if a == b => Value::ones(a.len());
+        [POr  [PNot [PAny@a]] [PAny@b]] if a == b => Value::ones(a.len());
+        [PXor [PAny@a] [PNot [PAny@b]]] if a == b => Value::ones(a.len());
+        [PXor [PNot [PAny@a]] [PAny@b]] if a == b => Value::ones(a.len());
 
         [PMux [POnes]    [PAny@a]   [PAny]]         => a;
         [PMux [PZero]    [PAny]     [PAny@b]]       => b;
@@ -53,6 +58,12 @@ pub fn simplify(design: &mut Design) -> bool {
         [PAdc@y [PAny@a]   [PZero]    [PZero]]      => a.zext(y.len());
         [PAdc@y [PZero]    [PAny@b]   [PZero]]      => b.zext(y.len());
         [PAdc@y [PZero]    [PZero]    [PAny@c]]     => Value::from(c).zext(y.len());
+
+        [PAdc   [PAny@a]   [PAny@b]   [PAny@c]]     if let Some(y) = adc_split(design, a, b, c) => y;
+        [PAdc   [PAny@a]   [PAny@b]   [PAny@c]]     if let Some(y) = adc_unsext(design, a, b, c) => y;
+
+        [PAdc@y [PAdc [PAny@a] [PAny@b] [PZero]] [PZExt [PAny@c]] [PZero]] if c.len() == 1 =>
+            design.add_adc(a, b, c[0]).zext(y.len());
 
         [PEq  [PConst@a] [PConst@b]]    => a.eq(b);
         [PEq  [PAny@a]   [POnes]]       if a.len() == 1 => a;
@@ -132,25 +143,181 @@ pub fn simplify(design: &mut Design) -> bool {
     design.compact()
 }
 
+// Finds positions within an `adc` cell where the carry chain up to the position
+// doesn't affect output bits past the position, then splits the cell into smaller
+// `adc` cells at these positions.
+//
+// This function recognizes the following cases:
+//
+// 1. `a` and `b` have the same net at position `i`:
+//
+//    ```
+//       { a7 a6 a5 ab4 a3 a2 a1 a0 } +
+//       { b7 b6 b5 ab4 b3 b2 b1 b0 } + ci =
+//    { y8 y7 y6 y5  y4 y3 y2 y1 y0 }
+//    ```
+//
+//    In this case, the carry out of position `i` will always be equal to the value
+//    of the common net.  The sum at that position will be equal to carry out of position
+//    `i - 1` (or to carry input, for position 0).  The above example gets split into two
+//    `adc` cells:
+//
+//    ```
+//    { y8 y7 y6 y5 } =
+//       { a7 a6 a5 } +
+//       { b7 b6 b5 } + ab4
+//
+//    { y4 y3 y2 y1 y0 } =
+//       { a3 a2 a1 a0 } +
+//       { b3 b2 b1 b0 } + ci
+//    ```
+//
+// 2. The low bit of `a` (or `b`) is the same net as the carry input:
+//
+//    ```
+//    { y4 y3 y2 y1 y0 } =
+//       { a3 a2 a1 a0 } +
+//       { b3 b2 b1 b0 } + a0
+//    ```
+//
+//    In this case, The carry out of position `0` will always be equal to `a0`, and the sum
+//    at this position will be equal to `b0`.  The above example gets split up as follows:
+//
+//    ```
+//    { y4 y3 y2 y1 } =
+//       { a3 a2 a1 } +
+//       { b3 b2 b1 } + a0
+//
+//    y0 = b0
+//    ```
+//
+// This optimization is comically general.  We are mostly interested in it for its useful special
+// cases:
+//
+// - `a + a` will get optimized into `{ 0 a }`
+// - `a + a + ci` will get optimized into `{ ci a }`
+// - when both operands have const LSBs, the low part is const-folded
+// - when one operand has const-0 LSBs, and the CI is 0, the low bits of output are replaced with
+//   bits of the other operand
+// - when one operand has const-1 LSBs, and the CI is 1, the low bits of output are replaced with
+//   bits of the other operand
+// - when the two operands have disjoint sets of non-zero positions (eg. `{ a0 a1 0 0 } + { 0 0 b2 b3 }`,
+//   the whole cell is replaced by a buffer
+// - when there's a stretch of zeros in both operands at the same positions, the cell gets split into two `adc`
+// - when both operands have redundant 0 bits at MSBs, the high bits of output are replaced with 0
+fn adc_split(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
+    let mut ci = c;
+    let mut start_offset = 0;
+    let mut result = Value::EMPTY;
+    for (offset, (a_bit, b_bit)) in a.iter().zip(b.iter()).enumerate() {
+        if a_bit == b_bit {
+            result.extend(&design.add_adc(&a[start_offset..offset], &b[start_offset..offset], ci));
+            start_offset = offset + 1;
+            ci = a_bit;
+        } else if offset == start_offset {
+            if a_bit == ci {
+                result.extend([b_bit]);
+                start_offset += 1;
+                // ci unchanged
+            } else if b_bit == ci {
+                result.extend([a_bit]);
+                start_offset += 1;
+                // ci unchanged
+            }
+        }
+    }
+    if start_offset == 0 {
+        return None;
+    }
+    result.extend(design.add_adc(&a[start_offset..], &b[start_offset..], ci));
+    Some(result)
+}
+
+// Finds runs of three or more repeating pairs of bits in the inputs of an `adc` cell, shortens
+// them to just two pairs.  Mostly useful for shortening over-long `adc` cells with sign-extended
+// inputs.
+//
+// Observation: given
+//
+// ```
+// { a a } +
+// { b b } + c
+// ```
+//
+// the carry out of position 1 will always be the same as carry out of position 0:
+//
+// - if `a` and `b` are both `0`, the carry-out is `0` on both positions
+// - if `a` and `b` are both `1`, the carry-out is `1` on both positions
+// - if `a` and `b` are `0` and `1` (or the other way around), the carry-in of `c` is propagated
+//
+// Thus, if we have
+//
+// ```
+// { y3 y2 y1 y0 } =
+//     { a  a  a } +
+//     { b  b  b } + c
+// ```
+//
+// it follows that carry-in to positions 1 and 2 is the same, and so y1 = y2.  Further,
+// carry out of position 2 is also the same, allowing us to completely remove position 2
+// from the `adc` as redundant:
+//
+// ```
+// { y3 y1 y0 } =
+//     { a  a } +
+//     { b  b } + c
+// y2 = y1
+// ```
+//
+// This applies to any repetition of length ≥ 3.  While mostly applicable to trimming MSBs,
+// we recognize such repetitions anywhere within the inputs and split the `adc` cell there.
+fn adc_unsext(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
+    let mut ci = c;
+    let mut offset = 0;
+    let mut start_offset = 0;
+    let mut result = Value::EMPTY;
+    while offset + 2 < a.len() {
+        let a_bit = a[offset];
+        let b_bit = b[offset];
+        if a[offset + 1] != a_bit || a[offset + 2] != a_bit || b[offset + 1] != b_bit || b[offset + 2] != b_bit {
+            offset += 1;
+            continue;
+        }
+        let mut end_offset = offset + 3;
+        while end_offset < a.len() && a[end_offset] == a_bit && b[end_offset] == b_bit {
+            end_offset += 1;
+        }
+        let chunk = design.add_adc(&a[start_offset..offset + 2], &b[start_offset..offset + 2], ci);
+        result.extend(chunk.slice(..chunk.len() - 1).sext(end_offset - start_offset));
+        ci = chunk.msb();
+        offset = end_offset;
+        start_offset = end_offset;
+    }
+    if start_offset == 0 {
+        return None;
+    }
+    result.extend(design.add_adc(&a[start_offset..], &b[start_offset..], ci));
+    Some(result)
+}
+
 #[cfg(test)]
 mod test {
-    use prjunnamed_netlist::{Const, Design, Net, Trit, Value};
+    use prjunnamed_netlist::{Const, Design, Net, Trit, Value, assert_isomorphic};
     use prjunnamed_pattern::{assert_netlist, netlist_matches, patterns::*};
+    use prjunnamed_smt2::verify_transformation;
 
     use super::simplify;
 
     macro_rules! assert_simplify {
         ( $( |$design:ident| $build:expr ),+ ; $( $match:tt )+ ) => {
-            let rules = netlist_matches! {
-                $( $match )+
-            };
+            let rules = netlist_matches! { $( $match )+ };
             $(
                 let mut $design = Design::new();
                 $design.add_output("y", $build);
                 $design.apply();
                 let design_before = $design.clone();
                 simplify(&mut $design);
-                assert_netlist!($design, rules, "simplify failed on:\n{}\nresult:{}", design_before, $design);
+                assert_netlist!($design, rules, "simplify failed on:\n{}\nresult:\n{}", design_before, $design);
             )+
         };
     }
@@ -216,6 +383,11 @@ mod test {
                 |ds| ds.add_and(ds.add_input("a", size), Const::ones(size));
                 [PInput ("a")] => true;
             );
+            assert_simplify!(
+                |ds| { let a = ds.add_input("a", size); ds.add_and(&a, ds.add_not(&a)) },
+                |ds| { let a = ds.add_input("a", size); ds.add_and(ds.add_not(&a), &a) };
+                [PZero] => true;
+            );
         }
     }
 
@@ -240,6 +412,11 @@ mod test {
             assert_simplify!(
                 |ds| ds.add_or(Const::ones(size), ds.add_input("a", size)),
                 |ds| ds.add_or(ds.add_input("a", size), Const::ones(size));
+                [POnes] => true;
+            );
+            assert_simplify!(
+                |ds| { let a = ds.add_input("a", size); ds.add_or(&a, ds.add_not(&a)) },
+                |ds| { let a = ds.add_input("a", size); ds.add_or(ds.add_not(&a), &a) };
                 [POnes] => true;
             );
         }
@@ -272,6 +449,11 @@ mod test {
                 |ds| ds.add_xor(Const::undef(size), ds.add_input("a", size)),
                 |ds| ds.add_xor(ds.add_input("a", size), Const::undef(size));
                 [PUndef] => true;
+            );
+            assert_simplify!(
+                |ds| { let a = ds.add_input("a", size); ds.add_xor(&a, ds.add_not(&a)) },
+                |ds| { let a = ds.add_input("a", size); ds.add_xor(ds.add_not(&a), &a) };
+                [POnes] => true;
             );
             assert_simplify!(
                 |ds| {let a = ds.add_input("a", size); ds.add_xor(&a, &a)};
@@ -372,6 +554,392 @@ mod test {
             assert_simplify!(
                 |ds| ds.add_adc(Const::zero(size), Const::zero(size), ds.add_input("c", 1)[0]);
                 [PZExt [PInput ("c")]] => true;
+            );
+        }
+    }
+
+    #[test]
+    fn test_adc_split_case1() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let b = design.add_input("b", 4);
+        let ab = design.add_input("ab", 1);
+        let c = design.add_input("c", 1);
+        let y = design.add_adc(
+            a.slice(..2).concat(&ab).concat(a.slice(2..)),
+            b.slice(..2).concat(&ab).concat(b.slice(2..)),
+            c.unwrap_net(),
+        );
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        let b = gold.add_input("b", 4);
+        let ab = gold.add_input("ab", 1);
+        let c = gold.add_input("c", 1);
+        let y0 = gold.add_adc(a.slice(..2), b.slice(..2), c.unwrap_net());
+        let y2 = gold.add_adc(a.slice(2..), b.slice(2..), ab.unwrap_net());
+        gold.add_output("y", y0.concat(y2));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_case1_top() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let b = design.add_input("b", 4);
+        let ab = design.add_input("ab", 1);
+        let c = design.add_input("c", 1);
+        let y = design.add_adc(a.concat(&ab), b.concat(&ab), c.unwrap_net());
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        let b = gold.add_input("b", 4);
+        let ab = gold.add_input("ab", 1);
+        let c = gold.add_input("c", 1);
+        let y = gold.add_adc(a, b, c.unwrap_net());
+        gold.add_output("y", y.concat(ab));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_case2() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let b = design.add_input("b", 4);
+        let y = design.add_adc(&a, &b, b.lsb());
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        let b = gold.add_input("b", 4);
+        let y = gold.add_adc(&a[1..], &b[1..], b.lsb());
+        gold.add_output("y", Value::from(a.lsb()).concat(y));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_case2_swap() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let b = design.add_input("b", 4);
+        let y = design.add_adc(&a, &b, a.lsb());
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        let b = gold.add_input("b", 4);
+        let y = gold.add_adc(&a[1..], &b[1..], a.lsb());
+        gold.add_output("y", Value::from(b.lsb()).concat(y));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_case2_top() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 1);
+        let b = design.add_input("b", 1);
+        let y = design.add_adc(&a, &b, b.lsb());
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 1);
+        let b = gold.add_input("b", 1);
+        gold.add_output("y", a.concat(b));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_a_plus_a() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let y = design.add_adc(&a, &a, Net::ZERO);
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        gold.add_output("y", Value::from(Net::ZERO).concat(a));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_a_plus_a_carry() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let c = design.add_input("c", 1);
+        let y = design.add_adc(&a, &a, c.unwrap_net());
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        let c = gold.add_input("c", 1);
+        gold.add_output("y", c.concat(a));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_const_lsb() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let b = design.add_input("b", 4);
+        let y = design.add_adc(
+            Value::from(Const::from_str("0111")).concat(&a),
+            Value::from(Const::from_str("1101")).concat(&b),
+            Net::ZERO,
+        );
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        let b = gold.add_input("b", 4);
+        let y = gold.add_adc(a, b, Net::ONE);
+        gold.add_output("y", Value::from(Const::from_str("0100")).concat(&y));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_const_zero_lsb() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 8);
+        let b = design.add_input("b", 4);
+        let y = design.add_adc(
+            a,
+            Value::zero(4).concat(&b),
+            Net::ZERO,
+        );
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 8);
+        let b = gold.add_input("b", 4);
+        let y = gold.add_adc(&a[4..], b, Net::ZERO);
+        gold.add_output("y", a.slice(..4).concat(&y));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_const_ones_lsb() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 8);
+        let b = design.add_input("b", 4);
+        let y = design.add_adc(
+            a,
+            Value::from(Const::from_str("1111")).concat(&b),
+            Net::ONE,
+        );
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 8);
+        let b = gold.add_input("b", 4);
+        let y = gold.add_adc(&a[4..], b, Net::ONE);
+        gold.add_output("y", a.slice(..4).concat(&y));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_disjoint() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let b = design.add_input("b", 4);
+        let y = design.add_adc(
+            a.concat(Value::zero(4)),
+            Value::zero(4).concat(&b),
+            Net::ZERO,
+        );
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        let b = gold.add_input("b", 4);
+        gold.add_output("y", a.concat(&b).concat(Net::ZERO));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_zeros() {
+        let mut design = Design::new();
+        let al = design.add_input("al", 4);
+        let ah = design.add_input("ah", 4);
+        let bl = design.add_input("bl", 4);
+        let bh = design.add_input("bh", 4);
+        let y = design.add_adc(
+            al.concat(Value::zero(4)).concat(ah),
+            bl.concat(Value::zero(4)).concat(bh),
+            Net::ZERO,
+        );
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let al = gold.add_input("al", 4);
+        let ah = gold.add_input("ah", 4);
+        let bl = gold.add_input("bl", 4);
+        let bh = gold.add_input("bh", 4);
+        let yl = gold.add_adc(al, bl, Net::ZERO);
+        let yh = gold.add_adc(ah, bh, Net::ZERO);
+        gold.add_output("y", yl.concat(Value::zero(3)).concat(yh));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_split_zext() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let b = design.add_input("b", 4);
+        let c = design.add_input("c", 1);
+        let y = design.add_adc(
+            a.concat(Value::zero(4)),
+            b.concat(Value::zero(4)),
+            c.unwrap_net(),
+        );
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        let b = gold.add_input("b", 4);
+        let c = gold.add_input("c", 1);
+        let y = gold.add_adc(a, b, c.unwrap_net());
+        gold.add_output("y", y.concat(Value::zero(4)));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_unsext_sext() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 4);
+        let b = design.add_input("b", 4);
+        let c = design.add_input("c", 1);
+        let y = design.add_adc(
+            a.sext(8),
+            b.sext(8),
+            c.unwrap_net(),
+        );
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let a = gold.add_input("a", 4);
+        let b = gold.add_input("b", 4);
+        let c = gold.add_input("c", 1);
+        let y = gold.add_adc(a.sext(5), b.sext(5), c.unwrap_net());
+        gold.add_output("y", y.slice(..5).sext(8).concat(y.msb()));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_unsext_bi() {
+        let mut design = Design::new();
+        let al = design.add_input("al", 1);
+        let bl = design.add_input("bl", 1);
+        let ah = design.add_input("ah", 1);
+        let bh = design.add_input("bh", 1);
+        let c = design.add_input("c", 1);
+        let y = design.add_adc(
+            al.sext(4).concat(ah.sext(4)),
+            bl.sext(4).concat(bh.sext(4)),
+            c.unwrap_net(),
+        );
+        design.add_output("y", y);
+        design.apply();
+        verify_transformation(&mut design, |design| {
+            simplify(design);
+            simplify(design); // clean up zero length adcs
+        }).unwrap();
+        let mut gold = Design::new();
+        let al = gold.add_input("al", 1);
+        let bl = gold.add_input("bl", 1);
+        let ah = gold.add_input("ah", 1);
+        let bh = gold.add_input("bh", 1);
+        let c = gold.add_input("c", 1);
+        let y0 = gold.add_adc(al.sext(2), bl.sext(2), c.unwrap_net());
+        let y1 = gold.add_adc(ah.sext(2), bh.sext(2), y0.msb());
+        gold.add_output("y", y0.slice(..2).sext(4).concat(y1.slice(..2).sext(4)).concat(y1.msb()));
+        gold.apply();
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_adc_ci_folding() {
+        for size in [1, 2] {
+            assert_simplify!(
+                |ds| {
+                    ds.add_adc(
+                        ds.add_adc(ds.add_input("a", size), ds.add_input("b", size), Net::ZERO),
+                        ds.add_input("c", 1).zext(size + 1),
+                        Net::ZERO
+                    )
+                };
+                [PZExt [PAdc [PInput ("a")] [PInput ("b")] [PInput ("c")]]] => true;
             );
         }
     }

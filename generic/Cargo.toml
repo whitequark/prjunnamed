@@ -6,9 +6,13 @@ license.workspace = true
 repository.workspace = true
 authors.workspace = true
 
+[lib]
+doctest = false
+
 [dependencies]
 prjunnamed-netlist.workspace = true
 prjunnamed-pattern.workspace = true
+prjunnamed-smt2.workspace = true
 
 [features]
 trace = []

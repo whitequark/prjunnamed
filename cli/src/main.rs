@@ -17,6 +17,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     for (name, design) in design_bundle.iter_mut() {
         print!("; {} (initial)\n{}\n", name, design);
 
+        // prjunnamed_smt2::verify_transformation(design, canonicalize)?;
         canonicalize(design);
 
         lower(design);

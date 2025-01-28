@@ -42,19 +42,6 @@ impl Pattern<Value> for PConst {
     }
 }
 
-pub struct PAllConst(Trit);
-
-impl<T: NetOrValue> Pattern<T> for PAllConst {
-    type Capture = ((),);
-
-    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
-        match target.as_const() {
-            Some(value) if value.iter().all(|net| net == self.0) => Some(((),)),
-            _ => None,
-        }
-    }
-}
-
 pub struct PZero;
 
 impl PZero {
@@ -76,10 +63,13 @@ impl Pattern<u32> for PZero {
 }
 
 impl<T: NetOrValue> Pattern<T> for PZero {
-    type Capture = <PAllConst as Pattern<T>>::Capture;
+    type Capture = ((),);
 
-    fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
-        PAllConst(Trit::Zero).execute(design, target)
+    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
+        match target.as_const() {
+            Some(value) if value.iter().all(|net| net == Trit::Zero) => Some(((),)),
+            _ => None,
+        }
     }
 }
 
@@ -92,13 +82,14 @@ impl POnes {
 }
 
 impl<T: NetOrValue> Pattern<T> for POnes {
-    type Capture = <PAllConst as Pattern<T>>::Capture;
+    type Capture = ((),);
 
-    fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
-        if target.len() == 0 {
-            return None;
+    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
+        match target.as_const() {
+            Some(value) if value.len() == 0 => None,
+            Some(value) if value.iter().all(|net| net == Trit::One) => Some(((),)),
+            _ => None,
         }
-        PAllConst(Trit::One).execute(design, target)
     }
 }
 
@@ -111,13 +102,14 @@ impl PUndef {
 }
 
 impl<T: NetOrValue> Pattern<T> for PUndef {
-    type Capture = <PAllConst as Pattern<T>>::Capture;
+    type Capture = ((),);
 
-    fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
-        if target.len() == 0 {
-            return None;
+    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
+        match target.as_const() {
+            Some(value) if value.len() == 0 => None,
+            Some(value) if value.iter().all(|net| net == Trit::Undef) => Some(((),)),
+            _ => None,
         }
-        PAllConst(Trit::Undef).execute(design, target)
     }
 }
 
