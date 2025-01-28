@@ -9,6 +9,15 @@ pub enum Trit {
 }
 
 impl Trit {
+    pub fn from_char(c: char) -> Self {
+        match c {
+            '0' => Trit::Zero,
+            '1' => Trit::One,
+            'x' | 'X' => Trit::Undef,
+            _ => panic!("weird trit {c}")
+        }
+    }
+
     pub fn mux<'a, 'b>(self, arg1: impl Into<Cow<'a, Const>>, arg2: impl Into<Cow<'b, Const>>) -> Const {
         let arg1 = arg1.into();
         let arg2 = arg2.into();

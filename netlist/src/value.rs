@@ -1,5 +1,9 @@
 use std::{
-    borrow::Cow, fmt::{Debug, Display}, ops::{Index, IndexMut}, slice::SliceIndex, str::FromStr
+    borrow::Cow,
+    fmt::{Debug, Display},
+    ops::{Index, IndexMut},
+    slice::SliceIndex,
+    str::FromStr,
 };
 
 use crate::{Net, Trit};
@@ -22,12 +26,42 @@ impl Const {
         Self::from_iter(std::iter::repeat_n(Trit::Undef, width))
     }
 
+    pub fn from_uint(val: u128, bits: usize) -> Self {
+        let mut trits = vec![];
+        if bits < 128 {
+            assert!(val < (1 << bits));
+        }
+        for i in 0..bits {
+            let trit = if i < u128::BITS as usize && ((val >> i) & 1) != 0 { Trit::One } else { Trit::Zero };
+            trits.push(trit);
+        }
+        Self { trits }
+    }
+
+    pub fn from_str(val: &str) -> Self {
+        Const::from_iter(val.chars().rev().filter_map(|c| match c {
+            '0' => Some(Trit::Zero),
+            '1' => Some(Trit::One),
+            'x' | 'X' => Some(Trit::Undef),
+            ' ' | '_' => None,
+            c => panic!("weird character in from_str: {c}"),
+        }))
+    }
+
     pub fn len(&self) -> usize {
         self.trits.len()
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = Trit> + DoubleEndedIterator + ExactSizeIterator + 'a {
         self.trits.iter().copied()
+    }
+
+    pub fn lsb(&self) -> Trit {
+        self.trits[0]
+    }
+
+    pub fn msb(&self) -> Trit {
+        self.trits[self.len() - 1]
     }
 
     pub fn is_zero(&self) -> bool {
@@ -62,20 +96,12 @@ impl Const {
         res
     }
 
-    pub fn msb(&self) -> Trit {
-        self.trits[self.len() - 1]
+    pub fn concat<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Self {
+        Self::from_iter(self.iter().chain(other.into().iter()))
     }
 
-    pub fn from_uint(val: u128, bits: usize) -> Self {
-        let mut trits = vec![];
-        if bits < 128 {
-            assert!(val < (1 << bits));
-        }
-        for i in 0..bits {
-            let trit = if i < u128::BITS as usize && ((val >> i) & 1) != 0 { Trit::One } else { Trit::Zero };
-            trits.push(trit);
-        }
-        Self { trits }
+    pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Const {
+        Const::from_iter(self[(range.start_bound().cloned(), range.end_bound().cloned())].iter().copied())
     }
 
     pub fn not(&self) -> Const {
@@ -171,6 +197,24 @@ impl Const {
                 }
             }
             Trit::Zero
+        }
+    }
+
+    pub fn mul<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
+        let other = other.into();
+        assert_eq!(self.len(), other.len());
+        if self.has_undef() || other.has_undef() {
+            Const::undef(self.len())
+        } else {
+            let mut res = Const::zero(self.len());
+            for (i, bit) in other.iter().enumerate() {
+                if bit == Trit::One {
+                    res = res.adc(Const::zero(i).concat(self), Trit::Zero);
+                } else {
+                    res.trits.push(Trit::Zero);
+                }
+            }
+            res.slice(..self.len())
         }
     }
 }
@@ -362,6 +406,10 @@ impl Value {
         Self::from_iter(self.iter().chain(other.into().iter()))
     }
 
+    pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Value {
+        Value::from(&self[(range.start_bound().cloned(), range.end_bound().cloned())])
+    }
+
     pub fn zext(&self, width: usize) -> Self {
         assert!(width >= self.len());
         self.concat(Value::zero(width - self.len()))
@@ -371,22 +419,6 @@ impl Value {
         assert!(self.len() > 0);
         assert!(width >= self.len());
         Self::from_iter(self.iter().chain(std::iter::repeat_n(self[self.len() - 1], width - self.len())))
-    }
-
-    pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Value {
-        Value::from(&self[(range.start_bound().cloned(), range.end_bound().cloned())])
-    }
-
-    pub fn visit(&self, mut f: impl FnMut(Net)) {
-        for &net in self.nets.iter() {
-            f(net)
-        }
-    }
-
-    pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
-        for net in self.nets.iter_mut() {
-            f(net)
-        }
     }
 
     pub fn shl<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -410,7 +442,7 @@ impl Value {
         if shcnt >= self.len() {
             return Value::zero(self.len());
         }
-        return Value::from(&self[shcnt..]).zext(self.len())
+        return Value::from(&self[shcnt..]).zext(self.len());
     }
 
     pub fn sshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -422,7 +454,7 @@ impl Value {
         if shcnt >= self.len() {
             return Value::from(self.msb()).sext(self.len());
         }
-        return Value::from(&self[shcnt..]).sext(self.len())
+        return Value::from(&self[shcnt..]).sext(self.len());
     }
 
     pub fn xshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -434,7 +466,19 @@ impl Value {
         if shcnt >= self.len() {
             return Value::undef(self.len());
         }
-        return Value::from(&self[shcnt..]).concat(Value::undef(shcnt))
+        return Value::from(&self[shcnt..]).concat(Value::undef(shcnt));
+    }
+
+    pub fn visit(&self, mut f: impl FnMut(Net)) {
+        for &net in self.nets.iter() {
+            f(net)
+        }
+    }
+
+    pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
+        for net in self.nets.iter_mut() {
+            f(net)
+        }
     }
 }
 
@@ -583,11 +627,71 @@ impl<'a> From<&'a Value> for Cow<'a, Value> {
 
 #[cfg(test)]
 mod test {
-    use crate::{Net, Value};
+    use crate::{Net, Value, Const, Trit};
 
     #[test]
     fn test_value() {
         let v01 = Value::from_iter([Net::ONE, Net::ZERO]);
         assert_eq!(v01.into_iter().collect::<Vec<_>>(), vec![Net::ONE, Net::ZERO]);
+    }
+
+    #[test]
+    fn test_not() {
+        for (a, y) in [("", ""), ("01", "10"), ("x10", "x01")] {
+            assert_eq!(Const::from_str(a).not(), Const::from_str(y));
+        }
+    }
+
+    #[test]
+    fn test_and() {
+        for (a, b, y) in [("", "", ""), ("1010", "1100", "1000"), ("x0x0", "xx00", "x000"), ("x1x1", "xx11", "xxx1")] {
+            assert_eq!(Const::from_str(a).and(Const::from_str(b)), Const::from_str(y));
+        }
+    }
+
+    #[test]
+    fn test_or() {
+        for (a, b, y) in [("", "", ""), ("1010", "1100", "1110"), ("x0x0", "xx00", "xxx0"), ("x1x1", "xx11", "x111")] {
+            assert_eq!(Const::from_str(a).or(Const::from_str(b)), Const::from_str(y));
+        }
+    }
+
+    #[test]
+    fn test_xor() {
+        for (a, b, y) in [("", "", ""), ("1010", "1100", "0110"), ("x0x0", "xx00", "xxx0"), ("x1x1", "xx11", "xxx0")] {
+            assert_eq!(Const::from_str(a).xor(Const::from_str(b)), Const::from_str(y));
+        }
+    }
+
+    #[test]
+    fn test_mux() {
+        for (s, a, b, y) in [
+            ('0', "", "", ""),
+            ('0', "xxx101010", "x10xx1100", "x10xx1100"),
+            ('1', "xxx101010", "x10xx1100", "xxx101010"),
+            ('x', "xxx101010", "x10xx1100", "xxxxx1xx0"),
+        ] {
+            assert_eq!(Trit::from_char(s).mux(Const::from_str(a), Const::from_str(b)), Const::from_str(y));
+        }
+    }
+
+    #[test]
+    fn test_adc() {
+        for (a, b, c, y) in [
+            ("", "", '0', "0"),
+            ("", "", '1', "1"),
+            ("10101010", "11001100", '0', "101110110"),
+            ("1101", "1111", '1', "11101"),
+            ("1010x010", "11001100", '0', "xxxxxx110"),
+        ] {
+            assert_eq!(Const::from_str(a).adc(Const::from_str(b), Trit::from_char(c)), Const::from_str(y));
+        }
+    }
+
+    #[test]
+    fn test_mul() {
+        for (a, b, y) in [("", "", ""), ("0011", "0011", "1001"), ("0x11", "0011", "xxxx"), ("1101", "1101", "1001")] {
+            assert_eq!(Const::from_str(a).mul(Const::from_str(b)), Const::from_str(y));
+        }
     }
 }

@@ -7,53 +7,105 @@ pub trait Pattern<Target> {
 }
 
 #[macro_export]
-macro_rules! netlist_rules {
+macro_rules! netlist_matches {
+    { [ $($rule:tt)* ] $($rest:tt)* } => {
+        |design: &prjunnamed_netlist::Design, value: &prjunnamed_netlist::Value| {
+            prjunnamed_pattern::netlist_matches! { @TOP@ design value [ $($rule)* ] $($rest)* }
+        }
+    };
+    { let $design:ident; $($rest:tt)* } => {
+        |$design: &prjunnamed_netlist::Design, value: &prjunnamed_netlist::Value| {
+            prjunnamed_pattern::netlist_matches! { @TOP@ $design value $($rest)* }
+        }
+    };
+    { @TOP@ $design:ident $value:ident $($rest:tt)* } => {
+        {
+            if $value.len() > 0 {
+                use prjunnamed_pattern::Pattern;
+                prjunnamed_pattern::netlist_matches! { @RULE@ $design $value $($rest)* }
+            } else {
+                None
+            }
+        }
+    };
+    { @RULE@ $design:ident $value:ident } => { None };
+    { @RULE@ $design:ident $value:ident [ $($pat:tt)+ ] $( if $guard:expr )? => $result:expr; $($rest:tt)* } => {
+        {
+            let pattern = prjunnamed_pattern::netlist_matches!( @NEW@ [ $($pat)+ ] );
+            match pattern.execute($design, $value) {
+                Some(prjunnamed_pattern::netlist_matches!( @PAT@ [ $($pat)+ ] )) if true $( && $guard )? => {
+                    if cfg!(feature = "trace") {
+                        eprintln!(">match {}: {}",
+                            stringify!([ $($pat)* ] $( if $guard )?),
+                            $design.display_value(&*$value)
+                        );
+                    }
+                    Some($result.into())
+                }
+                _ => prjunnamed_pattern::netlist_matches! { @RULE@ $design $value $($rest)* }
+            }
+        }
+    };
+    ( @NEW@ [ $pat:ident $( @ $cap:ident )? $( ( $($exparg:tt)+ ) )+ $( [ $($patarg:tt)+ ] )* ] ) => {
+        $pat::new( $( $($exparg)+ ),+ , $( prjunnamed_pattern::netlist_matches!( @NEW@ [ $($patarg)+ ] ) ),*)
+    };
+    ( @NEW@ [ $pat:ident $( @ $cap:ident )? $( [ $($patarg:tt)+ ] )* ] ) => {
+        $pat::new( $( prjunnamed_pattern::netlist_matches!( @NEW@ [ $($patarg)+ ] ) ),*)
+    };
+    ( @PAT@ [ $pat:ident $( ( $($exparg:tt)+ ) )* $( [ $($patarg:tt)+ ] )* ] ) => {
+        (_, $( prjunnamed_pattern::netlist_matches!( @PAT@ [ $($patarg)+ ] ) ),*)
+    };
+    ( @PAT@ [ $pat:ident @ $cap:ident $( ( $($exparg:tt)+ ) )* $( [ $($patarg:tt)+ ] )* ] ) => {
+        ($cap, $( prjunnamed_pattern::netlist_matches!( @PAT@ [ $($patarg)+ ] ) ),*)
+    };
+}
+
+#[macro_export]
+macro_rules! netlist_replace {
     { [ $($rule:tt)* ] $($rest:tt)* } => {
         |design: &prjunnamed_netlist::Design, value: &prjunnamed_netlist::Value| -> bool {
-            netlist_rules! { @TOP@ design value [ $($rule)* ] $($rest)* }
+            prjunnamed_pattern::netlist_replace! { @TOP@ design value [ $($rule)* ] $($rest)* }
         }
     };
     { let $design:ident; $($rest:tt)* } => {
         |$design: &prjunnamed_netlist::Design, value: &prjunnamed_netlist::Value| -> bool {
-            netlist_rules! { @TOP@ $design value $($rest)* }
+            prjunnamed_pattern::netlist_replace! { @TOP@ $design value $($rest)* }
         }
     };
-    { @TOP@  $design:ident $value:ident $($rest:tt)* } => {
-        if $value.len() > 0 {
-            use prjunnamed_pattern::Pattern;
-            netlist_rules! { @RULE@ $design $value $($rest)* }
-        }
-        false
-    };
-    { @RULE@ $design:ident $value:ident } => {};
-    { @RULE@ $design:ident $value:ident [ $($pat:tt)* ] $( if $guard:tt )? => $replace:expr; $($rest:tt)* } => {
-        let pattern = netlist_rules!( @NEW@ [ $($pat)* ] );
-        match pattern.execute($design, $value) {
-            Some(netlist_rules!( @PAT@ [ $($pat)* ] )) if true $( && $guard )? => {
-                let replace = $replace;
-                #[allow(unexpected_cfgs)]
-                if cfg!(feature = "trace") {
-                    eprintln!(">match {}: {} => {}",
-                        stringify!([ $($pat)* ] $( if $guard )?),
-                        $design.display_value(&*$value),
-                        $design.display_value(&Value::from(replace.clone()))
-                    );
-                }
-                $design.replace_value($value, replace);
-                return true
+    { @TOP@ $design:ident $value:ident $($rest:tt)* } => {
+        let result: Option<Value> = prjunnamed_pattern::netlist_matches! { @TOP@ $design $value $($rest)* };
+        if let Some(replace) = result {
+            #[allow(unexpected_cfgs)]
+            if cfg!(feature = "trace") {
+                eprintln!(">replace => {}",
+                    $design.display_value(&prjunnamed_netlist::Value::from(replace.clone()))
+                );
             }
-            _ => ()
+            $design.replace_value($value, replace);
+            true
+        } else {
+            false
         }
-        netlist_rules! { @RULE@ $design $value $($rest)* }
     };
-    ( @NEW@ [ $pat:ident $( @ $cap:ident )? $( [ $($arg:tt)+ ] )* ] ) => {
-        $pat::new($( netlist_rules!( @NEW@ [ $($arg)+ ] ) ),*)
-    };
-    ( @PAT@ [ $pat:ident $( [ $($arg:tt)+ ] )* ] ) => {
-        (_, $( netlist_rules!( @PAT@ [ $($arg)+ ] ) ),*)
-    };
-    ( @PAT@ [ $pat:ident @ $cap:ident $( [ $($arg:tt)+ ] )* ] ) => {
-        ($cap, $( netlist_rules!( @PAT@ [ $($arg)+ ] ) ),*)
+}
+
+#[macro_export]
+macro_rules! assert_netlist {
+    ($design:expr , $check:expr $( , $( $assertarg:tt)+ )?) => {
+        {
+            $design.apply();
+            let mut matches = $design.iter_cells().all(|cell_ref| {
+                if let prjunnamed_netlist::CellRepr::Output(_name, value) = &*cell_ref.repr() {
+                    $check(&$design, value).unwrap_or(false)
+                } else {
+                    true
+                }
+            });
+            if !matches {
+                eprintln!("{}", $design);
+            }
+            assert!(matches $( , $( $assertarg )+ )?);
+        }
     };
 }
 

@@ -1,4 +1,4 @@
-use prjunnamed_netlist::{Const, Design, Net, Trit, Value};
+use prjunnamed_netlist::{CellRepr, Const, Design, Net, Trit, Value};
 
 use crate::{NetOrValue, Pattern};
 
@@ -157,3 +157,67 @@ impl<T: NetOrValue> Pattern<T> for PPow2 {
 }
 
 pub type POneHot = PPow2;
+
+pub struct PInput(&'static str);
+
+impl PInput {
+    pub fn new(name: &'static str) -> PInput {
+        PInput(name)
+    }
+}
+
+impl<T: NetOrValue> Pattern<T> for PInput {
+    type Capture = (T,);
+
+    fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
+        if let Some(net) = target.iter().next() {
+            if let Ok((cell_ref, 0)) = design.find_cell(net) {
+                if let CellRepr::Input(name, _size) = &*cell_ref.repr() {
+                    if target.as_value() == cell_ref.output() && name == self.0 {
+                        return Some((target.clone(),));
+                    }
+                }
+            }
+        }
+        None
+    }
+}
+
+pub struct PZExt<P>(P);
+
+impl<P> PZExt<P> {
+    pub fn new(pat: P) -> PZExt<P> {
+        PZExt(pat)
+    }
+}
+
+impl<P: Pattern<Value>> Pattern<Value> for PZExt<P> {
+    // The amount of extension bits can be found using: [PZExt@y [PAny@a]] => y.len() - a.len()
+    type Capture = (Value, P::Capture);
+
+    fn execute(&self, design: &Design, target: &Value) -> Option<Self::Capture> {
+        let zext_count = target.iter().rev().take_while(|net| *net == Net::ZERO).count();
+        self.0.execute(design, &target.slice(..target.len() - zext_count)).map(|capture| (target.clone(), capture))
+    }
+}
+
+pub struct PSExt<P>(P);
+
+impl<P> PSExt<P> {
+    pub fn new(pat: P) -> PSExt<P> {
+        PSExt(pat)
+    }
+}
+
+impl<P: Pattern<Value>> Pattern<Value> for PSExt<P> {
+    // The amount of extension bits can be found using: [PZExt@y [PAny@a]] => y.len() - a.len()
+    type Capture = (Value, P::Capture);
+
+    fn execute(&self, design: &Design, target: &Value) -> Option<Self::Capture> {
+        if target.len() < 1 {
+            return None;
+        }
+        let sext_count = target.iter().rev().take_while(|net| *net == target.msb()).count() - 1;
+        self.0.execute(design, &target.slice(..target.len() - sext_count)).map(|capture| (target.clone(), capture))
+    }
+}
