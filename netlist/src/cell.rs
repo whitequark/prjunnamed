@@ -145,12 +145,7 @@ impl Cell {
         match self {
             Cell::Skip(_) => unreachable!(),
 
-            Cell::Buf(_)
-            | Cell::Not(_)
-            | Cell::And(_, _)
-            | Cell::Or(_, _)
-            | Cell::Xor(_, _)
-            | Cell::Mux(_, _, _) => 1,
+            Cell::Buf(_) | Cell::Not(_) | Cell::And(_, _) | Cell::Or(_, _) | Cell::Xor(_, _) | Cell::Mux(_, _, _) => 1,
             Cell::Adc(_, _, _) => 2,
 
             Cell::Coarse(coarse) => coarse.output_len(),
@@ -160,32 +155,16 @@ impl Cell {
     pub(crate) fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
             Cell::Skip(_) => unreachable!(),
-
-            Cell::Buf(arg) => arg.visit(&mut f),
-            Cell::Not(arg) => arg.visit(&mut f),
-            Cell::And(arg1, arg2) => {
+            Cell::Buf(arg) | Cell::Not(arg) => arg.visit(&mut f),
+            Cell::And(arg1, arg2) | Cell::Or(arg1, arg2) | Cell::Xor(arg1, arg2) => {
                 arg1.visit(&mut f);
                 arg2.visit(&mut f);
             }
-            Cell::Or(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            Cell::Xor(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            Cell::Mux(arg1, arg2, arg3) => {
+            Cell::Mux(arg1, arg2, arg3) | Cell::Adc(arg1, arg2, arg3) => {
                 arg1.visit(&mut f);
                 arg2.visit(&mut f);
                 arg3.visit(&mut f);
             }
-            Cell::Adc(arg1, arg2, arg3) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-                arg3.visit(&mut f);
-            }
-
             Cell::Coarse(coarse) => coarse.visit(&mut f),
         }
     }
@@ -193,32 +172,16 @@ impl Cell {
     pub(crate) fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
             Cell::Skip(_) => unreachable!(),
-
-            Cell::Buf(arg) => arg.visit_mut(&mut f),
-            Cell::Not(arg) => arg.visit_mut(&mut f),
-            Cell::And(arg1, arg2) => {
+            Cell::Buf(arg) | Cell::Not(arg) => arg.visit_mut(&mut f),
+            Cell::And(arg1, arg2) | Cell::Or(arg1, arg2) | Cell::Xor(arg1, arg2) => {
                 arg1.visit_mut(&mut f);
                 arg2.visit_mut(&mut f);
             }
-            Cell::Or(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            Cell::Xor(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            Cell::Mux(arg1, arg2, arg3) => {
+            Cell::Mux(arg1, arg2, arg3) | Cell::Adc(arg1, arg2, arg3) => {
                 arg1.visit_mut(&mut f);
                 arg2.visit_mut(&mut f);
                 arg3.visit_mut(&mut f);
             }
-            Cell::Adc(arg1, arg2, arg3) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-                arg3.visit_mut(&mut f);
-            }
-
             Cell::Coarse(coarse) => coarse.visit_mut(&mut f),
         }
     }
@@ -272,187 +235,75 @@ impl CellRepr {
 
     pub fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
-            CellRepr::Buf(arg) | CellRepr::Not(arg) => arg.visit(&mut f),
-            CellRepr::And(arg1, arg2) => {
+            CellRepr::Input(_, _) => (),
+            CellRepr::Buf(arg) | CellRepr::Not(arg) | CellRepr::Output(_, arg) | CellRepr::Name(_, arg) => {
+                arg.visit(&mut f)
+            }
+            CellRepr::And(arg1, arg2)
+            | CellRepr::Or(arg1, arg2)
+            | CellRepr::Xor(arg1, arg2)
+            | CellRepr::Mul(arg1, arg2)
+            | CellRepr::UDiv(arg1, arg2)
+            | CellRepr::UMod(arg1, arg2)
+            | CellRepr::SDivTrunc(arg1, arg2)
+            | CellRepr::SDivFloor(arg1, arg2)
+            | CellRepr::SModTrunc(arg1, arg2)
+            | CellRepr::SModFloor(arg1, arg2)
+            | CellRepr::Eq(arg1, arg2)
+            | CellRepr::ULt(arg1, arg2)
+            | CellRepr::SLt(arg1, arg2)
+            | CellRepr::Shl(arg1, arg2, _)
+            | CellRepr::UShr(arg1, arg2, _)
+            | CellRepr::SShr(arg1, arg2, _)
+            | CellRepr::XShr(arg1, arg2, _) => {
                 arg1.visit(&mut f);
                 arg2.visit(&mut f);
             }
-            CellRepr::Or(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::Xor(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::Mux(net, arg1, arg2) => {
+            CellRepr::Mux(net, value1, value2) | CellRepr::Adc(value1, value2, net) => {
+                value1.visit(&mut f);
+                value2.visit(&mut f);
                 net.visit(&mut f);
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
             }
-
-            CellRepr::Adc(arg1, arg2, arg3) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-                arg3.visit(&mut f);
-            }
-            CellRepr::Mul(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::UDiv(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::UMod(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::SDivTrunc(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::SDivFloor(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::SModTrunc(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::SModFloor(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::Eq(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::ULt(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::SLt(arg1, arg2) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::Shl(arg1, arg2, _) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::UShr(arg1, arg2, _) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::SShr(arg1, arg2, _) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-            CellRepr::XShr(arg1, arg2, _) => {
-                arg1.visit(&mut f);
-                arg2.visit(&mut f);
-            }
-
             CellRepr::Dff(flip_flop) => flip_flop.visit(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit(&mut f),
             CellRepr::Other(instance) => instance.visit(&mut f),
-
-            CellRepr::Input(_, _) => (),
-            CellRepr::Output(_, arg) => arg.visit(f),
-            CellRepr::Name(_, arg) => arg.visit(f),
         }
     }
 
     pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
-            CellRepr::Buf(arg) | CellRepr::Not(arg) => arg.visit_mut(&mut f),
-            CellRepr::And(arg1, arg2) => {
+            CellRepr::Input(_, _) => (),
+            CellRepr::Buf(arg) | CellRepr::Not(arg) | CellRepr::Output(_, arg) | CellRepr::Name(_, arg) => {
+                arg.visit_mut(&mut f)
+            }
+            CellRepr::And(arg1, arg2)
+            | CellRepr::Or(arg1, arg2)
+            | CellRepr::Xor(arg1, arg2)
+            | CellRepr::Mul(arg1, arg2)
+            | CellRepr::UDiv(arg1, arg2)
+            | CellRepr::UMod(arg1, arg2)
+            | CellRepr::SDivTrunc(arg1, arg2)
+            | CellRepr::SDivFloor(arg1, arg2)
+            | CellRepr::SModTrunc(arg1, arg2)
+            | CellRepr::SModFloor(arg1, arg2)
+            | CellRepr::Eq(arg1, arg2)
+            | CellRepr::ULt(arg1, arg2)
+            | CellRepr::SLt(arg1, arg2)
+            | CellRepr::Shl(arg1, arg2, _)
+            | CellRepr::UShr(arg1, arg2, _)
+            | CellRepr::SShr(arg1, arg2, _)
+            | CellRepr::XShr(arg1, arg2, _) => {
                 arg1.visit_mut(&mut f);
                 arg2.visit_mut(&mut f);
             }
-            CellRepr::Or(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::Xor(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::Mux(net, arg1, arg2) => {
+            CellRepr::Mux(net, value1, value2) | CellRepr::Adc(value1, value2, net) => {
+                value1.visit_mut(&mut f);
+                value2.visit_mut(&mut f);
                 net.visit_mut(&mut f);
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
             }
-
-            CellRepr::Adc(arg1, arg2, arg3) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-                arg3.visit_mut(&mut f);
-            }
-            CellRepr::Mul(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::UDiv(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::UMod(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::SDivTrunc(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::SDivFloor(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::SModTrunc(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::SModFloor(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::Eq(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::ULt(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::SLt(arg1, arg2) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::Shl(arg1, arg2, _) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::UShr(arg1, arg2, _) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::SShr(arg1, arg2, _) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-            CellRepr::XShr(arg1, arg2, _) => {
-                arg1.visit_mut(&mut f);
-                arg2.visit_mut(&mut f);
-            }
-
             CellRepr::Dff(flip_flop) => flip_flop.visit_mut(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit_mut(&mut f),
             CellRepr::Other(instance) => instance.visit_mut(&mut f),
-
-            CellRepr::Input(_, _) => (),
-            CellRepr::Output(_, arg) => arg.visit_mut(f),
-            CellRepr::Name(_, arg) => arg.visit_mut(f),
         }
     }
 }
