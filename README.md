@@ -29,6 +29,14 @@ $ cargo fmt
 [z3]: https://github.com/Z3Prover/z3
 
 
+Community
+---------
+
+Project Unnamed has a dedicated IRC channel, [#prjunnamed at libera.chat](https://web.libera.chat/#prjunnamed), which is _bridged_[^1] to Matrix at [#prjunnamed:catircservices.org](https://matrix.to/#/#prjunnamed:catircservices.org). Feel free to join to discuss ongoing development of Project Unnamed and its related projects.
+
+[^1]: The same messages appear on IRC and on Matrix, and one can participate in the discussion equally using either communication system.
+
+
 License
 -------
 
