@@ -1,10 +1,9 @@
-use std::{collections::BTreeMap, fmt::Display, ops::Range, str::FromStr};
+use std::{collections::BTreeMap, fmt::Display, ops::Range, str::FromStr, sync::Arc};
 
 use yap::{one_of, types::WithContext, IntoTokens, TokenLocation, Tokens};
 
 use crate::{
-    create_target, CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue,
-    TargetCell, Value,
+    create_target, CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Target, TargetCell, Value
 };
 
 #[derive(Debug)]
@@ -17,9 +16,9 @@ struct Context {
 }
 
 impl Context {
-    fn new() -> Context {
+    fn new(target: Option<Arc<dyn Target>>) -> Context {
         Context {
-            design: Design::new(),
+            design: Design::with_target(target),
             is_empty: true,
             next_cell: 0,
             cell_map: BTreeMap::new(),
@@ -185,14 +184,6 @@ fn parse_io_value_floating(t: &mut WithContext<impl Tokens<Item = char>, Context
     Some(IoValue::from_iter(std::iter::repeat_n(IoNet::FLOATING, size)))
 }
 
-fn parse_io_value(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
-    one_of!(t;
-        parse_io_value_concat(t),
-        parse_io_value_floating(t),
-        parse_io_net(t).map(IoValue::from),
-    )
-}
-
 fn parse_io_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
     let mut value = IoValue::EMPTY;
     parse_symbol(t, '{')?;
@@ -206,6 +197,15 @@ fn parse_io_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>)
     parse_space(t);
     parse_symbol(t, '}')?;
     Some(value)
+}
+
+fn parse_io_value(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
+    one_of!(t;
+        parse_io_value_concat(t),
+        parse_io_value_floating(t),
+        parse_io_name_size(t).and_then(|(name, size)| Some(t.context().get_io(name).slice(..size))),
+        parse_io_net(t).map(IoValue::from),
+    )
 }
 
 fn parse_cell_index(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<usize> {
@@ -349,18 +349,6 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
         parse_string(t)
     }
 
-    fn parse_io_value_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
-        parse_space(t);
-        let keyword = parse_keyword(t)?;
-        if keyword != "io" {
-            return None;
-        }
-        parse_space(t);
-        parse_symbol(t, '=')?;
-        parse_space(t);
-        parse_io_value(t)
-    }
-
     fn parse_dff_reset_control_net_arg(
         t: &mut WithContext<impl Tokens<Item = char>, Context>,
         name: &str,
@@ -445,11 +433,20 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                     init_value,
                 })
             }
-            "iob" => CellRepr::Iob(IoBuffer {
-                output: parse_value_arg(t)?,
-                enable: parse_control_arg(t, "en")?,
-                io: parse_io_value_arg(t)?,
-            }),
+            "iob" => {
+                parse_space(t);
+                let io = parse_io_value(t)?;
+                parse_space(t);
+                let keyword = parse_keyword(t)?;
+                if keyword != "o" {
+                    return None;
+                }
+                parse_space(t);
+                parse_symbol(t, '=')?;
+                let output = parse_value_arg(t)?;
+                let enable = parse_control_arg(t, "en")?;
+                CellRepr::Iob(IoBuffer { io, output, enable })
+            },
             "input" => CellRepr::Input(parse_string_arg(t)?, size),
             "output" => CellRepr::Output(parse_string_arg(t)?, parse_value_arg(t)?),
             "name" => CellRepr::Name(parse_string_arg(t)?, parse_value_arg(t)?),
@@ -599,8 +596,8 @@ impl std::error::Error for ParseError {}
 
 // The unit tests below rely on `buf` cells and pure cells not being removed.
 // They could be modified to use a primary output to keep the cells alive but it's probably not worth it.
-fn parse_without_compacting(source: &str) -> Result<Design, ParseError> {
-    let context = Context::new();
+fn parse_without_compacting(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, ParseError> {
+    let context = Context::new(target);
     let mut tokens = source.into_tokens().with_context(context);
     while parse_line(&mut tokens) {}
     parse_space(&mut tokens);
@@ -611,8 +608,8 @@ fn parse_without_compacting(source: &str) -> Result<Design, ParseError> {
     Ok(context.finalize())
 }
 
-pub fn parse(source: &str) -> Result<Design, ParseError> {
-    parse_without_compacting(source).map(|mut design| {
+pub fn parse(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, ParseError> {
+    parse_without_compacting(target, source).map(|mut design| {
         design.replace_bufs();
         design.compact();
         design
@@ -626,7 +623,7 @@ mod test {
     use crate::{register_target, Const, Design, Target, TargetCell, TargetImportError, TargetPrototype};
 
     fn onewaytrip(text: &str, expect: &str) {
-        let design = super::parse_without_compacting(text).map_err(|err| panic!("{}", err)).unwrap();
+        let design = super::parse_without_compacting(None, text).map_err(|err| panic!("{}", err)).unwrap();
         assert_eq!(format!("{}", design), format!("{}", expect))
     }
 
@@ -636,8 +633,8 @@ mod test {
 
     #[test]
     fn test_empty() {
-        super::parse("\n").unwrap();
-        super::parse("\n  ").unwrap();
+        super::parse(None, "\n").unwrap();
+        super::parse(None, "\n  ").unwrap();
     }
 
     #[test]
@@ -701,7 +698,8 @@ mod test {
         roundtrip("%0:2 = buf 00\n%2:1 = smod_trunc %0+0 %0+1\n");
         roundtrip("%0:2 = buf 00\n%2:1 = smod_floor %0+0 %0+1\n");
         roundtrip("%0:2 = buf 00\n%2:1 = dff %0+0 clk=%0+1\n");
-        roundtrip("#\"purr\":1\n%0:2 = buf 00\n%2:1 = iob %0+0 en=%0+1 io=#\"purr\"\n");
+        roundtrip("#\"purr\":1\n%0:2 = buf 00\n%2:1 = iob #\"purr\" o=%0+0 en=%0+1\n");
+        roundtrip("#\"purr\":2\n%0:2 = buf 00\n%2:2 = iob #\"purr\":2 o=%0:2 en=%0+1\n");
         roundtrip("%0:0 = \"instance\" {\n}\n");
         roundtrip("%0:2 = input \"awa\"\n");
         roundtrip("%0:2 = buf 00\n%2:0 = output \"bite\" %0:2\n");
@@ -775,13 +773,17 @@ mod test {
             self.prototypes.get(name)
         }
 
+        fn validate(&self, _design: &Design, _cell: &TargetCell) {}
+
         fn import(&self, _design: &mut Design) -> Result<(), TargetImportError> {
             Ok(())
         }
 
         fn export(&self, _design: &mut Design) {}
 
-        fn validate(&self, _design: &Design, _cell: &TargetCell) {}
+        fn synthesize(&self, _design: &mut Design) -> Result<(), ()> {
+            Ok(())
+        }
     }
 
     #[test]

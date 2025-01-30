@@ -8,3 +8,4 @@ authors.workspace = true
 
 [dependencies]
 prjunnamed-netlist.workspace = true
+prjunnamed-generic.workspace = true

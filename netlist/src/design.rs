@@ -567,6 +567,7 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
         }
     }
     let mut ios = BTreeSet::new();
+    ios.insert((IoNet::FLOATING, IoNet::FLOATING));
     for name in lft.ios.keys() {
         if let (Some(io_l), Some(io_r)) = (lft.get_io(name), rgt.get_io(name)) {
             if io_l.len() != io_r.len() {
@@ -845,11 +846,21 @@ impl Design {
     }
 
     fn write_io_value(&self, f: &mut std::fmt::Formatter, io_value: &IoValue) -> std::fmt::Result {
-        if io_value.len() == 1 {
+        if io_value.len() == 0 {
+            write!(f, "{{}}")
+        } else if io_value.len() == 1 {
             self.write_io_net(f, io_value[0])
         } else if io_value.iter().all(IoNet::is_floating) {
             write!(f, "#_:{}", io_value.len())
         } else {
+            if let Some((name, _offset)) = self.find_io(io_value[0]) {
+                if self.get_io(name).unwrap() == *io_value {
+                    write!(f, "#")?;
+                    self.write_string(f, name)?;
+                    write!(f, ":{}", io_value.len())?;
+                    return Ok(())
+                }
+            }
             write!(f, "{{")?;
             for io_net in io_value {
                 write!(f, " ")?;
@@ -983,10 +994,11 @@ impl Design {
                 }
             }
             CellRepr::Iob(io_buffer) => {
-                write_common(f, "iob", &[&io_buffer.output])?;
-                write_control(f, " en", io_buffer.enable)?;
-                write!(f, " io=")?;
+                write!(f, "iob ")?;
                 self.write_io_value(f, &io_buffer.io)?;
+                write!(f, " o=")?;
+                self.write_value(f, &io_buffer.output)?;
+                write_control(f, " en", io_buffer.enable)?;
             }
             CellRepr::Other(instance) => {
                 self.write_string(f, instance.kind.as_str())?;
@@ -1128,6 +1140,6 @@ impl FromStr for Design {
     type Err = crate::ParseError;
 
     fn from_str(source: &str) -> Result<Self, Self::Err> {
-        crate::parse(source)
+        crate::parse(None, source)
     }
 }

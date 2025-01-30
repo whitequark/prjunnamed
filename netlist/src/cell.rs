@@ -559,9 +559,9 @@ pub struct TargetCell {
 }
 
 impl TargetCell {
-    pub fn new(kind: String, prototype: &TargetPrototype) -> Self {
+    pub fn new(kind: impl Into<String>, prototype: &TargetPrototype) -> Self {
         let mut result = Self {
-            kind,
+            kind: kind.into(),
             params: vec![],
             inputs: Value::EMPTY,
             output_len: prototype.output_len,

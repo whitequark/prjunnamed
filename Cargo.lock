@@ -182,6 +182,7 @@ dependencies = [
 name = "prjunnamed-siliconblue"
 version = "0.1.0"
 dependencies = [
+ "prjunnamed-generic",
  "prjunnamed-netlist",
 ]
 

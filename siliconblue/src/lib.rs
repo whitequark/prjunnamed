@@ -5,8 +5,13 @@ use std::{
 };
 
 use prjunnamed_netlist::{
-    CellRepr, Const, Design, Instance, Net, ParamValue, Target, TargetCell, TargetImportError, TargetPrototype, Value,
+    CellRepr, Const, ControlNet, Design, Instance, Net, ParamValue, Target, TargetCell, TargetImportError,
+    TargetPrototype, Value,
 };
+
+pub fn register() {
+    prjunnamed_netlist::register_target("siliconblue", |options| Ok(SiliconBlueTarget::new(options)));
+}
 
 #[derive(Debug)]
 pub struct SiliconBlueTarget {
@@ -263,6 +268,15 @@ impl Target for SiliconBlueTarget {
 
     fn prototype(&self, name: &str) -> Option<&TargetPrototype> {
         self.prototypes.get(name)
+    }
+
+    fn validate(&self, _design: &Design, _cell: &TargetCell) {
+        // TODO:
+        // - SB_IO:
+        //   - validate PACKAGE_PIN_B floating if IO not differential
+        //   - validate PULLUP off if IO differential or open-drain
+        // - SB_PLL40: validate ports / parameters unused according to mode
+        // - SB_MAC16: validate parameters
     }
 
     fn import(&self, design: &mut Design) -> Result<(), TargetImportError> {
@@ -617,16 +631,285 @@ impl Target for SiliconBlueTarget {
         design.compact();
     }
 
-    fn validate(&self, _design: &Design, _cell: &TargetCell) {
-        // TODO:
-        // - SB_IO:
-        //   - validate PACKAGE_PIN_B floating if IO not differential
-        //   - validate PULLUP off if IO differential or open-drain
-        // - SB_PLL40: validate ports / parameters unused according to mode
-        // - SB_MAC16: validate parameters
+    fn synthesize(&self, design: &mut Design) -> Result<(), ()> {
+        prjunnamed_generic::canonicalize(design);
+        prjunnamed_generic::lower(design);
+        prjunnamed_generic::canonicalize(design);
+        self.lower_iobs(design);
+        Ok(())
     }
 }
 
-pub fn register() {
-    prjunnamed_netlist::register_target("siliconblue", |options| Ok(SiliconBlueTarget::new(options)));
+impl SiliconBlueTarget {
+    pub fn lower_iobs(&self, design: &mut Design) {
+        let prototype = self.prototype("SB_IO").unwrap();
+        for cell_ref in design.iter_cells() {
+            if let CellRepr::Iob(io_buffer) = &*cell_ref.repr() {
+                let enable = match io_buffer.enable {
+                    ControlNet::Pos(net) => net,
+                    ControlNet::Neg(net) => design.add_not(net).unwrap_net(),
+                };
+
+                let mut output_value = Value::EMPTY;
+                for bit_index in 0..io_buffer.output.len() {
+                    let mut target_cell = TargetCell::new("SB_IO", prototype);
+                    if io_buffer.enable.is_always(false) {
+                        // no output
+                        prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::from_str("000001"));
+                    } else if io_buffer.enable.is_always(true) {
+                        // always-on output
+                        prototype.apply_input(&mut target_cell, "D_OUT_0", io_buffer.output[bit_index]);
+                        prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::from_str("011001"));
+                    } else {
+                        // tristate output
+                        prototype.apply_input(&mut target_cell, "D_OUT_0", io_buffer.output[bit_index]);
+                        prototype.apply_input(&mut target_cell, "OUTPUT_ENABLE", enable);
+                        prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::from_str("101001"));
+                    }
+                    prototype.apply_io(&mut target_cell, "PACKAGE_PIN", io_buffer.io[bit_index]);
+                    let target_output = design.add_target(target_cell);
+                    output_value.extend(prototype.extract_output(&target_output, "D_IN_0"));
+                }
+                design.replace_value(cell_ref.output(), output_value);
+                cell_ref.unalive();
+            }
+        }
+        design.compact();
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use std::collections::BTreeMap;
+
+    use prjunnamed_netlist::assert_isomorphic;
+
+    use crate::SiliconBlueTarget;
+
+    // I hate rustfmt.
+    macro_rules! parse {
+        ($source:expr) => {{
+            let target = SiliconBlueTarget::new(BTreeMap::new());
+            let design = prjunnamed_netlist::parse(Some(target.clone()), $source).unwrap();
+            (target, design)
+        }};
+    }
+
+    #[test]
+    fn test_lower_iob_input() {
+        let (target, mut design) = parse! {r#"
+            #"io":1
+            %0:1 = iob #"io" o=X en=0
+            %1:0 = output "x" %0
+        "#};
+        target.lower_iobs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            #"io":1
+            %0:0 = output "x" %1+0
+            %1:3 = target "SB_IO" {
+                p@"PIN_TYPE"=const(000001)
+                p@"PULLUP"=const(0)
+                p@"NEG_TRIGGER"=const(0)
+                p@"IS_GB"=const(0)
+                p@"IO_STANDARD"=string("SB_LVCMOS")
+                i@"D_OUT_0"=X
+                i@"D_OUT_1"=X
+                i@"OUTPUT_ENABLE"=0
+                i@"CLOCK_ENABLE"=1
+                i@"INPUT_CLK"=X
+                i@"OUTPUT_CLK"=X
+                i@"LATCH_INPUT_ENABLE"=X
+                io@"PACKAGE_PIN"=#"io"
+                io@"PACKAGE_PIN_B"=#_
+            }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_iob_output() {
+        let (target, mut design) = parse! {r#"
+            #"io":1
+            %0:1 = iob #"io" o=%1 en=1
+            %1:1 = input "o"
+            %2:0 = output "i" %0
+        "#};
+        target.lower_iobs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            #"io":1
+            %0:1 = input "o"
+            %1:3 = target "SB_IO" {
+                p@"PIN_TYPE"=const(011001)
+                p@"PULLUP"=const(0)
+                p@"NEG_TRIGGER"=const(0)
+                p@"IS_GB"=const(0)
+                p@"IO_STANDARD"=string("SB_LVCMOS")
+                i@"D_OUT_0"=%0
+                i@"D_OUT_1"=X
+                i@"OUTPUT_ENABLE"=0
+                i@"CLOCK_ENABLE"=1
+                i@"INPUT_CLK"=X
+                i@"OUTPUT_CLK"=X
+                i@"LATCH_INPUT_ENABLE"=X
+                io@"PACKAGE_PIN"=#"io"
+                io@"PACKAGE_PIN_B"=#_
+            }
+            %4:0 = output "i" %1+0
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_iob_tristate() {
+        let (target, mut design) = parse! {r#"
+            #"io":1
+            %0:1 = iob #"io" o=%1 en=%2
+            %1:1 = input "o"
+            %2:1 = input "oe"
+            %3:0 = output "i" %0
+        "#};
+        target.lower_iobs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            #"io":1
+            %0:1 = input "o"
+            %1:1 = input "oe"
+            %2:0 = output "i" %3+0
+            %3:3 = target "SB_IO" {
+                p@"PIN_TYPE"=const(101001)
+                p@"PULLUP"=const(0)
+                p@"NEG_TRIGGER"=const(0)
+                p@"IS_GB"=const(0)
+                p@"IO_STANDARD"=string("SB_LVCMOS")
+                i@"D_OUT_0"=%0
+                i@"D_OUT_1"=X
+                i@"OUTPUT_ENABLE"=%1
+                i@"CLOCK_ENABLE"=1
+                i@"INPUT_CLK"=X
+                i@"OUTPUT_CLK"=X
+                i@"LATCH_INPUT_ENABLE"=X
+                io@"PACKAGE_PIN"=#"io"
+                io@"PACKAGE_PIN_B"=#_
+            }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_iob_tristate_inv() {
+        let (target, mut design) = parse! {r#"
+            #"io":1
+            %0:1 = iob #"io" o=%1 en=!%2
+            %1:1 = input "o"
+            %2:1 = input "t"
+            %3:0 = output "i" %0
+        "#};
+        target.lower_iobs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            #"io":1
+            %0:1 = input "o"
+            %1:1 = input "t"
+            %2:0 = output "i" %4+0
+            %3:1 = not %1
+            %4:3 = target "SB_IO" {
+                p@"PIN_TYPE"=const(101001)
+                p@"PULLUP"=const(0)
+                p@"NEG_TRIGGER"=const(0)
+                p@"IS_GB"=const(0)
+                p@"IO_STANDARD"=string("SB_LVCMOS")
+                i@"D_OUT_0"=%0
+                i@"D_OUT_1"=X
+                i@"OUTPUT_ENABLE"=%3
+                i@"CLOCK_ENABLE"=1
+                i@"INPUT_CLK"=X
+                i@"OUTPUT_CLK"=X
+                i@"LATCH_INPUT_ENABLE"=X
+                io@"PACKAGE_PIN"=#"io"
+                io@"PACKAGE_PIN_B"=#_
+            }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_iob_tristate_wide() {
+        let (target, mut design) = parse! {r#"
+            #"io":4
+            %0:4 = input "o"
+            %4:1 = input "oe"
+            %5:4 = iob #"io":4 o=%0:4 en=%4
+            %9:0 = output "i" %5:4
+        "#};
+        target.lower_iobs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            #"io":4
+            %0:4 = input "o"
+            %4:1 = input "oe"
+            %5:0 = output "i" {%6+0 %9+0 %12+0 %15+0}
+            %6:3 = target "SB_IO" {
+                p@"PIN_TYPE"=const(101001)
+                p@"PULLUP"=const(0)
+                p@"NEG_TRIGGER"=const(0)
+                p@"IS_GB"=const(0)
+                p@"IO_STANDARD"=string("SB_LVCMOS")
+                i@"D_OUT_0"=%0+0
+                i@"D_OUT_1"=X
+                i@"OUTPUT_ENABLE"=%4
+                i@"CLOCK_ENABLE"=1
+                i@"INPUT_CLK"=X
+                i@"OUTPUT_CLK"=X
+                i@"LATCH_INPUT_ENABLE"=X
+                io@"PACKAGE_PIN"=#"io"+0
+                io@"PACKAGE_PIN_B"=#_
+            }
+            %9:3 = target "SB_IO" {
+                p@"PIN_TYPE"=const(101001)
+                p@"PULLUP"=const(0)
+                p@"NEG_TRIGGER"=const(0)
+                p@"IS_GB"=const(0)
+                p@"IO_STANDARD"=string("SB_LVCMOS")
+                i@"D_OUT_0"=%0+1
+                i@"D_OUT_1"=X
+                i@"OUTPUT_ENABLE"=%4
+                i@"CLOCK_ENABLE"=1
+                i@"INPUT_CLK"=X
+                i@"OUTPUT_CLK"=X
+                i@"LATCH_INPUT_ENABLE"=X
+                io@"PACKAGE_PIN"=#"io"+1
+                io@"PACKAGE_PIN_B"=#_
+            }
+            %12:3 = target "SB_IO" {
+                p@"PIN_TYPE"=const(101001)
+                p@"PULLUP"=const(0)
+                p@"NEG_TRIGGER"=const(0)
+                p@"IS_GB"=const(0)
+                p@"IO_STANDARD"=string("SB_LVCMOS")
+                i@"D_OUT_0"=%0+2
+                i@"D_OUT_1"=X
+                i@"OUTPUT_ENABLE"=%4
+                i@"CLOCK_ENABLE"=1
+                i@"INPUT_CLK"=X
+                i@"OUTPUT_CLK"=X
+                i@"LATCH_INPUT_ENABLE"=X
+                io@"PACKAGE_PIN"=#"io"+2
+                io@"PACKAGE_PIN_B"=#_
+            }
+            %15:3 = target "SB_IO" {
+                p@"PIN_TYPE"=const(101001)
+                p@"PULLUP"=const(0)
+                p@"NEG_TRIGGER"=const(0)
+                p@"IS_GB"=const(0)
+                p@"IO_STANDARD"=string("SB_LVCMOS")
+                i@"D_OUT_0"=%0+3
+                i@"D_OUT_1"=X
+                i@"OUTPUT_ENABLE"=%4
+                i@"CLOCK_ENABLE"=1
+                i@"INPUT_CLK"=X
+                i@"OUTPUT_CLK"=X
+                i@"LATCH_INPUT_ENABLE"=X
+                io@"PACKAGE_PIN"=#"io"+3
+                io@"PACKAGE_PIN_B"=#_
+            }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
 }

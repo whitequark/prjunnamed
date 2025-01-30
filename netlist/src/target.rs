@@ -1,10 +1,11 @@
+use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::error::Error;
 use std::collections::BTreeMap;
 use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
-use crate::{CellRef, Const, Design, Instance, ParamValue, TargetCell, Trit, Value};
+use crate::{CellRef, Const, Design, Instance, IoValue, ParamValue, TargetCell, Trit, Value};
 
 pub trait Target: Debug {
     /// Get target name. The name of the target can be used to construct a new instance of it.
@@ -19,15 +20,18 @@ pub trait Target: Debug {
     /// the connectivity and properties of the primitive instance.
     fn prototype(&self, name: &str) -> Option<&TargetPrototype>;
 
+    /// Validate target-specific constraints. Conformance with the prototype is always validated
+    /// by `Design::validate`.
+    fn validate(&self, design: &Design, cell: &TargetCell);
+
     /// Convert generic instances into target cells.
     fn import(&self, design: &mut Design) -> Result<(), TargetImportError>;
 
     /// Convert target cells into generic instances.
     fn export(&self, design: &mut Design);
 
-    /// Validate target-specific constraints. Conformance with the prototype is always validated
-    /// by `Design::validate`.
-    fn validate(&self, design: &Design, cell: &TargetCell);
+    /// Run the complete synthesis flow.
+    fn synthesize(&self, design: &mut Design) -> Result<(), ()>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -273,6 +277,52 @@ impl TargetPrototype {
 
     pub fn get_io(&self, name: &str) -> Option<&TargetIo> {
         self.ios_by_name.get(name).map(|&index| &self.ios[index])
+    }
+
+    pub fn apply_param(&self, target_cell: &mut TargetCell, name: impl AsRef<str>, value: impl Into<ParamValue>) {
+        let name = name.as_ref();
+        if let Some(TargetParam { index, .. }) = self.get_param(name) {
+            target_cell.params[*index] = value.into();
+        } else {
+            panic!("parameter {:?} does not exist for target cell", name);
+        }
+    }
+
+    pub fn apply_input<'a>(
+        &self,
+        target_cell: &mut TargetCell,
+        name: impl AsRef<str>,
+        value: impl Into<Cow<'a, Value>>,
+    ) {
+        let (name, value) = (name.as_ref(), value.into());
+        if let Some(TargetInput { range, .. }) = self.get_input(name) {
+            target_cell.inputs[range.clone()].copy_from_slice(&value[..]);
+        } else {
+            panic!("input {:?} does not exist for target cell", name);
+        }
+    }
+
+    pub fn apply_io<'a>(
+        &self,
+        target_cell: &mut TargetCell,
+        name: impl AsRef<str>,
+        value: impl Into<Cow<'a, IoValue>>,
+    ) {
+        let (name, value) = (name.as_ref(), value.into());
+        if let Some(TargetIo { range, .. }) = self.get_io(name) {
+            target_cell.ios[range.clone()].copy_from_slice(&value[..]);
+        } else {
+            panic!("input {:?} does not exist for target cell", name);
+        }
+    }
+
+    pub fn extract_output(&self, target_cell_output: &Value, name: impl AsRef<str>) -> Value {
+        let name = name.as_ref();
+        if let Some(TargetOutput { range, .. }) = self.get_output(name) {
+            target_cell_output.slice(range.clone())
+        } else {
+            panic!("output {:?} does not exist for target cell", name);
+        }
     }
 
     pub fn target_cell_to_instance(&self, cell: &TargetCell) -> Instance {

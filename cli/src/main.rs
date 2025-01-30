@@ -20,17 +20,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         prjunnamed_netlist::create_target(name.as_str(), BTreeMap::new()).unwrap_or_else(|err| panic!("{}", err))
     });
 
-    let mut design_bundle = prjunnamed_yosys_json::import(target, &mut File::open(input)?)?;
+    let mut design_bundle = prjunnamed_yosys_json::import(target.clone(), &mut File::open(input)?)?;
 
     for (name, design) in design_bundle.iter_mut() {
         print!("; {} (initial)\n{}\n", name, design);
 
-        // prjunnamed_smt2::verify_transformation(design, canonicalize)?;
-        canonicalize(design);
-
-        lower(design);
-
-        canonicalize(design);
+        match target {
+            Some(ref target) => target.synthesize(design).expect("synthesis failed"),
+            None => {
+                canonicalize(design);
+                lower(design);
+                canonicalize(design);
+            }
+        }
 
         print!("; {} (final)\n{}\n", name, design);
     }
