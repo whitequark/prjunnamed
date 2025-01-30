@@ -66,24 +66,21 @@ impl SiliconBlueTarget {
                 .add_param_bool("PULLUP", false)
                 .add_param_bits("NEG_TRIGGER", Const::zero(1))
                 .add_param_bool("IS_GB", false) // synthetic
-                .add_param_string_enum(
-                    "IO_STANDARD",
-                    &[
-                        "SB_LVCMOS",
-                        "SB_SSTL2_CLASS_1",
-                        "SB_SSTL2_CLASS_2",
-                        "SB_SSTL18_FULL",
-                        "SB_SSTL18_HALF",
-                        "SB_MDDR10",
-                        "SB_MDDR8",
-                        "SB_MDDR4",
-                        "SB_MDDR2",
-                        "SB_LVDS_INPUT",
-                        "SB_LVDS_OUTPUT",
-                        "SB_LVDS_IO",
-                        "OPEN_DRAIN", // synthetic; used to mark SB_IO_OD
-                    ],
-                )
+                .add_param_string_enum("IO_STANDARD", &[
+                    "SB_LVCMOS",
+                    "SB_SSTL2_CLASS_1",
+                    "SB_SSTL2_CLASS_2",
+                    "SB_SSTL18_FULL",
+                    "SB_SSTL18_HALF",
+                    "SB_MDDR10",
+                    "SB_MDDR8",
+                    "SB_MDDR4",
+                    "SB_MDDR2",
+                    "SB_LVDS_INPUT",
+                    "SB_LVDS_OUTPUT",
+                    "SB_LVDS_IO",
+                    "OPEN_DRAIN", // synthetic; used to mark SB_IO_OD
+                ])
                 // synthetic for SB_IO_OD cell (it has all of these without underscores for some unhinged reason),
                 // except for PACKAGE_PIN_B and GLOBAL_BUFFER_OUTPUT which it lacks
                 .add_input("D_OUT_0", Const::undef(1))
@@ -125,24 +122,31 @@ impl SiliconBlueTarget {
             // actually corresponds to several vendor cells (selected by MODE parameter)
             "SB_PLL40".into(),
             TargetPrototype::new_has_state()
-                .add_param_string_enum(
-                    "MODE",
-                    &["SB_PLL40_CORE", "SB_PLL40_PAD", "SB_PLL40_2_PAD", "SB_PLL40_2F_CORE", "SB_PLL40_2F_PAD"],
-                ) // synthetic
+                .add_param_string_enum("MODE", &[
+                    "SB_PLL40_CORE",
+                    "SB_PLL40_PAD",
+                    "SB_PLL40_2_PAD",
+                    "SB_PLL40_2F_CORE",
+                    "SB_PLL40_2F_PAD",
+                ]) // synthetic
                 .add_param_string_enum("FEEDBACK_PATH", &["SIMPLE", "DELAY", "PHASE_AND_DELAY", "EXTERNAL"])
                 .add_param_string_enum("DELAY_ADJUSTMENT_MODE_FEEDBACK", &["FIXED", "DYNAMIC"])
                 .add_param_string_enum("DELAY_ADJUSTMENT_MODE_RELATIVE", &["FIXED", "DYNAMIC"])
                 .add_param_bits("SHIFTREG_DIV_MODE", Const::zero(2))
                 .add_param_bits("FDA_FEEDBACK", Const::zero(4))
                 .add_param_bits("FDA_RELATIVE", Const::zero(4))
-                .add_param_string_enum(
-                    "PLLOUT_SELECT_PORTA",
-                    &["GENCLK", "GENCLK_HALF", "SHIFTREG_0deg", "SHIFTREG_90deg"],
-                ) // synthetic for SB_PLL40_CORE, SB_PLL40_PAD
-                .add_param_string_enum(
-                    "PLLOUT_SELECT_PORTB",
-                    &["GENCLK", "GENCLK_HALF", "SHIFTREG_0deg", "SHIFTREG_90deg"],
-                )
+                .add_param_string_enum("PLLOUT_SELECT_PORTA", &[
+                    "GENCLK",
+                    "GENCLK_HALF",
+                    "SHIFTREG_0deg",
+                    "SHIFTREG_90deg",
+                ]) // synthetic for SB_PLL40_CORE, SB_PLL40_PAD
+                .add_param_string_enum("PLLOUT_SELECT_PORTB", &[
+                    "GENCLK",
+                    "GENCLK_HALF",
+                    "SHIFTREG_0deg",
+                    "SHIFTREG_90deg",
+                ])
                 .add_param_bits("DIVR", Const::zero(4))
                 .add_param_bits("DIVF", Const::zero(7))
                 .add_param_bits("DIVQ", Const::zero(3))

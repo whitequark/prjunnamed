@@ -250,13 +250,13 @@ impl ModuleImporter<'_> {
             if details.hide_name {
                 continue;
             }
-            if details.bits.iter().any(|bit|
+            if details.bits.iter().any(|bit| {
                 if let yosys::Bit::Net(net) = bit {
                     self.io_nets.contains_key(net)
                 } else {
                     false
                 }
-            ) {
+            }) {
                 continue;
             }
             let value = self.value(&details.bits);

@@ -303,8 +303,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                 }
                 ys_cell.add_to(&ys_cell_name, &mut ys_module);
             }
-            CellRepr::Target(_target_cell) =>
-                unreachable!(),
+            CellRepr::Target(_target_cell) => unreachable!(),
 
             CellRepr::Input(port_name, _size) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Input, indexer.value(&output)))
