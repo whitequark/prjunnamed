@@ -150,6 +150,7 @@ dependencies = [
  "prjunnamed-generic",
  "prjunnamed-netlist",
  "prjunnamed-pattern",
+ "prjunnamed-siliconblue",
  "prjunnamed-smt2",
  "prjunnamed-yosys_json",
 ]
@@ -172,6 +173,13 @@ dependencies = [
 
 [[package]]
 name = "prjunnamed-pattern"
+version = "0.1.0"
+dependencies = [
+ "prjunnamed-netlist",
+]
+
+[[package]]
+name = "prjunnamed-siliconblue"
 version = "0.1.0"
 dependencies = [
  "prjunnamed-netlist",

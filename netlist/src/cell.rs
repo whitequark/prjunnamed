@@ -1,7 +1,7 @@
 use core::ops::Range;
 use std::{borrow::Cow, collections::BTreeMap, hash::Hash};
 
-use crate::{Const, ControlNet, IoValue, Net, Value};
+use crate::{Const, ControlNet, Design, IoValue, Net, TargetPrototype, Trit, Value};
 
 // Space-optimized representation of a cell, for compact AIGs.
 #[derive(Debug, Clone)]
@@ -52,6 +52,7 @@ pub enum CellRepr {
     // TODO: memory
     Dff(FlipFlop),
     Iob(IoBuffer),
+    Target(TargetCell),
     Other(Instance),
 
     Input(String, usize),
@@ -60,7 +61,7 @@ pub enum CellRepr {
 }
 
 impl CellRepr {
-    pub fn validate(&self) {
+    pub fn validate(&self, design: &Design) {
         match self {
             CellRepr::Buf(_) => (),
             CellRepr::Not(_) => (),
@@ -95,6 +96,18 @@ impl CellRepr {
             }
             CellRepr::Iob(io_buffer) => {
                 assert_eq!(io_buffer.output.len(), io_buffer.io.len());
+            }
+            CellRepr::Target(target_cell) => {
+                let prototype = design.target_prototype(target_cell);
+                assert_eq!(target_cell.params.len(), prototype.params.len());
+                for (param, value) in prototype.params.iter().zip(target_cell.params.iter()) {
+                    assert!(param.kind.is_valid(value));
+                }
+                assert_eq!(target_cell.inputs.len(), prototype.input_len);
+                assert_eq!(target_cell.output_len, prototype.output_len);
+                assert_eq!(target_cell.ios.len(), prototype.io_len);
+                let target = design.target().unwrap();
+                target.validate(design, target_cell);
             }
             CellRepr::Other(_instance) => {
                 // TODO
@@ -225,6 +238,7 @@ impl CellRepr {
 
             CellRepr::Dff(flip_flop) => flip_flop.output_len(),
             CellRepr::Iob(io_buffer) => io_buffer.output_len(),
+            CellRepr::Target(target_cell) => target_cell.output_len,
             CellRepr::Other(instance) => instance.output_len(),
 
             CellRepr::Input(_, width) => *width as usize,
@@ -266,6 +280,7 @@ impl CellRepr {
             }
             CellRepr::Dff(flip_flop) => flip_flop.visit(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit(&mut f),
+            CellRepr::Target(target_cell) => target_cell.visit(&mut f),
             CellRepr::Other(instance) => instance.visit(&mut f),
         }
     }
@@ -303,6 +318,7 @@ impl CellRepr {
             }
             CellRepr::Dff(flip_flop) => flip_flop.visit_mut(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit_mut(&mut f),
+            CellRepr::Target(target_cell) => target_cell.visit_mut(&mut f),
             CellRepr::Other(instance) => instance.visit_mut(&mut f),
         }
     }
@@ -403,6 +419,36 @@ pub enum ParamValue {
     String(String),
 }
 
+impl From<Const> for ParamValue {
+    fn from(value: Const) -> Self {
+        Self::Const(value)
+    }
+}
+
+impl From<bool> for ParamValue {
+    fn from(value: bool) -> Self {
+        Self::Const(Trit::from(value).into())
+    }
+}
+
+impl From<i64> for ParamValue {
+    fn from(value: i64) -> Self {
+        Self::Int(value)
+    }
+}
+
+impl From<&str> for ParamValue {
+    fn from(value: &str) -> Self {
+        Self::String(value.into())
+    }
+}
+
+impl From<String> for ParamValue {
+    fn from(value: String) -> Self {
+        Self::String(value)
+    }
+}
+
 impl PartialEq for ParamValue {
     fn eq(&self, other: &Self) -> bool {
         match (self, other) {
@@ -439,8 +485,55 @@ pub struct Instance {
 }
 
 impl Instance {
+    pub fn new(kind: String) -> Self {
+        Instance {
+            kind,
+            params: Default::default(),
+            inputs: Default::default(),
+            outputs: Default::default(),
+            ios: Default::default(),
+        }
+    }
+
     pub fn output_len(&self) -> usize {
         self.outputs.values().map(|range| range.len()).sum()
+    }
+
+    pub fn get_param_string(&self, name: &str) -> Option<&str> {
+        let val = self.params.get(name)?;
+        if let ParamValue::String(val) = val {
+            Some(val)
+        } else {
+            None
+        }
+    }
+
+    pub fn add_param(&mut self, name: impl Into<String>, value: impl Into<ParamValue>) {
+        self.params.insert(name.into(), value.into());
+    }
+
+    pub fn rename_param(&mut self, name_from: impl AsRef<str>, name_to: impl Into<String>) {
+        if let Some(param) = self.params.remove(name_from.as_ref()) {
+            assert!(self.params.insert(name_to.into(), param).is_none());
+        }
+    }
+
+    pub fn rename_input(&mut self, name_from: impl AsRef<str>, name_to: impl Into<String>) {
+        if let Some(input) = self.inputs.remove(name_from.as_ref()) {
+            assert!(self.inputs.insert(name_to.into(), input).is_none());
+        }
+    }
+
+    pub fn rename_output(&mut self, name_from: impl AsRef<str>, name_to: impl Into<String>) {
+        if let Some(output) = self.outputs.remove(name_from.as_ref()) {
+            assert!(self.outputs.insert(name_to.into(), output).is_none());
+        }
+    }
+
+    pub fn rename_io(&mut self, name_from: impl AsRef<str>, name_to: impl Into<String>) {
+        if let Some(io) = self.ios.remove(name_from.as_ref()) {
+            assert!(self.ios.insert(name_to.into(), io).is_none());
+        }
     }
 
     pub fn visit(&self, mut f: impl FnMut(Net)) {
@@ -453,6 +546,42 @@ impl Instance {
         for val in self.inputs.values_mut() {
             val.visit_mut(&mut f);
         }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct TargetCell {
+    pub kind: String,
+    pub params: Vec<ParamValue>,
+    pub inputs: Value,
+    pub output_len: usize,
+    pub ios: IoValue,
+}
+
+impl TargetCell {
+    pub fn new(kind: String, prototype: &TargetPrototype) -> Self {
+        let mut result = Self {
+            kind,
+            params: vec![],
+            inputs: Value::EMPTY,
+            output_len: prototype.output_len,
+            ios: IoValue::floating(prototype.io_len),
+        };
+        for param in &prototype.params {
+            result.params.push(param.default.clone());
+        }
+        for input in &prototype.inputs {
+            result.inputs.extend(Value::from(&input.default));
+        }
+        result
+    }
+
+    pub fn visit(&self, f: impl FnMut(Net)) {
+        self.inputs.visit(f);
+    }
+
+    pub fn visit_mut(&mut self, f: impl FnMut(&mut Net)) {
+        self.inputs.visit_mut(f);
     }
 }
 

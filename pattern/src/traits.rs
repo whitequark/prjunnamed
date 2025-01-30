@@ -5,7 +5,9 @@ use prjunnamed_netlist::{Const, Net, Value};
 pub trait NetOrValue: Sized + Clone + Debug + Display {
     fn len(&self) -> usize;
     fn iter(&self) -> impl Iterator<Item = Net>;
-    fn as_value(&self) -> Value { self.iter().collect::<Vec<_>>().into() }
+    fn as_value(&self) -> Value {
+        Value::from_iter(self.iter())
+    }
     fn as_const(&self) -> Option<Const>;
     fn try_from(other: impl NetOrValue) -> Option<Self>;
 

@@ -4,15 +4,20 @@ use std::borrow::Cow;
 use std::collections::{btree_map, BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::str::FromStr;
+use std::sync::Arc;
 
 use crate::cell::{Cell, CellRepr};
-use crate::{ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Trit, Value};
+use crate::{
+    ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Target, Trit, Value, TargetCellPurity,
+    TargetCell, TargetPrototype,
+};
 
 #[derive(Debug, Clone)]
 pub struct Design {
     ios: BTreeMap<String, Range<u32>>,
     cells: Vec<Cell>,
     changes: RefCell<ChangeQueue>,
+    target: Option<Arc<dyn Target>>,
 }
 
 #[derive(Debug, Clone)]
@@ -26,6 +31,10 @@ struct ChangeQueue {
 
 impl Design {
     pub fn new() -> Design {
+        Self::with_target(None)
+    }
+
+    pub fn with_target(target: Option<Arc<dyn Target>>) -> Design {
         Design {
             ios: BTreeMap::new(),
             cells: vec![],
@@ -36,6 +45,7 @@ impl Design {
                 replaced_cells: BTreeMap::new(),
                 replaced_nets: BTreeMap::new(),
             }),
+            target,
         }
     }
 
@@ -65,14 +75,19 @@ impl Design {
 
     pub fn find_io(&self, io_net: IoNet) -> Option<(&str, usize)> {
         for (name, range) in self.ios.iter() {
-            if range.contains(&io_net.0) {
-                return Some((name.as_str(), (io_net.0 - range.start) as usize));
+            if range.contains(&io_net.index) {
+                return Some((name.as_str(), (io_net.index - range.start) as usize));
             }
         }
         None
     }
+
+    pub fn iter_ios(&self) -> impl Iterator<Item = (&str, IoValue)> {
+        self.ios.iter().map(|(name, range)| (name.as_str(), IoValue::from_range(range.clone())))
+    }
+
     pub fn add_cell(&self, cell: CellRepr) -> Value {
-        cell.validate();
+        cell.validate(self);
         let mut changes = self.changes.borrow_mut();
         let index = self.cells.len() + changes.added_cells.len();
         let output_len = cell.output_len();
@@ -163,6 +178,14 @@ impl Design {
         }
         did_change
     }
+
+    pub fn target(&self) -> Option<Arc<dyn Target>> {
+        self.target.as_ref().map(|target| target.clone())
+    }
+
+    pub fn target_prototype(&self, target_cell: &TargetCell) -> &TargetPrototype {
+        self.target.as_ref().unwrap().prototype(&target_cell.kind).unwrap()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -197,7 +220,7 @@ impl<'a> CellRef<'a> {
     }
 
     pub fn replace(&self, to_cell: CellRepr) {
-        to_cell.validate();
+        to_cell.validate(&self.design);
         let mut changes = self.design.changes.borrow_mut();
         assert!(changes.replaced_cells.insert(self.index, to_cell).is_none());
     }
@@ -306,6 +329,8 @@ impl Design {
             Iob(arg.into());
         add_other(arg: impl Into<Instance>) ->
             Other(arg.into());
+        add_target(arg: impl Into<TargetCell>) ->
+            Target(arg.into());
 
         add_input(name: impl Into<String>, width: usize) ->
             Input(name.into(), width);
@@ -339,6 +364,11 @@ impl Design {
             match &*cell.repr() {
                 CellRepr::Dff(_) | CellRepr::Iob(_) | CellRepr::Other(_) | CellRepr::Input(_, _) => {
                     queue.insert(index);
+                }
+                CellRepr::Target(target_cell) => {
+                    if self.target_prototype(target_cell).purity != TargetCellPurity::Pure {
+                        queue.insert(index);
+                    }
                 }
                 _ => (),
             }
@@ -374,6 +404,11 @@ impl Design {
                 | CellRepr::Output(_, _)
                 | CellRepr::Name(_, _) => {
                     queue.insert(index);
+                }
+                CellRepr::Target(target_cell) => {
+                    if self.target_prototype(target_cell).purity == TargetCellPurity::HasEffects {
+                        queue.insert(index);
+                    }
                 }
                 _ => (),
             }
@@ -630,6 +665,17 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }
             }
+            (CellRepr::Target(target_cell_l), CellRepr::Target(target_cell_r)) => {
+                for (io_net_l, io_net_r) in target_cell_l.ios.iter().zip(target_cell_r.ios.iter()) {
+                    if !ios.contains(&(io_net_l, io_net_r)) {
+                        return Err(NotIsomorphic::IoNetMismatch(io_net_l, io_net_r));
+                    }
+                }
+                if target_cell_l.kind != target_cell_r.kind || target_cell_l.params != target_cell_r.params {
+                    return Err(NotIsomorphic::NetMismatch(net_l, net_r));
+                }
+                queue_vals(&mut queue, &target_cell_l.inputs, &target_cell_r.inputs)?;
+            }
             (CellRepr::Other(inst_l), CellRepr::Other(inst_r)) => {
                 if inst_l.kind != inst_r.kind || inst_l.params != inst_r.params || inst_l.outputs != inst_r.outputs {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
@@ -781,22 +827,28 @@ impl Design {
     }
 
     fn write_io_net(&self, f: &mut std::fmt::Formatter, io_net: IoNet) -> std::fmt::Result {
-        write!(f, "#")?;
-        match self.find_io(io_net) {
-            Some((name, offset)) => {
-                self.write_string(f, name)?;
-                if self.ios[name].len() > 1 {
-                    write!(f, "+{}", offset)?;
+        if io_net.is_floating() {
+            write!(f, "#_")
+        } else {
+            write!(f, "#")?;
+            match self.find_io(io_net) {
+                Some((name, offset)) => {
+                    self.write_string(f, name)?;
+                    if self.ios[name].len() > 1 {
+                        write!(f, "+{}", offset)?;
+                    }
+                    Ok(())
                 }
-                Ok(())
+                None => write!(f, "??"),
             }
-            None => write!(f, "??"),
         }
     }
 
     fn write_io_value(&self, f: &mut std::fmt::Formatter, io_value: &IoValue) -> std::fmt::Result {
         if io_value.len() == 1 {
             self.write_io_net(f, io_value[0])
+        } else if io_value.iter().all(IoNet::is_floating) {
+            write!(f, "#_:{}", io_value.len())
         } else {
             write!(f, "{{")?;
             for io_net in io_value {
@@ -808,13 +860,16 @@ impl Design {
     }
 
     fn write_cell(&self, f: &mut std::fmt::Formatter, cell_ref: CellRef) -> std::fmt::Result {
-        let write_control = |f: &mut std::fmt::Formatter, name: &str, control_net: ControlNet| -> std::fmt::Result {
-            if control_net.is_positive() {
-                write!(f, "{}=", name)?;
-            } else {
-                write!(f, "!{}=", name)?;
+        let write_control_net = |f: &mut std::fmt::Formatter, control_net: ControlNet| -> std::fmt::Result {
+            if control_net.is_negative() {
+                write!(f, "!")?;
             };
             self.write_net(f, control_net.net())
+        };
+
+        let write_control = |f: &mut std::fmt::Formatter, name: &str, control_net: ControlNet| -> std::fmt::Result {
+            write!(f, "{}=", name)?;
+            write_control_net(f, control_net)
         };
 
         let write_common = |f: &mut std::fmt::Formatter, name: &str, args: &[&Value]| -> std::fmt::Result {
@@ -835,6 +890,27 @@ impl Design {
                 write!(f, " {stride:b}")?;
                 Ok(())
             };
+
+        let write_param_value = |f: &mut std::fmt::Formatter, value: &ParamValue| -> std::fmt::Result {
+            match value {
+                ParamValue::Const(value) => write!(f, "const({})", value)?,
+                ParamValue::Int(value) => write!(f, "int({})", value)?,
+                ParamValue::Float(value) => write!(f, "float({})", value)?,
+                ParamValue::String(value) => {
+                    write!(f, "string(")?;
+                    self.write_string(f, value)?;
+                    write!(f, ")")?;
+                }
+            }
+            Ok(())
+        };
+
+        let write_cell_argument = |f: &mut std::fmt::Formatter, sigil: &str, name: &str| -> std::fmt::Result {
+            write!(f, "  {sigil}@")?;
+            self.write_string(f, &name)?;
+            write!(f, "=")?;
+            Ok(())
+        };
 
         write!(f, "%{}:{} = ", cell_ref.index, cell_ref.output_len())?;
         match &*cell_ref.repr() {
@@ -916,38 +992,44 @@ impl Design {
                 self.write_string(f, instance.kind.as_str())?;
                 write!(f, " {{\n")?;
                 for (name, value) in instance.params.iter() {
-                    write!(f, "  p@")?;
-                    self.write_string(f, name)?;
-                    write!(f, "=")?;
-                    match value {
-                        ParamValue::Const(value) => write!(f, "const({})", value)?,
-                        ParamValue::Int(value) => write!(f, "int({})", value)?,
-                        ParamValue::Float(value) => write!(f, "float({})", value)?,
-                        ParamValue::String(value) => {
-                            write!(f, "string(")?;
-                            self.write_string(f, value)?;
-                            write!(f, ")")?;
-                        }
-                    }
+                    write_cell_argument(f, "p", name)?;
+                    write_param_value(f, value)?;
                     write!(f, "\n")?;
                 }
                 for (name, value) in instance.inputs.iter() {
-                    write!(f, "  i@")?;
-                    self.write_string(f, name)?;
-                    write!(f, "=")?;
+                    write_cell_argument(f, "i", name)?;
                     self.write_value(f, value)?;
                     write!(f, "\n")?;
                 }
                 for (name, range) in instance.outputs.iter() {
-                    write!(f, "  o@")?;
-                    self.write_string(f, name)?;
-                    write!(f, "={}:{}\n", range.start, range.len())?;
+                    write_cell_argument(f, "o", name)?;
+                    write!(f, "{}:{}\n", range.start, range.len())?;
                 }
                 for (name, value) in instance.ios.iter() {
-                    write!(f, "  io@")?;
-                    self.write_string(f, name)?;
-                    write!(f, "=")?;
+                    write_cell_argument(f, "io", name)?;
                     self.write_io_value(f, value)?;
+                    write!(f, "\n")?;
+                }
+                write!(f, "}}")?;
+            }
+            CellRepr::Target(target_cell) => {
+                write!(f, "target ")?;
+                let prototype = self.target_prototype(target_cell);
+                self.write_string(f, &target_cell.kind)?;
+                write!(f, " {{\n")?;
+                for (param, value) in prototype.params.iter().zip(target_cell.params.iter()) {
+                    write_cell_argument(f, "p", &param.name)?;
+                    write_param_value(f, value)?;
+                    write!(f, "\n")?;
+                }
+                for input in &prototype.inputs {
+                    write_cell_argument(f, "i", &input.name)?;
+                    self.write_value(f, &target_cell.inputs.slice(input.range.clone()))?;
+                    write!(f, "\n")?;
+                }
+                for io in &prototype.ios {
+                    write_cell_argument(f, "io", &io.name)?;
+                    self.write_io_value(f, &target_cell.ios.slice(io.range.clone()))?;
                     write!(f, "\n")?;
                 }
                 write!(f, "}}")?;
@@ -990,6 +1072,18 @@ impl Design {
 
 impl Display for Design {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if let Some(target) = self.target() {
+            write!(f, "target ")?;
+            self.write_string(f, target.name())?;
+            for (name, value) in target.options() {
+                write!(f, " ")?;
+                self.write_string(f, &name)?;
+                write!(f, "=")?;
+                self.write_string(f, &value)?;
+            }
+            write!(f, "\n")?;
+        }
+
         for (name, range) in self.ios.iter() {
             write!(f, "#")?;
             self.write_string(f, name)?;

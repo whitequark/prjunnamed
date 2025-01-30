@@ -2,11 +2,15 @@ use std::{collections::BTreeMap, fmt::Display, ops::Range, str::FromStr};
 
 use yap::{one_of, types::WithContext, IntoTokens, TokenLocation, Tokens};
 
-use crate::{CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Value};
+use crate::{
+    create_target, CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue,
+    TargetCell, Value,
+};
 
 #[derive(Debug)]
 struct Context {
     design: Design,
+    is_empty: bool,
     next_cell: usize,
     cell_map: BTreeMap<usize, Value>,        // source cell index -> value
     late_map: BTreeMap<(usize, usize), Net>, // source cell index + net offset -> buffer
@@ -14,10 +18,17 @@ struct Context {
 
 impl Context {
     fn new() -> Context {
-        Context { design: Design::new(), next_cell: 0, cell_map: BTreeMap::new(), late_map: BTreeMap::new() }
+        Context {
+            design: Design::new(),
+            is_empty: true,
+            next_cell: 0,
+            cell_map: BTreeMap::new(),
+            late_map: BTreeMap::new(),
+        }
     }
 
     fn add_io(&mut self, name: String, width: usize) -> IoValue {
+        self.is_empty = false;
         self.design.add_io(name, width)
     }
 
@@ -32,6 +43,7 @@ impl Context {
     }
 
     fn add_cell(&mut self, index: usize, width: usize, repr: CellRepr) -> Value {
+        self.is_empty = false;
         let value = self.design.add_cell(repr);
         assert_eq!(value.len(), width, "cell width should match declaration width");
         assert!(index >= self.next_cell, "cell index should monotonically grow");
@@ -159,15 +171,25 @@ fn parse_io_name_offset(t: &mut WithContext<impl Tokens<Item = char>, Context>) 
 
 fn parse_io_net(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoNet> {
     one_of!(t;
+        parse_symbol(t, '#').and_then(|()| parse_symbol(t, '_')).map(|()| IoNet::FLOATING),
         parse_io_name_offset(t).map(|(name, offset)| t.context().get_io(name)[offset]),
         parse_io_name(t).map(|name| t.context().get_io_with_width(name, 1)[0])
     )
 }
 
+fn parse_io_value_floating(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
+    parse_symbol(t, '#')?;
+    parse_symbol(t, '_')?;
+    parse_symbol(t, ':')?;
+    let size = parse_decimal(t)?;
+    Some(IoValue::from_iter(std::iter::repeat_n(IoNet::FLOATING, size)))
+}
+
 fn parse_io_value(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
     one_of!(t;
+        parse_io_value_concat(t),
+        parse_io_value_floating(t),
         parse_io_net(t).map(IoValue::from),
-        parse_io_value_concat(t)
     )
 }
 
@@ -235,6 +257,41 @@ fn parse_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) ->
     Some(value)
 }
 
+fn parse_target_option(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(String, String)> {
+    parse_space(t);
+    let name = parse_string(t)?;
+    parse_space(t);
+    parse_symbol(t, '=')?;
+    parse_space(t);
+    let value = parse_string(t)?;
+    Some((name, value))
+}
+
+fn parse_target(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<()> {
+    parse_space(t);
+    let keyword = parse_keyword(t)?;
+    if keyword != "target" {
+        return None;
+    }
+    parse_space(t);
+    let name = parse_string(t)?;
+    let mut options = BTreeMap::new();
+    while let Some((name, value)) = parse_target_option(t) {
+        if options.insert(name, value).is_some() {
+            panic!("target option is specified more than once");
+        }
+    }
+    parse_space(t);
+    t.token('\n');
+    let context = t.context_mut();
+    if !context.is_empty {
+        panic!("target specification must be the first line of the design");
+    }
+    context.design = Design::with_target(Some(create_target(&name, options).unwrap()));
+    context.is_empty = false;
+    Some(())
+}
+
 fn parse_io(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
     parse_space(t);
     let (name, size) = parse_io_name_size(t)?;
@@ -260,21 +317,26 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
         })
     }
 
-    fn parse_control_net_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>, name: &str) -> Option<ControlNet> {
+    fn parse_control_net_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<ControlNet> {
         parse_space(t);
         let negated = parse_symbol(t, '!').is_some();
-        let keyword = parse_keyword(t)?;
-        if keyword != name {
-            return None;
-        }
-        parse_space(t);
-        parse_symbol(t, '=')?;
         let net = parse_net_arg(t)?;
         if negated {
             Some(ControlNet::Neg(net))
         } else {
             Some(ControlNet::Pos(net))
         }
+    }
+
+    fn parse_control_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>, name: &str) -> Option<ControlNet> {
+        parse_space(t);
+        let keyword = parse_keyword(t)?;
+        if keyword != name {
+            return None;
+        }
+        parse_space(t);
+        parse_symbol(t, '=')?;
+        parse_control_net_arg(t)
     }
 
     fn parse_int_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<usize> {
@@ -303,7 +365,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
         t: &mut WithContext<impl Tokens<Item = char>, Context>,
         name: &str,
     ) -> Option<(ControlNet, Option<Const>)> {
-        parse_control_net_arg(t, name).map(|control_net| {
+        parse_control_arg(t, name).map(|control_net| {
             let init_value = t.optional(|t| {
                 parse_space(t);
                 parse_symbol(t, ',')?;
@@ -360,14 +422,14 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
             "smod_floor" => CellRepr::SModFloor(parse_value_arg(t)?, parse_value_arg(t)?),
             "dff" => {
                 let data = parse_value_arg(t)?;
-                let clock = parse_control_net_arg(t, "clk")?;
+                let clock = parse_control_arg(t, "clk")?;
                 let (clear, clear_value) = t
                     .optional(|t| parse_dff_reset_control_net_arg(t, "clr"))
                     .unwrap_or((ControlNet::Pos(Net::ZERO), None));
                 let (reset, reset_value) = t
                     .optional(|t| parse_dff_reset_control_net_arg(t, "rst"))
                     .unwrap_or((ControlNet::Pos(Net::ZERO), None));
-                let enable = t.optional(|t| parse_control_net_arg(t, "en")).unwrap_or(ControlNet::Pos(Net::ONE));
+                let enable = t.optional(|t| parse_control_arg(t, "en")).unwrap_or(ControlNet::Pos(Net::ONE));
                 let reset_over_enable = t.optional(|t| parse_reset_over_enable_arg(t)).unwrap_or(false);
                 let init_value =
                     t.optional(|t| parse_dff_init_value_arg(t)).unwrap_or_else(|| Const::undef(data.len()));
@@ -385,17 +447,49 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
             }
             "iob" => CellRepr::Iob(IoBuffer {
                 output: parse_value_arg(t)?,
-                enable: parse_control_net_arg(t, "en")?,
+                enable: parse_control_arg(t, "en")?,
                 io: parse_io_value_arg(t)?,
             }),
             "input" => CellRepr::Input(parse_string_arg(t)?, size),
             "output" => CellRepr::Output(parse_string_arg(t)?, parse_value_arg(t)?),
             "name" => CellRepr::Name(parse_string_arg(t)?, parse_value_arg(t)?),
+            "target" => {
+                parse_space(t);
+                let instance = parse_instance(t)?;
+                let target = t.context().design.target().expect("no target specified");
+                let prototype = target.prototype(&instance.kind).expect("no prototype for target cell");
+                let mut target_cell = TargetCell::new(instance.kind.clone(), prototype);
+                for (name, value) in instance.params {
+                    let param = prototype.get_param(&name).expect("unknown parameter");
+                    if !param.kind.is_valid(&value) {
+                        panic!("invalid value for parameter {name}");
+                    }
+                    target_cell.params[param.index] = value;
+                }
+                for (name, value) in instance.inputs {
+                    let input = prototype.get_input(&name).expect("unknown input");
+                    if value.len() != input.len() {
+                        panic!("width mismatch for input {name}");
+                    }
+                    target_cell.inputs[input.range.clone()].copy_from_slice(&value[..]);
+                }
+                for (name, value) in instance.ios {
+                    let io = prototype.get_io(&name).expect("unknown io");
+                    if value.len() != io.len() {
+                        panic!("width mismatch for io {name}");
+                    }
+                    target_cell.ios[io.range.clone()].copy_from_slice(&value[..]);
+                }
+                if !instance.outputs.is_empty() {
+                    panic!("target instance should not have explicit outputs");
+                }
+                CellRepr::Target(target_cell)
+            }
             _ => return None,
         })
     }
 
-    fn parse_instance(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<CellRepr> {
+    fn parse_instance(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Instance> {
         let mut instance = Instance {
             kind: parse_string(t)?,
             params: BTreeMap::new(),
@@ -419,7 +513,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 "io" => {
                     let io_value = parse_io_value(t)?;
                     assert!(instance.ios.insert(name, io_value).is_none(), "duplicate IO name in instance");
-                },
+                }
                 "i" => {
                     let value = parse_value_arg(t)?;
                     assert!(instance.inputs.insert(name, value).is_none(), "duplicate input name in instance");
@@ -444,15 +538,11 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         "int" => ParamValue::Int(parse_decimal(t)?),
                         "string" => ParamValue::String(parse_string(t)?),
                         "float" => todo!(),
-                        _ => return None
+                        _ => return None,
                     };
                     parse_space(t);
                     parse_symbol(t, ')')?;
-                    assert!(
-                        instance.params.insert(name, value).is_none(),
-                        "duplicate parameter name in instance"
-                    );
-
+                    assert!(instance.params.insert(name, value).is_none(), "duplicate parameter name in instance");
                 }
                 _ => return None,
             }
@@ -462,7 +552,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
         }) {}
         parse_space(t);
         parse_symbol(t, '}')?;
-        Some(CellRepr::Other(instance))
+        Some(instance)
     }
 
     parse_space(t);
@@ -472,7 +562,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
     parse_space(t);
     let repr = one_of!(t;
         parse_builtin(t, size),
-        parse_instance(t),
+        parse_instance(t).map(CellRepr::Other),
     )?;
     parse_space(t);
     t.token('\n');
@@ -481,6 +571,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
 
 fn parse_line(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
     if one_of!(t;
+        parse_target(t).is_some(),
         parse_io(t).is_some(),
         parse_cell(t).is_some(),
         { parse_space(t); t.token('\n') }
@@ -530,6 +621,10 @@ pub fn parse(source: &str) -> Result<Design, ParseError> {
 
 #[cfg(test)]
 mod test {
+    use std::{collections::BTreeMap, sync::Arc};
+
+    use crate::{register_target, Const, Design, Target, TargetCell, TargetImportError, TargetPrototype};
+
     fn onewaytrip(text: &str, expect: &str) {
         let design = super::parse_without_compacting(text).map_err(|err| panic!("{}", err)).unwrap();
         assert_eq!(format!("{}", design), format!("{}", expect))
@@ -621,7 +716,7 @@ mod test {
         roundtrip("%0:5 = buf 00000\n%5:1 = dff %0+0 clk=%0+1 rst=%0+2\n");
         roundtrip("%0:5 = buf 00000\n%5:1 = dff %0+0 clk=%0+1 en=%0+2\n");
         roundtrip("%0:5 = buf 00000\n%5:1 = dff %0+0 clk=%0+1 rst=%0+2 en=%0+3 rst>en\n");
-        roundtrip("%0:5 = buf 00000\n%5:1 = dff %0+0 clk=%0+1 rst=%0+2 en=%0+3 en>rst\n");
+        roundtrip("%0:5 = buf 00000\n%5:1 = dff %0+0 clk=%0+1 rst=%0+2 en=!%0+3 en>rst\n");
         roundtrip("%0:5 = buf 00000\n%5:1 = dff %0+0 clk=%0+1 clr=%0+2 rst=%0+3 en=%0+4 en>rst init=1\n");
     }
 
@@ -630,6 +725,8 @@ mod test {
         roundtrip("%0:1 = buf 0\n%1:0 = \"TBUF\" {\n  i@\"EN\"=%0\n}\n");
         roundtrip("%0:2 = \"TBUF\" {\n  o@\"I\"=0:2\n}\n");
         roundtrip("#\"pin\":1\n%0:0 = \"TBUF\" {\n  io@\"PIN\"=#\"pin\"\n}\n");
+        roundtrip("%0:0 = \"TBUF\" {\n  io@\"PIN\"=#_\n}\n");
+        roundtrip("%0:0 = \"TBUF\" {\n  io@\"PIN\"=#_:4\n}\n");
     }
 
     #[test]
@@ -639,5 +736,82 @@ mod test {
         roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=int(-33)\n}\n");
         roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=string(\"x\")\n}\n");
         roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=string(\"x\\7f\")\n}\n");
+    }
+
+    #[derive(Debug)]
+    struct TestTarget {
+        options: BTreeMap<String, String>,
+        prototypes: BTreeMap<String, TargetPrototype>,
+    }
+
+    impl TestTarget {
+        fn new(options: BTreeMap<String, String>) -> Arc<Self> {
+            Arc::new(TestTarget {
+                options,
+                prototypes: BTreeMap::from_iter([(
+                    "QUAD_IOBUF".into(),
+                    TargetPrototype::new_has_effects()
+                        .add_param_bool("OE_INVERT", false)
+                        .add_param_bits("PULLUP", Const::zero(4))
+                        .add_input("O", Const::undef(4))
+                        .add_input_invertible("OE", Const::zero(1), "OE_INVERT")
+                        .add_output("I", 4)
+                        .add_io("IO", 4),
+                )]),
+            })
+        }
+    }
+
+    impl Target for TestTarget {
+        fn name(&self) -> &str {
+            "test"
+        }
+
+        fn options(&self) -> BTreeMap<String, String> {
+            self.options.clone()
+        }
+
+        fn prototype(&self, name: &str) -> Option<&TargetPrototype> {
+            self.prototypes.get(name)
+        }
+
+        fn import(&self, _design: &mut Design) -> Result<(), TargetImportError> {
+            Ok(())
+        }
+
+        fn export(&self, _design: &mut Design) {}
+
+        fn validate(&self, _design: &Design, _cell: &TargetCell) {}
+    }
+
+    #[test]
+    fn test_target() {
+        register_target("test", |options| Ok(TestTarget::new(options)));
+        roundtrip("target \"test\" \"device\"=\"example\"\n");
+        onewaytrip(
+            "target \"test\"\n%0:4 = target \"QUAD_IOBUF\" {\n}\n",
+            concat!(
+                "target \"test\"\n",
+                "%0:4 = target \"QUAD_IOBUF\" {\n",
+                "  p@\"OE_INVERT\"=const(0)\n",
+                "  p@\"PULLUP\"=const(0000)\n",
+                "  i@\"O\"=XXXX\n",
+                "  i@\"OE\"=0\n",
+                "  io@\"IO\"=#_:4\n",
+                "}\n"
+            ),
+        );
+        roundtrip(concat!(
+            "target \"test\"\n",
+            "#\"pins\":3\n",
+            "%0:4 = input \"O\"\n",
+            "%4:4 = target \"QUAD_IOBUF\" {\n",
+            "  p@\"OE_INVERT\"=const(0)\n",
+            "  p@\"PULLUP\"=const(1010)\n",
+            "  i@\"O\"=%0:4\n",
+            "  i@\"OE\"=1\n",
+            "  io@\"IO\"={ #\"pins\"+0 #\"pins\"+1 #\"pins\"+2 #_ }\n",
+            "}\n"
+        ));
     }
 }

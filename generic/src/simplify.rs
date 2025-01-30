@@ -575,7 +575,8 @@ mod test {
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -601,7 +602,8 @@ mod test {
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -624,7 +626,8 @@ mod test {
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -645,7 +648,8 @@ mod test {
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -666,7 +670,8 @@ mod test {
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 1);
         let b = gold.add_input("b", 1);
@@ -685,7 +690,8 @@ mod test {
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         gold.add_output("y", Value::from(Net::ZERO).concat(a));
@@ -704,7 +710,8 @@ mod test {
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let c = gold.add_input("c", 1);
@@ -728,7 +735,8 @@ mod test {
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -743,17 +751,14 @@ mod test {
         let mut design = Design::new();
         let a = design.add_input("a", 8);
         let b = design.add_input("b", 4);
-        let y = design.add_adc(
-            a,
-            Value::zero(4).concat(&b),
-            Net::ZERO,
-        );
+        let y = design.add_adc(a, Value::zero(4).concat(&b), Net::ZERO);
         design.add_output("y", y);
         design.apply();
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 8);
         let b = gold.add_input("b", 4);
@@ -768,17 +773,14 @@ mod test {
         let mut design = Design::new();
         let a = design.add_input("a", 8);
         let b = design.add_input("b", 4);
-        let y = design.add_adc(
-            a,
-            Value::from(Const::from_str("1111")).concat(&b),
-            Net::ONE,
-        );
+        let y = design.add_adc(a, Value::from(Const::from_str("1111")).concat(&b), Net::ONE);
         design.add_output("y", y);
         design.apply();
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 8);
         let b = gold.add_input("b", 4);
@@ -793,17 +795,14 @@ mod test {
         let mut design = Design::new();
         let a = design.add_input("a", 4);
         let b = design.add_input("b", 4);
-        let y = design.add_adc(
-            a.concat(Value::zero(4)),
-            Value::zero(4).concat(&b),
-            Net::ZERO,
-        );
+        let y = design.add_adc(a.concat(Value::zero(4)), Value::zero(4).concat(&b), Net::ZERO);
         design.add_output("y", y);
         design.apply();
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -819,17 +818,14 @@ mod test {
         let ah = design.add_input("ah", 4);
         let bl = design.add_input("bl", 4);
         let bh = design.add_input("bh", 4);
-        let y = design.add_adc(
-            al.concat(Value::zero(4)).concat(ah),
-            bl.concat(Value::zero(4)).concat(bh),
-            Net::ZERO,
-        );
+        let y = design.add_adc(al.concat(Value::zero(4)).concat(ah), bl.concat(Value::zero(4)).concat(bh), Net::ZERO);
         design.add_output("y", y);
         design.apply();
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let al = gold.add_input("al", 4);
         let ah = gold.add_input("ah", 4);
@@ -848,17 +844,14 @@ mod test {
         let a = design.add_input("a", 4);
         let b = design.add_input("b", 4);
         let c = design.add_input("c", 1);
-        let y = design.add_adc(
-            a.concat(Value::zero(4)),
-            b.concat(Value::zero(4)),
-            c.unwrap_net(),
-        );
+        let y = design.add_adc(a.concat(Value::zero(4)), b.concat(Value::zero(4)), c.unwrap_net());
         design.add_output("y", y);
         design.apply();
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -875,17 +868,14 @@ mod test {
         let a = design.add_input("a", 4);
         let b = design.add_input("b", 4);
         let c = design.add_input("c", 1);
-        let y = design.add_adc(
-            a.sext(8),
-            b.sext(8),
-            c.unwrap_net(),
-        );
+        let y = design.add_adc(a.sext(8), b.sext(8), c.unwrap_net());
         design.add_output("y", y);
         design.apply();
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -904,17 +894,14 @@ mod test {
         let ah = design.add_input("ah", 1);
         let bh = design.add_input("bh", 1);
         let c = design.add_input("c", 1);
-        let y = design.add_adc(
-            al.sext(4).concat(ah.sext(4)),
-            bl.sext(4).concat(bh.sext(4)),
-            c.unwrap_net(),
-        );
+        let y = design.add_adc(al.sext(4).concat(ah.sext(4)), bl.sext(4).concat(bh.sext(4)), c.unwrap_net());
         design.add_output("y", y);
         design.apply();
         verify_transformation(&mut design, |design| {
             simplify(design);
             simplify(design); // clean up zero length adcs
-        }).unwrap();
+        })
+        .unwrap();
         let mut gold = Design::new();
         let al = gold.add_input("al", 1);
         let bl = gold.add_input("bl", 1);

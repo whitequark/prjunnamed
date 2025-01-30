@@ -1,7 +1,11 @@
-use std::collections::{btree_map, BTreeMap, BTreeSet};
+use std::{
+    collections::{btree_map, BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
 use prjunnamed_netlist::{
-    CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Trit, Value,
+    CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Target, Trit,
+    Value,
 };
 
 use crate::yosys;
@@ -244,6 +248,15 @@ impl ModuleImporter<'_> {
     fn handle_names(&mut self) -> Result<(), Error> {
         for (name, details) in self.module.netnames.iter() {
             if details.hide_name {
+                continue;
+            }
+            if details.bits.iter().any(|bit|
+                if let yosys::Bit::Net(net) = bit {
+                    self.io_nets.contains_key(net)
+                } else {
+                    false
+                }
+            ) {
                 continue;
             }
             let value = self.value(&details.bits);
@@ -535,6 +548,9 @@ impl ModuleImporter<'_> {
                 });
                 self.port_drive(cell, "Q", q);
             }
+            "$scopeinfo" => {
+                // not quite yet
+            }
             _ => {
                 if cell.type_.starts_with('$') {
                     panic!("unrecognized cell type {}", cell.type_);
@@ -599,10 +615,17 @@ impl ModuleImporter<'_> {
     fn finalize(&mut self) {
         self.design.replace_bufs();
         self.design.compact();
+        if let Some(target) = self.design.target() {
+            target.import(&mut self.design).unwrap_or_else(|err| panic!("{}", err));
+        }
     }
 }
 
-fn import_module(module: &yosys::Module, design_io_ports: &BTreeSet<(&str, &str)>) -> Result<Option<Design>, Error> {
+fn import_module(
+    target: Option<Arc<dyn Target>>,
+    module: &yosys::Module,
+    design_io_ports: &BTreeSet<(&str, &str)>,
+) -> Result<Option<Design>, Error> {
     if let Some(val) = module.attributes.get("blackbox") {
         if val.as_bool()? {
             return Ok(None);
@@ -616,7 +639,7 @@ fn import_module(module: &yosys::Module, design_io_ports: &BTreeSet<(&str, &str)
         driven_nets: BTreeSet::new(),
         nets: BTreeMap::new(),
         init: BTreeMap::new(),
-        design: Design::new(),
+        design: Design::with_target(target),
     };
 
     importer.handle_init()?;
@@ -651,7 +674,10 @@ fn index_io_ports(design: &yosys::Design) -> Result<BTreeSet<(&str, &str)>, Erro
     Ok(io_ports)
 }
 
-pub fn import(reader: &mut impl std::io::Read) -> Result<BTreeMap<String, Design>, Error> {
+pub fn import(
+    target: Option<Arc<dyn Target>>,
+    reader: &mut impl std::io::Read,
+) -> Result<BTreeMap<String, Design>, Error> {
     let mut text = String::new();
     reader.read_to_string(&mut text)?;
     let json = json::parse(text.as_str())?;
@@ -660,7 +686,7 @@ pub fn import(reader: &mut impl std::io::Read) -> Result<BTreeMap<String, Design
     let io_ports = index_io_ports(&yosys_design)?;
     let mut designs = BTreeMap::new();
     for (name, module) in yosys_design.modules.iter() {
-        if let Some(design) = import_module(module, &io_ports)? {
+        if let Some(design) = import_module(target.clone(), module, &io_ports)? {
             designs.insert(name.clone(), design);
         }
     }

@@ -80,7 +80,11 @@ pub fn merge(design: &mut Design) -> bool {
             CellRepr::Or(arg1, arg2) => numberer.bitwise_binary_commutative(CellRepr::Or, arg1, arg2, &output),
             CellRepr::Xor(arg1, arg2) => numberer.bitwise_binary_commutative(CellRepr::Xor, arg1, arg2, &output),
             CellRepr::Mux(arg1, arg2, arg3) => numberer.bitwise_binary_noncommutative(
-                |arg2, arg3| CellRepr::Mux(arg1, arg2, arg3), arg2, arg3, &output),
+                |arg2, arg3| CellRepr::Mux(arg1, arg2, arg3),
+                arg2,
+                arg3,
+                &output,
+            ),
             CellRepr::Adc(arg1, arg2, arg3) => {
                 numberer.commutative_binary(|arg1, arg2| CellRepr::Adc(arg1, arg2, arg3), arg1, arg2, &output)
             }

@@ -181,6 +181,7 @@ impl<'a, 'b> SmtEmitter<'a, 'b> {
             CellRepr::Dff(_flip_flop) => unimplemented!("flip-flops are not implemented yet"),
             CellRepr::Iob(_io_buffer) => unimplemented!("IOs are not implemented yet"),
             CellRepr::Other(_instance) => unimplemented!("instances are not implemented yet"),
+            CellRepr::Target(_target_cell) => unimplemented!("target cells are not implemented yet"),
             CellRepr::Input(name, _width) => {
                 let mangled_name = self.cell_ref(cell_ref)?;
                 self.inputs.insert(name.to_owned(), mangled_name);

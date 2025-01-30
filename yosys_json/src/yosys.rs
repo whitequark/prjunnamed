@@ -282,8 +282,9 @@ impl From<MetadataValue> for JsonValue {
     fn from(value: MetadataValue) -> JsonValue {
         match value {
             MetadataValue::String(value) => match MetadataValueClass::compute(&value) {
-                MetadataValueClass::Bits | MetadataValueClass::BitsAndSpaces => value.into(),
-                MetadataValueClass::Other => (value + " ").into(),
+                MetadataValueClass::Bits => value.into(),
+                MetadataValueClass::BitsAndSpaces => (value + " ").into(),
+                MetadataValueClass::Other => value.into(),
             },
             MetadataValue::Const(value) => value
                 .iter()

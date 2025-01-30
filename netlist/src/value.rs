@@ -8,12 +8,16 @@ use std::{
 
 use crate::{Net, Trit};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Const {
     trits: Vec<Trit>,
 }
 
 impl Const {
+    pub const fn new() -> Self {
+        Self { trits: vec![] }
+    }
+
     pub fn zero(width: usize) -> Self {
         Self::from_iter(std::iter::repeat_n(Trit::Zero, width))
     }
@@ -36,6 +40,46 @@ impl Const {
             trits.push(trit);
         }
         Self { trits }
+    }
+
+    pub fn as_uint(&self) -> Option<u64> {
+        if self.has_undef() {
+            return None;
+        }
+        let mut res = 0;
+        for (pos, trit) in self.iter().enumerate() {
+            if trit == Trit::One {
+                if pos >= 64 {
+                    return None;
+                }
+                res |= 1 << pos;
+            }
+        }
+        Some(res)
+    }
+
+    pub fn as_int(&self) -> Option<i64> {
+        if self.has_undef() {
+            return None;
+        }
+        let mut width = self.len();
+        while width > 1 && self[width - 1] == self[width - 2] {
+            width -= 1;
+        }
+        if width > 64 {
+            return None;
+        }
+        let mut res = 0;
+        for (pos, trit) in self.iter().enumerate() {
+            if trit == Trit::One {
+                if pos == width - 1 {
+                    res |= -1 << pos;
+                } else {
+                    res |= 1 << pos;
+                }
+            }
+        }
+        Some(res)
     }
 
     pub fn from_str(val: &str) -> Self {
@@ -81,19 +125,19 @@ impl Const {
     }
 
     pub fn as_power_of_two(&self) -> Option<u32> {
-        let mut res = None;
-        for (i, trit) in self.trits.iter().copied().enumerate() {
+        let mut result = None;
+        for (offset, trit) in self.trits.iter().copied().enumerate() {
             if trit == Trit::Undef {
                 return None;
             }
             if trit == Trit::One {
-                if res.is_some() {
+                if result.is_some() {
                     return None;
                 }
-                res = Some(i as u32);
+                result = Some(offset as u32);
             }
         }
-        res
+        result
     }
 
     pub fn concat<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Self {
@@ -131,8 +175,8 @@ impl Const {
         assert_eq!(self.len(), other.len());
         let mut sum = vec![];
         let mut carry = ci;
-        for (x, y) in self.iter().zip(other.iter()) {
-            let (s, co) = match (x, y, carry) {
+        for (a, b) in self.iter().zip(other.iter()) {
+            let (y, co) = match (a, b, carry) {
                 (Trit::Undef, _, _) => (Trit::Undef, Trit::Undef),
                 (_, Trit::Undef, _) => (Trit::Undef, Trit::Undef),
                 (_, _, Trit::Undef) => (Trit::Undef, Trit::Undef),
@@ -144,7 +188,7 @@ impl Const {
                 (s, Trit::One, Trit::One) => (s, Trit::One),
             };
             carry = co;
-            sum.push(s);
+            sum.push(y);
         }
         sum.push(carry);
         Const::from_iter(sum)
@@ -251,12 +295,29 @@ impl FromIterator<Trit> for Const {
     }
 }
 
+impl Extend<Trit> for Const {
+    fn extend<T: IntoIterator<Item = Trit>>(&mut self, iter: T) {
+        for trit in iter {
+            self.trits.push(trit);
+        }
+    }
+}
+
 impl IntoIterator for &Const {
     type Item = Trit;
     type IntoIter = std::vec::IntoIter<Trit>;
 
     fn into_iter(self) -> Self::IntoIter {
         self.trits.clone().into_iter()
+    }
+}
+
+impl IntoIterator for Const {
+    type Item = Trit;
+    type IntoIter = std::vec::IntoIter<Trit>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.trits.into_iter()
     }
 }
 
@@ -315,7 +376,7 @@ impl<I: SliceIndex<[Trit]>> IndexMut<I> for Const {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Value {
     nets: Vec<Net>,
 }
@@ -364,6 +425,18 @@ impl Value {
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = Net> + DoubleEndedIterator + ExactSizeIterator + 'a {
         self.nets.iter().copied()
+    }
+
+    pub fn is_undef(&self) -> bool {
+        self.nets.iter().all(|&net| net == Net::UNDEF)
+    }
+
+    pub fn is_zero(&self) -> bool {
+        self.nets.iter().all(|&net| net == Net::ZERO)
+    }
+
+    pub fn is_ones(&self) -> bool {
+        self.nets.iter().all(|&net| net == Net::ONE)
     }
 
     pub fn lsb(&self) -> Net {

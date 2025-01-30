@@ -1,4 +1,8 @@
-use std::{borrow::Cow, fmt::{Debug, Display}, str::FromStr};
+use std::{
+    borrow::Cow,
+    fmt::{Debug, Display},
+    str::FromStr,
+};
 use crate::{Const, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -14,7 +18,7 @@ impl Trit {
             '0' => Trit::Zero,
             '1' => Trit::One,
             'x' | 'X' => Trit::Undef,
-            _ => panic!("weird trit {c}")
+            _ => panic!("weird trit {c}"),
         }
     }
 
@@ -25,9 +29,7 @@ impl Trit {
             Trit::One => arg1.into_owned(),
             Trit::Zero => arg2.into_owned(),
             Trit::Undef => {
-                Const::from_iter(
-                    arg1.iter().zip(arg2.iter()).map(|(x, y)| if x == y { x } else { Trit::Undef }),
-                )
+                Const::from_iter(arg1.iter().zip(arg2.iter()).map(|(x, y)| if x == y { x } else { Trit::Undef }))
             }
         }
     }
@@ -60,7 +62,7 @@ impl FromStr for Trit {
             "X" => Ok(Trit::Undef),
             "0" => Ok(Trit::Zero),
             "1" => Ok(Trit::One),
-            _ => Err(())
+            _ => Err(()),
         }
     }
 }
@@ -231,7 +233,7 @@ impl Display for Net {
             Net { index: u32::MAX } => write!(f, "X"),
             _ => {
                 let cell_index = self.index.checked_sub(Net::FIRST_CELL).unwrap();
-                write!(f, "%{}", cell_index)
+                write!(f, "%{cell_index}")
             }
         }
     }

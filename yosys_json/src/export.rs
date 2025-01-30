@@ -65,9 +65,17 @@ impl NetlistIndexer {
     }
 }
 
-fn export_module(design: Design) -> yosys::Module {
+fn export_module(mut design: Design) -> yosys::Module {
     let indexer = NetlistIndexer::new();
     let mut ys_module = yosys::Module::new();
+
+    if let Some(target) = design.target() {
+        target.export(&mut design);
+    }
+
+    for (name, io_value) in design.iter_ios() {
+        ys_module.ports.add(name, PortDetails::new(yosys::PortDirection::Inout, indexer.io_value(&io_value)))
+    }
 
     for cell_ref in design.iter_cells() {
         let cell_index = cell_ref.debug_index();
@@ -280,7 +288,7 @@ fn export_module(design: Design) -> yosys::Module {
             }
 
             CellRepr::Other(instance) => {
-                let mut ys_cell = CellDetails::new(&format!("\\{}", instance.kind));
+                let mut ys_cell = CellDetails::new(&instance.kind);
                 for (name, value) in instance.params.iter() {
                     ys_cell = ys_cell.param(&name, value);
                 }
@@ -295,6 +303,8 @@ fn export_module(design: Design) -> yosys::Module {
                 }
                 ys_cell.add_to(&ys_cell_name, &mut ys_module);
             }
+            CellRepr::Target(_target_cell) =>
+                unreachable!(),
 
             CellRepr::Input(port_name, _size) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Input, indexer.value(&output)))
