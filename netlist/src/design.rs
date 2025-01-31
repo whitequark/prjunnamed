@@ -26,6 +26,7 @@ struct ChangeQueue {
     added_ios: BTreeMap<String, Range<u32>>,
     added_cells: Vec<Cell>,
     replaced_cells: BTreeMap<usize, CellRepr>,
+    unalived_cells: BTreeSet<usize>,
     replaced_nets: BTreeMap<Net, Net>,
 }
 
@@ -43,6 +44,7 @@ impl Design {
                 added_ios: BTreeMap::new(),
                 added_cells: vec![],
                 replaced_cells: BTreeMap::new(),
+                unalived_cells: BTreeSet::new(),
                 replaced_nets: BTreeMap::new(),
             }),
             target,
@@ -106,6 +108,7 @@ impl Design {
         }
         let index = net.as_cell().unwrap();
         let (cell_index, bit_index) = match self.cells[index] {
+            Cell::Void => unreachable!(),
             Cell::Skip(start) => (start as usize, index - start as usize),
             _ => (index, 0),
         };
@@ -154,17 +157,23 @@ impl Design {
     pub fn apply(&mut self) -> bool {
         let changes = self.changes.get_mut();
         let mut did_change = !changes.added_ios.is_empty() || !changes.added_cells.is_empty();
+        for cell_index in std::mem::take(&mut changes.unalived_cells) {
+            let output_len = self.cells[cell_index].output_len().max(1);
+            for index in cell_index..cell_index + output_len {
+                self.cells[index] = Cell::Void;
+            }
+            did_change = true;
+        }
         for (index, new_cell) in std::mem::take(&mut changes.replaced_cells) {
             assert_eq!(self.cells[index].output_len(), new_cell.output_len());
-            if *self.cells[index].repr() != new_cell {
-                self.cells[index] = new_cell.into();
-                did_change = true;
-            }
+            // CellRef::replace() ensures the new repr is different.
+            self.cells[index] = new_cell.into();
+            did_change = true;
         }
         self.ios.extend(std::mem::take(&mut changes.added_ios));
         self.cells.extend(std::mem::take(&mut changes.added_cells));
         if !changes.replaced_nets.is_empty() {
-            for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, Cell::Skip(_))) {
+            for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, Cell::Skip(_) | Cell::Void)) {
                 cell.visit_mut(|net| {
                     while let Some(new_net) = changes.replaced_nets.get(net) {
                         if *net != *new_net {
@@ -220,13 +229,16 @@ impl<'a> CellRef<'a> {
     }
 
     pub fn replace(&self, to_cell: CellRepr) {
-        to_cell.validate(&self.design);
-        let mut changes = self.design.changes.borrow_mut();
-        assert!(changes.replaced_cells.insert(self.index, to_cell).is_none());
+        if *self.design.cells[self.index].repr() != to_cell {
+            to_cell.validate(&self.design);
+            let mut changes = self.design.changes.borrow_mut();
+            assert!(changes.replaced_cells.insert(self.index, to_cell).is_none());
+        }
     }
 
     pub fn unalive(&self) {
-        self.replace(CellRepr::Buf(Value::undef(self.output_len())));
+        let mut changes = self.design.changes.borrow_mut();
+        changes.unalived_cells.insert(self.index);
     }
 
     // Returns the same index as the one used by `Display` implementation.`
@@ -352,7 +364,7 @@ impl Design {
         let mut incoming = BTreeMap::<usize, BTreeSet<usize>>::new();
         let mut queue = BTreeSet::new();
         for (index, cell) in self.cells.iter().enumerate() {
-            if let Cell::Skip(_) = cell {
+            if matches!(cell, Cell::Skip(_) | Cell::Void) {
                 continue;
             }
             cell.visit(|net| {
@@ -394,7 +406,7 @@ impl Design {
 
         let mut queue = BTreeSet::new();
         for (index, cell) in self.cells.iter().enumerate() {
-            if let Cell::Skip(_) = cell {
+            if matches!(cell, Cell::Skip(_) | Cell::Void) {
                 continue;
             }
             match &*cell.repr() {
@@ -858,7 +870,7 @@ impl Design {
                     write!(f, "#")?;
                     self.write_string(f, name)?;
                     write!(f, ":{}", io_value.len())?;
-                    return Ok(())
+                    return Ok(());
                 }
             }
             write!(f, "{{")?;
@@ -1111,6 +1123,7 @@ impl Display for Design {
             let (mut coarse_cells, mut skip_cells, mut fine_cells) = (0, 0, 0);
             for cell in self.cells.iter() {
                 match cell {
+                    Cell::Void => (),
                     Cell::Coarse(_) => {
                         coarse_cells += 1;
                     }

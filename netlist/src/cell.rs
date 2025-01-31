@@ -6,6 +6,7 @@ use crate::{Const, ControlNet, Design, IoValue, Net, TargetPrototype, Trit, Valu
 // Space-optimized representation of a cell, for compact AIGs.
 #[derive(Debug, Clone)]
 pub(crate) enum Cell {
+    Void,
     Skip(u32),
 
     Buf(Net),
@@ -122,7 +123,7 @@ impl CellRepr {
 impl Cell {
     pub fn repr<'a>(&'a self) -> Cow<'a, CellRepr> {
         match *self {
-            Cell::Skip(_) => unreachable!(),
+            Cell::Void | Cell::Skip(_) => unreachable!(),
 
             Cell::Buf(arg) => Cow::Owned(CellRepr::Buf(Value::from(arg))),
             Cell::Not(arg) => Cow::Owned(CellRepr::Not(Value::from(arg))),
@@ -156,7 +157,7 @@ impl From<CellRepr> for Cell {
 impl Cell {
     pub fn output_len(&self) -> usize {
         match self {
-            Cell::Skip(_) => unreachable!(),
+            Cell::Void | Cell::Skip(_) => unreachable!(),
 
             Cell::Buf(_) | Cell::Not(_) | Cell::And(_, _) | Cell::Or(_, _) | Cell::Xor(_, _) | Cell::Mux(_, _, _) => 1,
             Cell::Adc(_, _, _) => 2,
@@ -167,7 +168,7 @@ impl Cell {
 
     pub(crate) fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
-            Cell::Skip(_) => unreachable!(),
+            Cell::Void | Cell::Skip(_) => unreachable!(),
             Cell::Buf(arg) | Cell::Not(arg) => arg.visit(&mut f),
             Cell::And(arg1, arg2) | Cell::Or(arg1, arg2) | Cell::Xor(arg1, arg2) => {
                 arg1.visit(&mut f);
@@ -184,7 +185,7 @@ impl Cell {
 
     pub(crate) fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
-            Cell::Skip(_) => unreachable!(),
+            Cell::Void | Cell::Skip(_) => unreachable!(),
             Cell::Buf(arg) | Cell::Not(arg) => arg.visit_mut(&mut f),
             Cell::And(arg1, arg2) | Cell::Or(arg1, arg2) | Cell::Xor(arg1, arg2) => {
                 arg1.visit_mut(&mut f);
