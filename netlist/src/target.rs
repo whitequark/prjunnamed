@@ -330,20 +330,14 @@ impl TargetPrototype {
         for (index, param) in self.params.iter().enumerate() {
             result.params.insert(param.name.clone(), cell.params[index].clone());
         }
-        let mut index = 0;
         for input in &self.inputs {
-            result.inputs.insert(input.name.clone(), cell.inputs.slice(index..index + input.len()));
-            index += input.len();
+            result.inputs.insert(input.name.clone(), cell.inputs.slice(input.range.clone()));
         }
-        let mut index = 0;
         for output in &self.outputs {
-            result.outputs.insert(output.name.clone(), index..index + output.len());
-            index += output.len();
+            result.outputs.insert(output.name.clone(), output.range.clone());
         }
-        let mut index = 0;
         for io in &self.ios {
-            result.ios.insert(io.name.clone(), cell.ios.slice(index..index + io.len()));
-            index += io.len();
+            result.ios.insert(io.name.clone(), cell.ios.slice(io.range.clone()));
         }
         result
     }

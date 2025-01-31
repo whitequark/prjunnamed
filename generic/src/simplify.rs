@@ -1,4 +1,4 @@
-use prjunnamed_netlist::{Design, Net, Trit, Value};
+use prjunnamed_netlist::{CellRepr, ControlNet, Design, FlipFlop, Net, Trit, Value};
 use prjunnamed_pattern::{netlist_replace, patterns::*};
 
 pub fn simplify(design: &mut Design) -> bool {
@@ -129,6 +129,8 @@ pub fn simplify(design: &mut Design) -> bool {
         [PSDivFloor@y [PAny]  [PZero]]  => Value::undef(y.len());
         [PSModFloor@y [PZero] [PAny]]   => Value::zero(y.len());
         [PSModFloor@y [PAny]  [PZero]]  => Value::undef(y.len());
+
+        [PDff@ff [PAny]] if let Some(q) = ff_fold_controls(design, ff) => q;
     };
 
     for value in design.iter_cells().map(|cell_ref| cell_ref.output()) {
@@ -300,9 +302,38 @@ fn adc_unsext(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
     Some(result)
 }
 
+fn ff_fold_controls(design: &Design, flip_flop: FlipFlop) -> Option<Value> {
+    let simplify_control = |control_net: ControlNet| {
+        let control_net = control_net.canonicalize();
+        if let Ok((cell_ref, offset)) = design.find_cell(control_net.net()) {
+            if let CellRepr::Not(value) = &*cell_ref.repr() {
+                if control_net.is_positive() {
+                    return ControlNet::Neg(value[offset]);
+                } else {
+                    return ControlNet::Pos(value[offset]);
+                }
+            }
+        }
+        control_net
+    };
+
+    let new_flip_flop = FlipFlop {
+        clock: simplify_control(flip_flop.clock),
+        clear: simplify_control(flip_flop.clear),
+        reset: simplify_control(flip_flop.reset),
+        enable: simplify_control(flip_flop.enable),
+        ..flip_flop.clone()
+    };
+    if new_flip_flop != flip_flop {
+        Some(design.add_dff(new_flip_flop))
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod test {
-    use prjunnamed_netlist::{Const, Design, Net, Trit, Value, assert_isomorphic};
+    use prjunnamed_netlist::{assert_isomorphic, Const, ControlNet, Design, FlipFlop, Net, Trit, Value};
     use prjunnamed_pattern::{assert_netlist, netlist_matches, patterns::*};
     use prjunnamed_smt2::verify_transformation;
 
@@ -1036,6 +1067,102 @@ mod test {
                     [PInput ("a")] => true;
                 );
             }
+        }
+    }
+
+    #[test]
+    fn test_ff_simplify_clear() {
+        for size in [1, 2] {
+            let mut design = Design::new();
+            design.add_dff(FlipFlop {
+                data: design.add_input("d", size),
+                clock: design.add_input("c", 1)[0].into(),
+                clear: ControlNet::Pos(design.add_not(design.add_input("r", 1))[0]),
+                reset: ControlNet::ZERO,
+                enable: ControlNet::ONE,
+                reset_over_enable: false,
+                clear_value: Const::undef(size),
+                reset_value: Const::undef(size),
+                init_value: Const::undef(size)
+            });
+            simplify(&mut design);
+            let mut gold = Design::new();
+            gold.add_dff(FlipFlop {
+                data: gold.add_input("d", size),
+                clock: gold.add_input("c", 1)[0].into(),
+                clear: ControlNet::Neg(gold.add_input("r", 1)[0]),
+                reset: ControlNet::ZERO,
+                enable: ControlNet::ONE,
+                reset_over_enable: false,
+                clear_value: Const::undef(size),
+                reset_value: Const::undef(size),
+                init_value: Const::undef(size)
+            });
+            assert_isomorphic!(design, gold);
+        }
+    }
+
+    #[test]
+    fn test_ff_simplify_reset() {
+        for size in [1, 2] {
+            let mut design = Design::new();
+            design.add_dff(FlipFlop {
+                data: design.add_input("d", size),
+                clock: design.add_input("c", 1)[0].into(),
+                clear: ControlNet::ZERO,
+                reset: ControlNet::Pos(design.add_not(design.add_input("r", 1))[0]),
+                enable: ControlNet::ONE,
+                reset_over_enable: false,
+                clear_value: Const::undef(size),
+                reset_value: Const::undef(size),
+                init_value: Const::undef(size)
+            });
+            simplify(&mut design);
+            let mut gold = Design::new();
+            gold.add_dff(FlipFlop {
+                data: gold.add_input("d", size),
+                clock: gold.add_input("c", 1)[0].into(),
+                clear: ControlNet::ZERO,
+                reset: ControlNet::Neg(gold.add_input("r", 1)[0]),
+                enable: ControlNet::ONE,
+                reset_over_enable: false,
+                clear_value: Const::undef(size),
+                reset_value: Const::undef(size),
+                init_value: Const::undef(size)
+            });
+            assert_isomorphic!(design, gold);
+        }
+    }
+
+    #[test]
+    fn test_ff_simplify_enable() {
+        for size in [1, 2] {
+            let mut design = Design::new();
+            design.add_dff(FlipFlop {
+                data: design.add_input("d", size),
+                clock: design.add_input("c", 1)[0].into(),
+                clear: ControlNet::ZERO,
+                reset: ControlNet::ZERO,
+                enable: ControlNet::Pos(design.add_not(design.add_input("e", 1))[0]),
+                reset_over_enable: false,
+                clear_value: Const::undef(size),
+                reset_value: Const::undef(size),
+                init_value: Const::undef(size)
+            });
+            simplify(&mut design);
+            let mut gold = Design::new();
+            gold.add_dff(FlipFlop {
+                data: gold.add_input("d", size),
+                clock: gold.add_input("c", 1)[0].into(),
+                clear: ControlNet::ZERO,
+                reset: ControlNet::ZERO,
+                enable: ControlNet::Neg(gold.add_input("e", 1)[0]),
+                reset_over_enable: false,
+                clear_value: Const::undef(size),
+                reset_value: Const::undef(size),
+                init_value: Const::undef(size)
+            });
+            assert_isomorphic!(design, gold);
         }
     }
 }

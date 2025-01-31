@@ -1,4 +1,4 @@
-use prjunnamed_netlist::{CellRepr, Design, Net};
+use prjunnamed_netlist::{CellRepr, Const, Design, FlipFlop, Net, Value};
 
 use crate::{NetOrValue, Pattern};
 
@@ -118,6 +118,72 @@ impl<T: NetOrValue, P1: Pattern<Net>, P2: Pattern<T>, P3: Pattern<T>> Pattern<T>
             self.1.execute(design, &cap2.unwrap()).and_then(|cap2| {
                 self.2.execute(design, &cap3.unwrap()).and_then(|cap3| Some((target.clone(), cap1, cap2, cap3)))
             })
+        })
+    }
+}
+
+pub struct PDff<P>(P);
+
+impl<P> PDff<P> {
+    pub fn new(pat: P) -> PDff<P> {
+        PDff(pat)
+    }
+}
+
+impl<P: Pattern<Net>> Pattern<Net> for PDff<P> {
+    type Capture = (FlipFlop, P::Capture);
+
+    fn execute(&self, design: &Design, target: &Net) -> Option<Self::Capture> {
+        if let Ok((cell_ref, offset)) = design.find_cell(*target) {
+            if let CellRepr::Dff(flip_flop) = &*cell_ref.repr() {
+                let flip_flop = FlipFlop {
+                    data: flip_flop.data[offset].into(),
+                    clear_value: flip_flop.clear_value[offset].into(),
+                    reset_value: flip_flop.reset_value[offset].into(),
+                    init_value: flip_flop.init_value[offset].into(),
+                    ..*flip_flop
+                };
+                return self.0.execute(design, &flip_flop.data[0]).and_then(|capture| Some((flip_flop, capture)));
+            }
+        }
+        None
+    }
+}
+
+impl<P: Pattern<Value>> Pattern<Value> for PDff<P> {
+    type Capture = (FlipFlop, P::Capture);
+
+    fn execute(&self, design: &Design, target: &Value) -> Option<Self::Capture> {
+        let mut target_flip_flop = None::<FlipFlop>;
+        for target_net in target.iter() {
+            if let Ok((cell_ref, offset)) = design.find_cell(target_net) {
+                if let CellRepr::Dff(flip_flop) = &*cell_ref.repr() {
+                    if let Some(ref mut capture) = target_flip_flop {
+                        if capture.clock.canonicalize() == flip_flop.clock.canonicalize()
+                            && capture.clear.canonicalize() == flip_flop.clear.canonicalize()
+                            && capture.reset.canonicalize() == flip_flop.reset.canonicalize()
+                            && capture.enable.canonicalize() == flip_flop.enable.canonicalize()
+                            && capture.reset_over_enable == flip_flop.reset_over_enable
+                        {
+                            capture.data.extend(Value::from(flip_flop.data[offset]));
+                            capture.clear_value.extend(Const::from(flip_flop.clear_value[offset]));
+                            capture.reset_value.extend(Const::from(flip_flop.reset_value[offset]));
+                            capture.init_value.extend(Const::from(flip_flop.init_value[offset]));
+                        }
+                    } else {
+                        target_flip_flop = Some(FlipFlop {
+                            data: flip_flop.data[offset].into(),
+                            clear_value: flip_flop.clear_value[offset].into(),
+                            reset_value: flip_flop.reset_value[offset].into(),
+                            init_value: flip_flop.init_value[offset].into(),
+                            ..*flip_flop
+                        })
+                    }
+                }
+            }
+        }
+        target_flip_flop.and_then(|target_flip_flop| {
+            self.0.execute(design, &target_flip_flop.data).and_then(|capture| Some((target_flip_flop, capture)))
         })
     }
 }

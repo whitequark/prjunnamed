@@ -246,6 +246,10 @@ pub enum ControlNet {
 }
 
 impl ControlNet {
+    pub const UNDEF: ControlNet = ControlNet::Pos(Net::UNDEF);
+    pub const ZERO: ControlNet = ControlNet::Pos(Net::ZERO);
+    pub const ONE: ControlNet = ControlNet::Pos(Net::ONE);
+
     pub fn net(self) -> Net {
         match self {
             Self::Pos(net) => net,
@@ -279,6 +283,15 @@ impl ControlNet {
         self.net().as_const().is_some()
     }
 
+    pub fn canonicalize(self) -> Self {
+        match self {
+            Self::Neg(net) if net == Net::UNDEF => Self::Pos(net),
+            Self::Neg(net) if net == Net::ZERO => Self::Pos(Net::ONE),
+            Self::Neg(net) if net == Net::ONE => Self::Pos(Net::ZERO),
+            _ => self,
+        }
+    }
+
     pub fn visit(self, f: impl FnMut(Net)) {
         match self {
             ControlNet::Pos(net) => net.visit(f),
@@ -291,6 +304,12 @@ impl ControlNet {
             ControlNet::Pos(net) => net.visit_mut(f),
             ControlNet::Neg(net) => net.visit_mut(f),
         }
+    }
+}
+
+impl From<Net> for ControlNet {
+    fn from(net: Net) -> Self {
+        ControlNet::Pos(net)
     }
 }
 
