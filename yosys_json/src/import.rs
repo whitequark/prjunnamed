@@ -4,7 +4,7 @@ use std::{
 };
 
 use prjunnamed_netlist::{
-    CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Target, Trit,
+    Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Target, Trit,
     Value,
 };
 
@@ -69,7 +69,6 @@ struct ModuleImporter<'a> {
 
 impl ModuleImporter<'_> {
     fn drive(&mut self, bits: &yosys::BitVector, value: impl Into<Value>) {
-        self.design.apply();
         let value = value.into();
         assert_eq!(bits.len(), value.len());
         for (&bit, net) in bits.iter().zip(value.iter()) {
@@ -77,7 +76,7 @@ impl ModuleImporter<'_> {
             assert!(!self.driven_nets.contains(&ynet));
             match self.nets.entry(ynet) {
                 btree_map::Entry::Occupied(e) => {
-                    self.design.find_cell(*e.get()).unwrap().0.replace(CellRepr::Buf(Value::from(net)));
+                    self.design.replace_net(*e.get(), net);
                 }
                 btree_map::Entry::Vacant(e) => {
                     e.insert(net);
@@ -105,9 +104,7 @@ impl ModuleImporter<'_> {
                 yosys::Bit::HiZ | yosys::Bit::Undef => Net::UNDEF,
                 yosys::Bit::Zero => Net::ZERO,
                 yosys::Bit::One => Net::ONE,
-                yosys::Bit::Net(ynet) => {
-                    *self.nets.entry(ynet).or_insert_with(|| self.design.add_buf(Value::undef(1)).unwrap_net())
-                }
+                yosys::Bit::Net(ynet) => *self.nets.entry(ynet).or_insert_with(|| self.design.add_void(1).unwrap_net()),
             };
             nets.push(net);
         }
@@ -501,13 +498,12 @@ impl ModuleImporter<'_> {
                 let bits = cell.connections.get("Y").unwrap();
                 let io = self.io_value(bits);
                 let value = self.design.add_iob(IoBuffer { output, enable, io });
-                self.design.apply();
                 for (&bit, net) in bits.iter().zip(value.iter()) {
                     let yosys::Bit::Net(ynet) = bit else { unreachable!() };
                     assert!(!self.driven_nets.contains(&ynet));
                     match self.nets.entry(ynet) {
                         btree_map::Entry::Occupied(e) => {
-                            self.design.find_cell(*e.get()).unwrap().0.replace(CellRepr::Buf(Value::from(net)));
+                            self.design.replace_net(*e.get(), net);
                         }
                         btree_map::Entry::Vacant(e) => {
                             e.insert(net);
@@ -597,23 +593,31 @@ impl ModuleImporter<'_> {
         Ok(())
     }
 
-    fn handle_undriven_io_nets(&mut self) {
-        self.design.apply();
+    fn handle_undriven_nets(&mut self) {
         for (&ynet, &io_net) in &self.io_nets {
             if self.driven_nets.contains(&ynet) {
                 continue;
             }
             let Some(&net) = self.nets.get(&ynet) else { continue };
-            self.design.find_cell(net).unwrap().0.replace(CellRepr::Iob(IoBuffer {
-                output: Value::undef(1),
-                enable: ControlNet::Pos(Net::ZERO),
-                io: io_net.into(),
-            }));
+            self.design.replace_net(
+                net,
+                self.design.add_iob(IoBuffer {
+                    output: Value::undef(1),
+                    enable: ControlNet::Pos(Net::ZERO),
+                    io: io_net.into(),
+                }).unwrap_net(),
+            );
+            self.driven_nets.insert(ynet);
+        }
+        for (&ynet, &net) in &self.nets {
+            if self.driven_nets.contains(&ynet) {
+                continue;
+            }
+            self.design.replace_net(net, Net::UNDEF);
         }
     }
 
     fn finalize(&mut self) {
-        self.design.replace_bufs();
         self.design.compact();
         if let Some(target) = self.design.target() {
             target.import(&mut self.design).unwrap_or_else(|err| panic!("{}", err));
@@ -648,7 +652,7 @@ fn import_module(
     for cell in module.cells.0.values() {
         importer.handle_cell(cell)?;
     }
-    importer.handle_undriven_io_nets();
+    importer.handle_undriven_nets();
     importer.finalize();
 
     Ok(Some(importer.design))

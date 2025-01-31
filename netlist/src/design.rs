@@ -102,6 +102,15 @@ impl Design {
         Value::cell(index, output_len)
     }
 
+    pub fn add_void(&self, width: usize) -> Value {
+        let mut changes = self.changes.borrow_mut();
+        let index = self.cells.len() + changes.added_cells.len();
+        for _ in 0..width {
+            changes.added_cells.push(Cell::Void);
+        }
+        Value::cell(index, width)
+    }
+
     fn locate_cell(&self, net: Net) -> Result<(usize, usize), Trit> {
         if let Some(trit) = net.as_const() {
             return Err(trit);
