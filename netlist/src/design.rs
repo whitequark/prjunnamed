@@ -667,7 +667,9 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
                     || ff_l.clear.is_positive() != ff_r.clear.is_positive()
                     || ff_l.reset.is_positive() != ff_r.reset.is_positive()
                     || ff_l.enable.is_positive() != ff_r.enable.is_positive()
-                    || ff_l.reset_over_enable != ff_r.reset_over_enable
+                    || (ff_l.reset_over_enable != ff_r.reset_over_enable
+                        && !ff_l.reset.is_always(false)
+                        && !ff_l.enable.is_always(true))
                     || ff_l.clear_value != ff_r.clear_value
                     || ff_l.reset_value != ff_r.reset_value
                     || ff_l.init_value != ff_r.init_value

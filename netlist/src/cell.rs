@@ -340,6 +340,47 @@ pub struct FlipFlop {
 }
 
 impl FlipFlop {
+    pub fn new(data: Value, clock: impl Into<ControlNet>) -> Self {
+        let size = data.len();
+        FlipFlop {
+            data,
+            clock: clock.into(),
+            clear: ControlNet::ZERO,
+            reset: ControlNet::ZERO,
+            enable: ControlNet::ONE,
+            reset_over_enable: false,
+            clear_value: Const::undef(size),
+            reset_value: Const::undef(size),
+            init_value: Const::undef(size),
+        }
+    }
+
+    pub fn with_clock(self, clock: impl Into<ControlNet>) -> Self {
+        Self { clock: clock.into(), ..self }
+    }
+
+    pub fn with_clear(self, clear: impl Into<ControlNet>) -> Self {
+        Self { clear: clear.into(), ..self }
+    }
+
+    pub fn with_reset(self, reset: impl Into<ControlNet>) -> Self {
+        Self { reset: reset.into(), reset_over_enable: true, ..self }
+    }
+
+    pub fn with_enable(self, enable: impl Into<ControlNet>) -> Self {
+        Self { enable: enable.into(), reset_over_enable: false, ..self }
+    }
+
+    pub fn with_init(self, value: impl Into<Const>) -> Self {
+        let value = value.into();
+        Self {
+            clear_value: value.clone(),
+            reset_value: value.clone(),
+            init_value: value,
+            ..self
+        }
+    }
+
     pub fn output_len(&self) -> usize {
         self.data.len()
     }
