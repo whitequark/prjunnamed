@@ -18,6 +18,23 @@ impl<T: Clone> Pattern<T> for PAny {
     }
 }
 
+pub struct PBind<P>(P);
+
+impl<P> PBind<P> {
+    pub fn new(pat: P) -> PBind<P> {
+        PBind(pat)
+    }
+}
+
+impl<T: Clone, P: Pattern<T>> Pattern<T> for PBind<P> {
+    type Capture = (T, P::Capture);
+
+    fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
+        self.0.execute(design, target).and_then(|capture|
+            Some((target.clone(), capture)))
+    }
+}
+
 pub struct PConst;
 
 impl PConst {

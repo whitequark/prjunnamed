@@ -265,6 +265,9 @@ impl<'a> Iterator for CellIter<'a> {
     type Item = CellRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
+        while matches!(self.design.cells.get(self.index), Some(Cell::Void)) {
+            self.index += 1;
+        }
         if self.index < self.design.cells.len() {
             let cell_ref = CellRef { design: self.design, index: self.index };
             self.index += self.design.cells[self.index].output_len().max(1);
@@ -361,9 +364,13 @@ impl Design {
             Name(name.into(), value.into());
     }
 
-    pub fn add_ne(&mut self, arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value {
+    pub fn add_ne(&self, arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value {
         let eq = self.add_eq(arg1, arg2);
         self.add_not(eq)
+    }
+
+    pub fn add_input_net(&self, name: impl Into<String>) -> Net {
+        self.add_input(name, 1)[0]
     }
 }
 

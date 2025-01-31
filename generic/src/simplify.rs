@@ -131,6 +131,16 @@ pub fn simplify(design: &mut Design) -> bool {
         [PSModFloor@y [PAny]  [PZero]]  => Value::undef(y.len());
 
         [PDff@ff [PAny]] if ff.clear.is_always(true) => Value::from(ff.clear_value);
+
+        [PDff@ff [PMux [PAny@r] [PConst@rv] [PAny@d]]] if ff.reset.is_always(false) =>
+            design.add_dff(ff.clone().with_data(d).with_reset_value(ControlNet::Pos(r), rv));
+        [PDff@ff [PMux [PAny@r] [PAny@d] [PConst@rv]]] if ff.reset.is_always(false) =>
+            design.add_dff(ff.clone().with_data(d).with_reset_value(ControlNet::Neg(r), rv));
+
+        [PBind@ffq [PDff@ff [PMux [PAny@en] [PAny@d] [PAny@q]]]] if ff.enable.is_always(true) && ffq == q =>
+            design.add_dff(ff.clone().with_data(d).with_enable(ControlNet::Pos(en)));
+        [PBind@ffq [PDff@ff [PMux [PAny@en] [PAny@q] [PAny@d]]]] if ff.enable.is_always(true) && ffq == q =>
+            design.add_dff(ff.clone().with_data(d).with_enable(ControlNet::Neg(en)));
     };
 
     for cell_ref in design.iter_cells() {
@@ -636,19 +646,19 @@ mod test {
                 [PInput ("a")] => true;
             );
             assert_simplify!(
-                |ds| ds.add_mux(ds.add_input("s", 1)[0], ds.add_input("a", size), Const::undef(size));
+                |ds| ds.add_mux(ds.add_input_net("s"), ds.add_input("a", size), Const::undef(size));
                 [PInput ("a")] => true;
             );
             assert_simplify!(
-                |ds| ds.add_mux(ds.add_input("s", 1)[0], Const::undef(size), ds.add_input("b", size));
+                |ds| ds.add_mux(ds.add_input_net("s"), Const::undef(size), ds.add_input("b", size));
                 [PInput ("b")] => true;
             );
             assert_simplify!(
-                |ds| { let a = ds.add_input("a", size); ds.add_mux(ds.add_input("s", 1)[0], &a, &a) };
+                |ds| { let a = ds.add_input("a", size); ds.add_mux(ds.add_input_net("s"), &a, &a) };
                 [PInput ("a")] => true;
             );
             assert_simplify!(
-                |ds| ds.add_mux(ds.add_input("s", 1)[0], Const::ones(size), Const::zero(size));
+                |ds| ds.add_mux(ds.add_input_net("s"), Const::ones(size), Const::zero(size));
                 [PSExt [PAny@s]] if s.len() == 1 => true;
             );
         }
@@ -1205,23 +1215,23 @@ mod test {
     fn test_ff_simplify_clear() {
         for size in [1, 2] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input("c", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input_net("c"))
                 .with_clear(ControlNet::Pos(design.add_not(design.add_input("r", 1))[0]));
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
-            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input("c", 1)[0])
-                .with_clear(ControlNet::Neg(gold.add_input("r", 1)[0]));
+            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input_net("c"))
+                .with_clear(ControlNet::Neg(gold.add_input_net("r")));
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
         }
         for size in [1, 2] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input("c", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input_net("c"))
                 .with_clear(ControlNet::Neg(design.add_not(design.add_input("r", 1))[0]));
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
-            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input("c", 1)[0])
-                .with_clear(ControlNet::Pos(gold.add_input("r", 1)[0]));
+            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input_net("c"))
+                .with_clear(ControlNet::Pos(gold.add_input_net("r")));
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
         }
@@ -1231,23 +1241,23 @@ mod test {
     fn test_ff_simplify_reset() {
         for size in [1, 2] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input("c", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input_net("c"))
                 .with_reset(ControlNet::Pos(design.add_not(design.add_input("r", 1))[0]));
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
-            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input("c", 1)[0])
-                .with_reset(ControlNet::Neg(gold.add_input("r", 1)[0]));
+            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input_net("c"))
+                .with_reset(ControlNet::Neg(gold.add_input_net("r")));
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
         }
         for size in [1, 2] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input("c", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input_net("c"))
                 .with_reset(ControlNet::Neg(design.add_not(design.add_input("r", 1))[0]));
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
-            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input("c", 1)[0])
-                .with_reset(ControlNet::Pos(gold.add_input("r", 1)[0]));
+            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input_net("c"))
+                .with_reset(ControlNet::Pos(gold.add_input_net("r")));
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
         }
@@ -1257,23 +1267,23 @@ mod test {
     fn test_ff_simplify_enable() {
         for size in [1, 2] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input("c", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input_net("c"))
                 .with_enable(ControlNet::Pos(design.add_not(design.add_input("e", 1))[0]));
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
-            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input("c", 1)[0])
-                .with_enable(ControlNet::Neg(gold.add_input("e", 1)[0]));
+            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input_net("c"))
+                .with_enable(ControlNet::Neg(gold.add_input_net("e")));
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
         }
         for size in [1, 2] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input("c", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", size), design.add_input_net("c"))
                 .with_enable(ControlNet::Neg(design.add_not(design.add_input("e", 1))[0]));
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
-            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input("c", 1)[0])
-                .with_enable(ControlNet::Pos(gold.add_input("e", 1)[0]));
+            let flip_flop = FlipFlop::new(gold.add_input("d", size), gold.add_input_net("c"))
+                .with_enable(ControlNet::Pos(gold.add_input_net("e")));
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
         }
@@ -1297,8 +1307,8 @@ mod test {
     fn test_ff_simplify_clock_const() {
         let design = Design::new();
         let flip_flop = FlipFlop::new(design.add_input("d", 1), Net::ZERO)
-            .with_reset(design.add_input("r", 1)[0])
-            .with_enable(design.add_input("e", 1)[0]);
+            .with_reset(design.add_input_net("r"))
+            .with_enable(design.add_input_net("e"));
         design.add_output("q", design.add_dff(flip_flop));
         let gold = Design::new();
         let flip_flop = FlipFlop::new(Value::undef(1), Net::ZERO).with_enable(ControlNet::Pos(Net::ZERO));
@@ -1310,14 +1320,14 @@ mod test {
     fn test_ff_simplify_reset_always_enable_prio() {
         for init in &[Const::undef(1), Const::zero(1), Const::ones(1)] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input("c", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input_net("c"))
+                .with_enable(design.add_input_net("e"))
                 .with_reset(Net::ONE)
-                .with_enable(design.add_input("e", 1)[0]) // enable over reset
                 .with_init(init.clone());
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
-            let flip_flop = FlipFlop::new(init.into(), gold.add_input("c", 1)[0])
-                .with_enable(gold.add_input("e", 1)[0])
+            let flip_flop = FlipFlop::new(init.into(), gold.add_input_net("c"))
+                .with_enable(gold.add_input_net("e"))
                 .with_init(init.clone());
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
@@ -1328,14 +1338,14 @@ mod test {
     fn test_ff_simplify_reset_always_reset_prio() {
         for init in &[Const::undef(1), Const::zero(1), Const::ones(1)] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input("c", 1)[0])
-                .with_enable(design.add_input("e", 1)[0])
-                .with_reset(Net::ONE) // reset over enable
+            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input_net("c"))
+                .with_reset(Net::ONE)
+                .with_enable(design.add_input_net("e"))
                 .with_init(init.clone());
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
             let flip_flop =
-                FlipFlop::new(init.into(), gold.add_input("c", 1)[0]).with_enable(Net::ONE).with_init(init.clone());
+                FlipFlop::new(init.into(), gold.add_input_net("c")).with_enable(Net::ONE).with_init(init.clone());
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
         }
@@ -1345,15 +1355,15 @@ mod test {
     fn test_ff_simplify_enable_never_enable_prio() {
         for init in &[Const::undef(1), Const::zero(1), Const::ones(1)] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input("c", 1)[0])
-                .with_reset(design.add_input("r", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input_net("c"))
                 .with_enable(Net::ZERO)
+                .with_reset(design.add_input_net("r"))
                 .with_init(init.clone());
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
             let flip_flop = FlipFlop::new(Value::undef(1), Net::ZERO)
-                .with_enable(Net::ZERO)
                 .with_reset(Net::ZERO)
+                .with_enable(Net::ZERO)
                 .with_init(init.clone());
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
@@ -1364,15 +1374,15 @@ mod test {
     fn test_ff_simplify_enable_never_reset_prio() {
         for init in &[Const::undef(1), Const::zero(1), Const::ones(1)] {
             let design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input("c", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input_net("c"))
+                .with_reset(design.add_input_net("r"))
                 .with_enable(Net::ZERO)
-                .with_reset(design.add_input("r", 1)[0])
                 .with_init(init.clone());
             design.add_output("q", design.add_dff(flip_flop));
             let gold = Design::new();
-            let flip_flop = FlipFlop::new(init.into(), gold.add_input("c", 1)[0])
-                .with_enable(gold.add_input("r", 1)[0])
+            let flip_flop = FlipFlop::new(init.into(), gold.add_input_net("c"))
                 .with_reset(Net::ZERO)
+                .with_enable(gold.add_input_net("r"))
                 .with_init(init.clone());
             gold.add_output("q", gold.add_dff(flip_flop));
             assert_simplify_isomorphic!(design, gold);
@@ -1383,7 +1393,7 @@ mod test {
     fn test_ff_simplify_always_clear() {
         for init in &[Const::undef(1), Const::zero(1), Const::ones(1)] {
             let mut design = Design::new();
-            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input("c", 1)[0])
+            let flip_flop = FlipFlop::new(design.add_input("d", 1), design.add_input_net("c"))
                 .with_clear(Net::ONE)
                 .with_init(init.clone());
             design.add_output("q", design.add_dff(flip_flop));
@@ -1391,6 +1401,62 @@ mod test {
             simplify(&mut design);
             assert_netlist!(design, netlist_matches! { [PConst@c] => c == *init; });
         }
+    }
+
+    #[test]
+    fn test_ff_reset_pos_matching() {
+        for init in &[Const::undef(1), Const::zero(1), Const::ones(1)] {
+            let design = Design::new();
+            let d = design.add_mux(design.add_input_net("r"), init, design.add_input("d", 1));
+            design.add_output("q", design.add_dff(FlipFlop::new(d, design.add_input_net("c"))));
+            let gold = Design::new();
+            let ff = FlipFlop::new(gold.add_input("d", 1), gold.add_input_net("c"))
+                .with_reset_value(ControlNet::Pos(gold.add_input_net("r")), init.clone());
+            gold.add_output("q", gold.add_dff(ff));
+            assert_simplify_isomorphic!(design, gold);
+        }
+    }
+
+    #[test]
+    fn test_ff_reset_neg_matching() {
+        for init in &[Const::undef(1), Const::zero(1), Const::ones(1)] {
+            let design = Design::new();
+            let d = design.add_mux(design.add_input_net("r"), design.add_input("d", 1), init);
+            design.add_output("q", design.add_dff(FlipFlop::new(d, design.add_input_net("c"))));
+            let gold = Design::new();
+            let ff = FlipFlop::new(gold.add_input("d", 1), gold.add_input_net("c"))
+                .with_reset_value(ControlNet::Neg(gold.add_input_net("r")), init.clone());
+            gold.add_output("q", gold.add_dff(ff));
+            assert_simplify_isomorphic!(design, gold);
+        }
+    }
+
+    #[test]
+    fn test_ff_enable_pos_matching()  {
+        let design = Design::new();
+        let q = design.add_void(1);
+        let d = design.add_mux(design.add_input_net("e"), design.add_input("d", 1), q.clone());
+        design.replace_value(q.clone(), design.add_dff(FlipFlop::new(d, design.add_input_net("c"))));
+        design.add_output("q", q);
+        let gold = Design::new();
+        let ff = FlipFlop::new(gold.add_input("d", 1), gold.add_input_net("c"))
+            .with_enable(ControlNet::Pos(gold.add_input_net("e")));
+        gold.add_output("q", gold.add_dff(ff));
+        assert_simplify_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_ff_enable_neg_matching()  {
+        let design = Design::new();
+        let q = design.add_void(1);
+        let d = design.add_mux(design.add_input_net("e"), q.clone(), design.add_input("d", 1));
+        design.replace_value(q.clone(), design.add_dff(FlipFlop::new(d, design.add_input_net("c"))));
+        design.add_output("q", q);
+        let gold = Design::new();
+        let ff = FlipFlop::new(gold.add_input("d", 1), gold.add_input_net("c"))
+            .with_enable(ControlNet::Neg(gold.add_input_net("e")));
+        gold.add_output("q", gold.add_dff(ff));
+        assert_simplify_isomorphic!(design, gold);
     }
 
     #[test]
@@ -1407,7 +1473,7 @@ mod test {
             let io_buffer = IoBuffer {
                 io: gold.add_io("io", size),
                 output: gold.add_input("o", size),
-                enable: ControlNet::Neg(gold.add_input("e", 1)[0]),
+                enable: ControlNet::Neg(gold.add_input_net("e")),
             };
             gold.add_output("i", gold.add_iob(io_buffer));
             assert_simplify_isomorphic!(design, gold);
@@ -1424,7 +1490,7 @@ mod test {
             let io_buffer = IoBuffer {
                 io: gold.add_io("io", size),
                 output: gold.add_input("o", size),
-                enable: ControlNet::Pos(gold.add_input("e", 1)[0]),
+                enable: ControlNet::Pos(gold.add_input_net("e")),
             };
             gold.add_output("i", gold.add_iob(io_buffer));
             assert_simplify_isomorphic!(design, gold);

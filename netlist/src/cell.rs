@@ -1,5 +1,4 @@
-use core::ops::Range;
-use std::{borrow::Cow, collections::BTreeMap, hash::Hash};
+use std::{borrow::Cow, collections::BTreeMap, hash::Hash, ops::Range};
 
 use crate::{Const, ControlNet, Design, IoValue, Net, TargetPrototype, Trit, Value};
 
@@ -355,6 +354,10 @@ impl FlipFlop {
         }
     }
 
+    pub fn with_data(self, data: impl Into<Value>) -> Self {
+        Self { data: data.into(), ..self }
+    }
+
     pub fn with_clock(self, clock: impl Into<ControlNet>) -> Self {
         Self { clock: clock.into(), ..self }
     }
@@ -363,22 +366,25 @@ impl FlipFlop {
         Self { clear: clear.into(), ..self }
     }
 
+    pub fn with_clear_value(self, clear: impl Into<ControlNet>, clear_value: impl Into<Const>) -> Self {
+        Self { clear: clear.into(), clear_value: clear_value.into(), ..self }
+    }
+
     pub fn with_reset(self, reset: impl Into<ControlNet>) -> Self {
-        Self { reset: reset.into(), reset_over_enable: true, ..self }
+        Self { reset: reset.into(), reset_over_enable: false, ..self }
+    }
+
+    pub fn with_reset_value(self, reset: impl Into<ControlNet>, reset_value: impl Into<Const>) -> Self {
+        Self { reset: reset.into(), reset_over_enable: false, reset_value: reset_value.into(), ..self }
     }
 
     pub fn with_enable(self, enable: impl Into<ControlNet>) -> Self {
-        Self { enable: enable.into(), reset_over_enable: false, ..self }
+        Self { enable: enable.into(), reset_over_enable: true, ..self }
     }
 
     pub fn with_init(self, value: impl Into<Const>) -> Self {
         let value = value.into();
-        Self {
-            clear_value: value.clone(),
-            reset_value: value.clone(),
-            init_value: value,
-            ..self
-        }
+        Self { clear_value: value.clone(), reset_value: value.clone(), init_value: value, ..self }
     }
 
     pub fn output_len(&self) -> usize {
