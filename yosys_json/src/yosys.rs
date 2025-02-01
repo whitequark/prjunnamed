@@ -159,9 +159,12 @@ impl MetadataValue {
     }
 
     pub fn as_bool(&self) -> Result<bool, MetadataTypeError> {
-        match self.as_i32() {
-            Ok(0) => Ok(false),
-            Ok(1) => Ok(true),
+        match self {
+            Self::Const(value) => match value.as_uint() {
+                Some(0) => Ok(false),
+                Some(1) => Ok(true),
+                _ => Err(MetadataTypeError),
+            },
             _ => Err(MetadataTypeError),
         }
     }
