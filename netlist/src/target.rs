@@ -316,6 +316,37 @@ impl TargetPrototype {
         }
     }
 
+    pub fn extract_param<'a>(&self, target_cell: &'a TargetCell, name: impl AsRef<str>) -> &'a ParamValue {
+        let name = name.as_ref();
+        if let Some(TargetParam { index, .. }) = self.get_param(name) {
+            &target_cell.params[*index]
+        } else {
+            panic!("param {:?} does not exist for target cell", name);
+        }
+    }
+
+    pub fn extract_param_bool(&self, target_cell: &TargetCell, name: impl AsRef<str>) -> bool {
+        let name = name.as_ref();
+        if let Some(TargetParam { index, kind, .. }) = self.get_param(name) {
+            assert_eq!(*kind, TargetParamKind::Bool);
+            let ParamValue::Const(ref value) = target_cell.params[*index] else {
+                unreachable!()
+            };
+            value[0] == Trit::One
+        } else {
+            panic!("param {:?} does not exist for target cell", name);
+        }
+    }
+
+    pub fn extract_input(&self, target_cell: &TargetCell, name: impl AsRef<str>) -> Value {
+        let name = name.as_ref();
+        if let Some(TargetInput { range, .. }) = self.get_input(name) {
+            target_cell.inputs.slice(range.clone())
+        } else {
+            panic!("input {:?} does not exist for target cell", name);
+        }
+    }
+
     pub fn extract_output(&self, target_cell_output: &Value, name: impl AsRef<str>) -> Value {
         let name = name.as_ref();
         if let Some(TargetOutput { range, .. }) = self.get_output(name) {

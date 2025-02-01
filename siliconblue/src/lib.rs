@@ -40,6 +40,17 @@ impl SiliconBlueTarget {
                 .add_output("CO", 1),
         );
         prototypes.insert(
+            // synthetic; corresponds to SB_LUT4 + SB_CARRY
+            "SB_LUT4_CARRY".into(),
+            TargetPrototype::new_pure()
+                .add_param_bits("LUT_INIT", Const::undef(16))
+                .add_param_bool("IS_I3_CI", false)
+                .add_input("I", Const::undef(4))
+                .add_input("CI", Const::undef(1))
+                .add_output("O", 1)
+                .add_output("CO", 1),
+        );
+        prototypes.insert(
             // actually corresponds to SB_DFF* vendor cells
             "SB_DFF".into(),
             TargetPrototype::new_has_state()
@@ -526,6 +537,36 @@ impl Target for SiliconBlueTarget {
                         }
                     }
                 }
+                "SB_LUT4_CARRY" => {
+                    let is_i3_ci = prototype.extract_param_bool(target_cell, "IS_I3_CI");
+                    let i = prototype.extract_input(target_cell, "I");
+                    let ci = prototype.extract_input(target_cell, "CI");
+                    let target_output = cell_ref.output();
+                    let mut inst_lut4 = Instance::new("SB_LUT4");
+                    inst_lut4.add_param("LUT_INIT", prototype.extract_param(target_cell, "LUT_INIT").clone());
+                    inst_lut4.inputs.insert("I0".into(), Value::from(i[0]));
+                    inst_lut4.inputs.insert("I1".into(), Value::from(i[1]));
+                    inst_lut4.inputs.insert("I2".into(), Value::from(i[2]));
+                    inst_lut4.inputs.insert("I3".into(), Value::from(
+                        if is_i3_ci {
+                            ci.unwrap_net()
+                        } else {
+                            i[3]
+                        }
+                    ));
+                    inst_lut4.outputs.insert("O".into(), 0..1);
+                    let o = design.add_other(inst_lut4);
+                    design.replace_value(prototype.extract_output(&target_output, "O"), o);
+                    let mut inst_carry = Instance::new("SB_CARRY");
+                    inst_carry.inputs.insert("I0".into(), Value::from(i[1]));
+                    inst_carry.inputs.insert("I1".into(), Value::from(i[2]));
+                    inst_carry.inputs.insert("CI".into(), ci);
+                    inst_carry.outputs.insert("CO".into(), 0..1);
+                    let co = design.add_other(inst_carry);
+                    design.replace_value(prototype.extract_output(&target_output, "CO"), co);
+                    cell_ref.unalive();
+                    continue;
+                }
                 "SB_GB" => {
                     instance.rename_input("I", "USER_SIGNAL_TO_GLOBAL_BUFFER");
                     instance.rename_output("O", "GLOBAL_BUFFER_OUTPUT");
@@ -729,7 +770,7 @@ impl SiliconBlueTarget {
 mod test {
     use std::collections::BTreeMap;
 
-    use prjunnamed_netlist::assert_isomorphic;
+    use prjunnamed_netlist::{assert_isomorphic, Target};
 
     use crate::SiliconBlueTarget;
 
@@ -1310,6 +1351,44 @@ mod test {
                 io@"PACKAGE_PIN"=#"io"+3
                 io@"PACKAGE_PIN_B"=#_
             }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_export_lut4_carry() {
+        let (target, mut design) = parse! {r#"
+            %0:4 = input "i"
+            %4:1 = input "ci"
+            %5:2 = target "SB_LUT4_CARRY" {
+                p@"LUT_INIT"=const(0001001000110100)
+                p@"IS_I3_CI"=const(0)
+                i@"I"=%0:4
+                i@"CI"=%4
+            }
+            %7:0 = output "o" %5+0
+            %8:0 = output "co" %5+1
+        "#};
+        target.export(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:4 = input "i"
+            %4:1 = input "ci"
+            %5:1 = "SB_LUT4" {
+                p@"LUT_INIT"=const(0001001000110100)
+                i@"I0"=%0+0
+                i@"I1"=%0+1
+                i@"I2"=%0+2
+                i@"I3"=%0+3
+                o@"O"=0:1
+            }
+            %6:1 = "SB_CARRY" {
+                i@"I0"=%0+1
+                i@"I1"=%0+2
+                i@"CI"=%4
+                o@"CO"=0:1
+            }
+            %7:0 = output "o" %5
+            %8:0 = output "co" %6
         "#};
         assert_isomorphic!(design, gold);
     }
