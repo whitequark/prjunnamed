@@ -380,46 +380,74 @@ impl Design {
 }
 
 impl Design {
-    pub fn iter_cells_topo<'a>(&'a self) -> impl Iterator<Item = CellRef<'a>> {
-        let mut outgoing = BTreeMap::<usize, BTreeSet<usize>>::new();
-        let mut incoming = BTreeMap::<usize, BTreeSet<usize>>::new();
-        let mut queue = BTreeSet::new();
-        for (index, cell) in self.cells.iter().enumerate() {
-            if matches!(cell, Cell::Skip(_) | Cell::Void) {
-                continue;
-            }
+    pub fn iter_cells_topo<'a>(&'a self) -> impl DoubleEndedIterator<Item = CellRef<'a>> {
+        fn get_deps(design: &Design, cell: CellRef) -> BTreeSet<usize> {
+            let mut result = BTreeSet::new();
             cell.visit(|net| {
-                if let Ok((cell_ref, _offset)) = self.find_cell(net) {
-                    incoming.entry(index).or_default().insert(cell_ref.index);
-                    outgoing.entry(cell_ref.index).or_default().insert(index);
+                if let Ok((cell, _offset)) = design.find_cell(net) {
+                    result.insert(cell.index);
                 }
             });
+            result
+        }
+
+        let mut result = vec![];
+        let mut visited = BTreeSet::new();
+        // emit inputs, iobs and stateful cells first, in netlist order
+        for cell in self.iter_cells() {
             match &*cell.repr() {
-                CellRepr::Dff(_) | CellRepr::Iob(_) | CellRepr::Other(_) | CellRepr::Input(_, _) => {
-                    queue.insert(index);
+                CellRepr::Input(..) | CellRepr::Iob(..) | CellRepr::Dff(..) | CellRepr::Other(..) => {
+                    visited.insert(cell.index);
+                    result.push(cell);
                 }
                 CellRepr::Target(target_cell) => {
                     if self.target_prototype(target_cell).purity != TargetCellPurity::Pure {
-                        queue.insert(index);
+                        visited.insert(cell.index);
+                        result.push(cell);
                     }
                 }
                 _ => (),
             }
         }
-
-        let mut order = vec![];
-        while let Some(from_index) = queue.pop_first() {
-            order.push(from_index);
-            for to_index in std::mem::take(outgoing.entry(from_index).or_default()) {
-                let incoming = incoming.entry(to_index).or_default();
-                incoming.remove(&from_index);
-                if incoming.is_empty() {
-                    queue.insert(to_index);
+        // now emit combinational cells, in topologically-sorted order whenever possible.
+        // we try to emit them in netlist order; however, if we try to emit a cell
+        // that has an input that has not yet been emitted, we push it on a stack,
+        // and go emit the inputs instead.  the cell is put on the "visitted" list
+        // as soon as we start processing it, so cycles will be automatically broken
+        // by considering inputs already on the processing stack as "already emitted".
+        for cell in self.iter_cells() {
+            if matches!(&*cell.repr(), CellRepr::Output(..) | CellRepr::Name(..)) {
+                continue;
+            }
+            if visited.contains(&cell.index) {
+                continue;
+            }
+            visited.insert(cell.index);
+            let mut stack = vec![(cell, get_deps(self, cell))];
+            'outer: while let Some((cell, deps)) = stack.last_mut() {
+                while let Some(dep_index) = deps.pop_first() {
+                    if !visited.contains(&dep_index) {
+                        let cell = CellRef {
+                            design: self,
+                            index: dep_index,
+                        };
+                        visited.insert(dep_index);
+                        stack.push((cell, get_deps(self, cell)));
+                        continue 'outer;
+                    }
                 }
+                result.push(*cell);
+                stack.pop();
             }
         }
-
-        order.into_iter().map(|index| CellRef { design: self, index })
+        // finally, emit outputs and names
+        for cell in self.iter_cells() {
+            if visited.contains(&cell.index) {
+                continue;
+            }
+            result.push(cell);
+        }
+        result.into_iter()
     }
 
     pub fn compact(&mut self) -> bool {
@@ -1137,9 +1165,16 @@ impl Display for Design {
             write!(f, ":{}\n", range.len())?;
         }
 
-        for cell_ref in self.iter_cells() {
-            self.write_cell(f, cell_ref)?;
-            write!(f, "\n")?;
+        if f.alternate() {
+            for cell_ref in self.iter_cells() {
+                self.write_cell(f, cell_ref)?;
+                write!(f, "\n")?;
+            }
+        } else {
+            for cell_ref in self.iter_cells_topo() {
+                self.write_cell(f, cell_ref)?;
+                write!(f, "\n")?;
+            }
         }
 
         if cfg!(feature = "trace") {

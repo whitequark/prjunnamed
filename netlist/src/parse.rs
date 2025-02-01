@@ -624,7 +624,7 @@ mod test {
 
     fn onewaytrip(text: &str, expect: &str) {
         let design = super::parse_without_compacting(None, text).map_err(|err| panic!("{}", err)).unwrap();
-        assert_eq!(format!("{}", design), format!("{}", expect))
+        assert_eq!(format!("{:#}", design), format!("{}", expect))
     }
 
     fn roundtrip(text: &str) {

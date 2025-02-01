@@ -23,7 +23,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut design_bundle = prjunnamed_yosys_json::import(target.clone(), &mut File::open(input)?)?;
 
     for (name, design) in design_bundle.iter_mut() {
-        print!("; {} (initial)\n{}\n", name, design);
+        print!("; {} (initial)\n{:#}\n", name, design);
 
         match target {
             Some(ref target) => target.synthesize(design).expect("synthesis failed"),
