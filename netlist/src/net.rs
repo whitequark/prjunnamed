@@ -3,7 +3,7 @@ use std::{
     fmt::{Debug, Display},
     str::FromStr,
 };
-use crate::{Const, Value};
+use crate::{Const, Design, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Trit {
@@ -303,6 +303,32 @@ impl ControlNet {
         match self {
             ControlNet::Pos(net) => net.visit_mut(f),
             ControlNet::Neg(net) => net.visit_mut(f),
+        }
+    }
+
+    pub fn into_pos(self, design: &Design) -> Net {
+        match self {
+            ControlNet::Pos(net) => net,
+            ControlNet::Neg(net) => {
+                if let Some(trit) = net.as_const() {
+                    Net::from(!trit)
+                } else {
+                    design.add_not(net).unwrap_net()
+                }
+            },
+        }
+    }
+
+    pub fn into_neg(self, design: &Design) -> Net {
+        match self {
+            ControlNet::Pos(net) => {
+                if let Some(trit) = net.as_const() {
+                    Net::from(!trit)
+                } else {
+                    design.add_not(net).unwrap_net()
+                }
+            },
+            ControlNet::Neg(net) => net,
         }
     }
 }

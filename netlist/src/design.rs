@@ -311,8 +311,6 @@ impl Design {
             Or(arg1.into(), arg2.into());
         add_xor(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
             Xor(arg1.into(), arg2.into());
-        add_mux(arg1: impl Into<Net>, arg2: impl Into<Value>, arg3: impl Into<Value>) ->
-            Mux(arg1.into(), arg2.into(), arg3.into());
         add_adc(arg1: impl Into<Value>, arg2: impl Into<Value>, arg3: impl Into<Net>) ->
             Adc(arg1.into(), arg2.into(), arg3.into());
 
@@ -362,6 +360,13 @@ impl Design {
             Output(name.into(), value.into());
         add_name(name: impl Into<String>, value: impl Into<Value>) :
             Name(name.into(), value.into());
+    }
+
+    pub fn add_mux(&self, arg1: impl Into<ControlNet>, arg2: impl Into<Value>, arg3: impl Into<Value>) -> Value {
+        match arg1.into() {
+            ControlNet::Pos(net) => self.add_cell(CellRepr::Mux(net, arg2.into(), arg3.into())),
+            ControlNet::Neg(net) => self.add_cell(CellRepr::Mux(net, arg3.into(), arg2.into())),
+        }
     }
 
     pub fn add_ne(&self, arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value {

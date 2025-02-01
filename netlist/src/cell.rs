@@ -434,6 +434,68 @@ impl FlipFlop {
         self.reset.visit_mut(&mut f);
         self.clear.visit_mut(&mut f);
     }
+
+    pub fn slice(&self, range: Range<usize>) -> FlipFlop {
+        FlipFlop {
+            data: self.data.slice(range.clone()),
+            clock: self.clock,
+            clear: self.clear,
+            reset: self.reset,
+            enable: self.enable,
+            reset_over_enable: self.reset_over_enable,
+            clear_value: self.clear_value.slice(range.clone()),
+            reset_value: self.reset_value.slice(range.clone()),
+            init_value: self.init_value.slice(range.clone()),
+        }
+    }
+
+    pub fn remap_reset_over_enable(&mut self, design: &Design) {
+        if self.reset_over_enable {
+            return;
+        }
+        self.reset_over_enable = true;
+        if self.reset.is_always(false) || self.enable.is_always(true) {
+            return;
+        }
+        let reset = self.reset.into_pos(design);
+        let enable = self.enable.into_pos(design);
+        self.reset = ControlNet::Pos(design.add_and(reset, enable).unwrap_net());
+    }
+
+    pub fn remap_enable_over_reset(&mut self, design: &Design) {
+        if !self.reset_over_enable {
+            return;
+        }
+        self.reset_over_enable = false;
+        if self.reset.is_always(false) || self.enable.is_always(true) {
+            return;
+        }
+        let reset = self.reset.into_pos(design);
+        let enable = self.enable.into_pos(design);
+        self.enable = ControlNet::Pos(design.add_or(reset, enable).unwrap_net());
+    }
+
+    pub fn unmap_reset(&mut self, design: &Design) {
+        self.remap_enable_over_reset(design);
+        self.data = design.add_mux(self.reset, &self.reset_value, &self.data);
+        self.reset = ControlNet::ZERO;
+    }
+
+    pub fn unmap_enable(&mut self, design: &Design, output: &Value) {
+        self.remap_reset_over_enable(design);
+        self.data = design.add_mux(self.enable, &self.data, output);
+        self.enable = ControlNet::ONE;
+    }
+
+    pub fn invert(&mut self, design: &Design, output: &Value) -> Value {
+        self.data = design.add_not(&self.data);
+        self.clear_value = self.clear_value.not();
+        self.reset_value = self.reset_value.not();
+        self.init_value = self.init_value.not();
+        let new_output = design.add_void(self.data.len());
+        design.replace_value(output, design.add_not(&new_output));
+        new_output
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -476,6 +538,12 @@ impl From<Const> for ParamValue {
 impl From<bool> for ParamValue {
     fn from(value: bool) -> Self {
         Self::Const(Trit::from(value).into())
+    }
+}
+
+impl From<Trit> for ParamValue {
+    fn from(value: Trit) -> Self {
+        Self::Const(value.into())
     }
 }
 
@@ -533,9 +601,9 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub fn new(kind: String) -> Self {
+    pub fn new(kind: impl Into<String>) -> Self {
         Instance {
-            kind,
+            kind: kind.into(),
             params: Default::default(),
             inputs: Default::default(),
             outputs: Default::default(),

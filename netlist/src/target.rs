@@ -346,7 +346,8 @@ impl TargetPrototype {
         &self,
         design: &Design,
         instance: &Instance,
-    ) -> Result<Value, TargetCellImportError> {
+        instance_output: Value,
+    ) -> Result<(TargetCell, Value), TargetCellImportError> {
         let mut target_cell = TargetCell::new(instance.kind.clone(), self);
         for (name, value) in &instance.params {
             let param = self.get_param(name).ok_or_else(|| TargetCellImportError::UnknownParameter(name.clone()))?;
@@ -363,22 +364,21 @@ impl TargetPrototype {
             target_cell.inputs[input.range.clone()].copy_from_slice(&value[..]);
         }
         for (name, value) in &instance.ios {
-            let io = self.get_io(name).ok_or_else(|| TargetCellImportError::UnknownInput(name.clone()))?;
+            let io = self.get_io(name).ok_or_else(|| TargetCellImportError::UnknownIo(name.clone()))?;
             if value.len() != io.len() {
                 return Err(TargetCellImportError::IoSizeMismatch(name.clone()));
             }
             target_cell.ios[io.range.clone()].copy_from_slice(&value[..]);
         }
-        let raw_output = design.add_target(target_cell);
-        let mut value = Value::undef(instance.output_len());
+        let mut target_output = design.add_void(self.output_len);
         for (name, range) in &instance.outputs {
-            let output = self.get_output(name).ok_or_else(|| TargetCellImportError::UnknownInput(name.clone()))?;
+            let output = self.get_output(name).ok_or_else(|| TargetCellImportError::UnknownOutput(name.clone()))?;
             if range.len() != output.len() {
                 return Err(TargetCellImportError::OutputSizeMismatch(name.clone()));
             }
-            value[range.clone()].copy_from_slice(&raw_output[output.range.clone()]);
+            target_output[output.range.clone()].copy_from_slice(&instance_output[range.clone()]);
         }
-        Ok(value)
+        Ok((target_cell, target_output))
     }
 }
 

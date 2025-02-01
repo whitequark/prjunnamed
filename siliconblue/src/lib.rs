@@ -5,8 +5,8 @@ use std::{
 };
 
 use prjunnamed_netlist::{
-    CellRepr, Const, ControlNet, Design, Instance, Net, ParamValue, Target, TargetCell, TargetImportError,
-    TargetPrototype, Value,
+    CellRepr, Const, Design, Instance, Net, ParamValue, Target, TargetCell, TargetImportError,
+    TargetPrototype, Trit, Value,
 };
 
 pub fn register() {
@@ -464,10 +464,10 @@ impl Target for SiliconBlueTarget {
                 }
 
                 cell_ref.unalive();
-                let value = prototype
-                    .instance_to_target_cell(design, &instance)
+                let (target_cell, value) = prototype
+                    .instance_to_target_cell(design, &instance, cell_ref.output())
                     .map_err(|cause| TargetImportError::new(cell_ref, cause))?;
-                design.replace_value(cell_ref.output(), value);
+                design.replace_value(value, design.add_target(target_cell));
             }
         }
         design.compact();
@@ -635,7 +635,9 @@ impl Target for SiliconBlueTarget {
         prjunnamed_generic::canonicalize(design);
         prjunnamed_generic::lower(design);
         prjunnamed_generic::canonicalize(design);
+        self.lower_ffs(design);
         self.lower_iobs(design);
+        prjunnamed_generic::canonicalize(design);
         Ok(())
     }
 }
@@ -645,11 +647,7 @@ impl SiliconBlueTarget {
         let prototype = self.prototype("SB_IO").unwrap();
         for cell_ref in design.iter_cells() {
             if let CellRepr::Iob(io_buffer) = &*cell_ref.repr() {
-                let enable = match io_buffer.enable {
-                    ControlNet::Pos(net) => net,
-                    ControlNet::Neg(net) => design.add_not(net).unwrap_net(),
-                };
-
+                let enable = io_buffer.enable.into_pos(design);
                 let mut output_value = Value::EMPTY;
                 for bit_index in 0..io_buffer.output.len() {
                     let mut target_cell = TargetCell::new("SB_IO", prototype);
@@ -676,6 +674,55 @@ impl SiliconBlueTarget {
         }
         design.compact();
     }
+
+    pub fn lower_ffs(&self, design: &mut Design) {
+        let prototype = self.prototype("SB_DFF").unwrap();
+        for cell_ref in design.iter_cells() {
+            if let CellRepr::Dff(flip_flop) = &*cell_ref.repr() {
+                let mut flip_flop = flip_flop.clone();
+                if !flip_flop.reset.is_always(false) && !flip_flop.clear.is_always(false) {
+                    flip_flop.unmap_reset(design);
+                }
+                flip_flop.remap_enable_over_reset(design);
+                let output = cell_ref.output();
+                let enable = flip_flop.enable.into_pos(design);
+                let (is_reset_async, reset) = if !flip_flop.clear.is_always(false) {
+                    assert!(flip_flop.reset.is_always(false));
+                    (true, flip_flop.clear.into_pos(design))
+                } else {
+                    (false, flip_flop.reset.into_pos(design))
+                };
+
+                for index in 0..flip_flop.data.len() {
+                    let mut ff_slice = flip_flop.slice(index..index + 1);
+                    let mut output_slice = output.slice(index..index + 1);
+                    if ff_slice.init_value[0] == Trit::One {
+                        output_slice = ff_slice.invert(design, &output_slice);
+                    }
+                    let reset_value = if reset == Net::ZERO {
+                        Trit::Undef
+                    } else if is_reset_async {
+                        ff_slice.clear_value[0]
+                    } else {
+                        ff_slice.reset_value[0]
+                    };
+                    let mut target_cell = TargetCell::new("SB_DFF", prototype);
+                    prototype.apply_param(&mut target_cell, "RESET_VALUE", reset_value);
+                    prototype.apply_param(&mut target_cell, "IS_RESET_ASYNC", is_reset_async);
+                    prototype.apply_param(&mut target_cell, "IS_C_INVERTED", ff_slice.clock.is_negative());
+                    prototype.apply_input(&mut target_cell, "D", ff_slice.data);
+                    prototype.apply_input(&mut target_cell, "C", ff_slice.clock.net());
+                    prototype.apply_input(&mut target_cell, "E", enable);
+                    prototype.apply_input(&mut target_cell, "R", reset);
+                    let target_output = design.add_target(target_cell);
+                    let q = prototype.extract_output(&target_output, "Q");
+                    design.replace_value(output_slice, q);
+                }
+                cell_ref.unalive();
+            }
+        }
+        design.compact();
+    }
 }
 
 #[cfg(test)]
@@ -693,6 +740,360 @@ mod test {
             let design = prjunnamed_netlist::parse(Some(target.clone()), $source).unwrap();
             (target, design)
         }};
+    }
+
+    #[test]
+    fn test_lower_ff_simple() {
+        let (target, mut design) = parse! {r#"
+            %0:1 = input "d"
+            %1:1 = input "c"
+            %2:1 = dff %0 clk=%1 init=0
+            %3:0 = output "q" %2
+        "#};
+        target.lower_ffs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:1 = input "d"
+            %1:1 = input "c"
+            %2:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(X)
+                p@"IS_RESET_ASYNC"=const(0)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%0
+                i@"C"=%1
+                i@"R"=0
+                i@"E"=1
+            }
+            %3:0 = output "q" %2
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_ff_sync() {
+        let (target, mut design) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:2 = dff %0:2 clk=%2 rst=%3,10 en=%4 en>rst init=00
+            %7:0 = output "q" %5:2
+        "#};
+        target.lower_ffs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(0)
+                p@"IS_RESET_ASYNC"=const(0)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%0+0
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%4
+            }
+            %6:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(1)
+                p@"IS_RESET_ASYNC"=const(0)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%0+1
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%4
+            }
+            %7:0 = output "q" { %5 %6 }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_ff_sync_neg() {
+        let (target, mut design) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:2 = dff %0:2 clk=!%2 rst=!%3,10 en=!%4 en>rst init=00
+            %7:0 = output "q" %5:2
+        "#};
+        target.lower_ffs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:1 = not %3
+            %6:1 = not %4
+            %7:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(0)
+                p@"IS_RESET_ASYNC"=const(0)
+                p@"IS_C_INVERTED"=const(1)
+                i@"D"=%0+0
+                i@"C"=%2
+                i@"R"=%5
+                i@"E"=%6
+            }
+            %8:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(1)
+                p@"IS_RESET_ASYNC"=const(0)
+                p@"IS_C_INVERTED"=const(1)
+                i@"D"=%0+1
+                i@"C"=%2
+                i@"R"=%5
+                i@"E"=%6
+            }
+            %9:0 = output "q" { %7 %8 }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_ff_sync_remap() {
+        let (target, mut design) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:2 = dff %0:2 clk=%2 rst=%3,10 en=%4 rst>en init=00
+            %7:0 = output "q" %5:2
+        "#};
+        target.lower_ffs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:1 = or %3 %4
+            %6:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(0)
+                p@"IS_RESET_ASYNC"=const(0)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%0+0
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%5
+            }
+            %7:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(1)
+                p@"IS_RESET_ASYNC"=const(0)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%0+1
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%5
+            }
+            %8:0 = output "q" { %6 %7 }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_ff_sync_inv() {
+        let (target, mut design) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:2 = dff %0:2 clk=%2 rst=%3,10 en=%4 en>rst init=11
+            %7:0 = output "q" %5:2
+        "#};
+        target.lower_ffs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:1 = not %0+0
+            %6:1 = not %0+1
+            %7:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(1)
+                p@"IS_RESET_ASYNC"=const(0)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%5
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%4
+            }
+            %8:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(0)
+                p@"IS_RESET_ASYNC"=const(0)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%6
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%4
+            }
+            %9:1 = not %7
+            %10:1 = not %8
+            %11:0 = output "q" { %9 %10 }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_ff_async() {
+        let (target, mut design) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:2 = dff %0:2 clk=%2 clr=%3,10 en=%4 init=00
+            %7:0 = output "q" %5:2
+        "#};
+        target.lower_ffs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(0)
+                p@"IS_RESET_ASYNC"=const(1)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%0+0
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%4
+            }
+            %6:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(1)
+                p@"IS_RESET_ASYNC"=const(1)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%0+1
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%4
+            }
+            %7:0 = output "q" { %5 %6 }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_ff_async_neg() {
+        let (target, mut design) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:2 = dff %0:2 clk=!%2 clr=!%3,10 en=!%4 init=00
+            %7:0 = output "q" %5:2
+        "#};
+        target.lower_ffs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:1 = not %3
+            %6:1 = not %4
+            %7:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(0)
+                p@"IS_RESET_ASYNC"=const(1)
+                p@"IS_C_INVERTED"=const(1)
+                i@"D"=%0+0
+                i@"C"=%2
+                i@"R"=%5
+                i@"E"=%6
+            }
+            %8:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(1)
+                p@"IS_RESET_ASYNC"=const(1)
+                p@"IS_C_INVERTED"=const(1)
+                i@"D"=%0+1
+                i@"C"=%2
+                i@"R"=%5
+                i@"E"=%6
+            }
+            %9:0 = output "q" { %7 %8 }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_ff_async_inv() {
+        let (target, mut design) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:2 = dff %0:2 clk=%2 clr=%3,10 en=%4 init=11
+            %7:0 = output "q" %5:2
+        "#};
+        target.lower_ffs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "r"
+            %4:1 = input "e"
+            %5:1 = not %0+0
+            %6:1 = not %0+1
+            %7:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(1)
+                p@"IS_RESET_ASYNC"=const(1)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%5
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%4
+            }
+            %8:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(0)
+                p@"IS_RESET_ASYNC"=const(1)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%6
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%4
+            }
+            %9:1 = not %7
+            %10:1 = not %8
+            %11:0 = output "q" { %9 %10 }
+        "#};
+        assert_isomorphic!(design, gold);
+    }
+
+    #[test]
+    fn test_lower_ff_unmap_reset() {
+        let (target, mut design) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "clr"
+            %4:1 = input "rst"
+            %5:1 = input "e"
+            %6:2 = dff %0:2 clk=%2 clr=%3,10 rst=%4,01 en=%5 en>rst init=XX
+            %8:0 = output "q" %6:2
+        "#};
+        target.lower_ffs(&mut design);
+        let (_, mut gold) = parse! {r#"
+            %0:2 = input "d"
+            %2:1 = input "c"
+            %3:1 = input "clr"
+            %4:1 = input "rst"
+            %5:1 = input "e"
+            %6:2 = mux %4 01 %0:2
+            %8:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(0)
+                p@"IS_RESET_ASYNC"=const(1)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%6+0
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%5
+            }
+            %9:1 = target "SB_DFF" {
+                p@"RESET_VALUE"=const(1)
+                p@"IS_RESET_ASYNC"=const(1)
+                p@"IS_C_INVERTED"=const(0)
+                i@"D"=%6+1
+                i@"C"=%2
+                i@"R"=%3
+                i@"E"=%5
+            }
+            %10:0 = output "q" { %8 %9 }
+        "#};
+        assert_isomorphic!(design, gold);
     }
 
     #[test]
