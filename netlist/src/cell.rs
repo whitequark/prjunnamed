@@ -117,6 +117,32 @@ impl CellRepr {
             CellRepr::Name(_, _) => (),
         }
     }
+
+    pub fn slice(&self, range: impl std::ops::RangeBounds<usize> + Clone) -> Option<CellRepr> {
+        match self {
+            CellRepr::Buf(arg) => Some(CellRepr::Buf(arg.slice(range))),
+            CellRepr::Not(arg) => Some(CellRepr::Not(arg.slice(range))),
+            CellRepr::And(arg1, arg2) => Some(CellRepr::And(arg1.slice(range.clone()), arg2.slice(range))),
+            CellRepr::Or(arg1, arg2) => Some(CellRepr::Or(arg1.slice(range.clone()), arg2.slice(range))),
+            CellRepr::Xor(arg1, arg2) => Some(CellRepr::Xor(arg1.slice(range.clone()), arg2.slice(range))),
+            CellRepr::Mux(arg1, arg2, arg3) => Some(CellRepr::Mux(*arg1, arg2.slice(range.clone()), arg3.slice(range))),
+            CellRepr::Dff(flip_flop) => Some(CellRepr::Dff(flip_flop.slice(range))),
+            CellRepr::Iob(io_buffer) => Some(CellRepr::Iob(io_buffer.slice(range))),
+            _ => None,
+        }
+    }
+}
+
+impl<'a> From<&'a CellRepr> for Cow<'a, CellRepr> {
+    fn from(value: &'a CellRepr) -> Self {
+        Cow::Borrowed(value)
+    }
+}
+
+impl From<CellRepr> for Cow<'_, CellRepr> {
+    fn from(value: CellRepr) -> Self {
+        Cow::Owned(value)
+    }
 }
 
 impl Cell {
@@ -435,7 +461,7 @@ impl FlipFlop {
         self.clear.visit_mut(&mut f);
     }
 
-    pub fn slice(&self, range: Range<usize>) -> FlipFlop {
+    pub fn slice(&self, range: impl std::ops::RangeBounds<usize> + Clone) -> FlipFlop {
         FlipFlop {
             data: self.data.slice(range.clone()),
             clock: self.clock,
@@ -519,6 +545,14 @@ impl IoBuffer {
         self.output.visit_mut(&mut f);
         self.enable.visit_mut(&mut f);
     }
+
+    pub fn slice(&self, range: impl std::ops::RangeBounds<usize> + Clone) -> IoBuffer {
+        IoBuffer {
+            io: self.io.slice(range.clone()),
+            output: self.output.slice(range.clone()),
+            enable: self.enable,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -532,6 +566,12 @@ pub enum ParamValue {
 impl From<Const> for ParamValue {
     fn from(value: Const) -> Self {
         Self::Const(value)
+    }
+}
+
+impl From<&Const> for ParamValue {
+    fn from(value: &Const) -> Self {
+        Self::Const(value.clone())
     }
 }
 

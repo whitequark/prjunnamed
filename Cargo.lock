@@ -165,6 +165,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "prjunnamed-lut"
+version = "0.1.0"
+dependencies = [
+ "prjunnamed-netlist",
+]
+
+[[package]]
 name = "prjunnamed-netlist"
 version = "0.1.0"
 dependencies = [
@@ -183,6 +190,7 @@ name = "prjunnamed-siliconblue"
 version = "0.1.0"
 dependencies = [
  "prjunnamed-generic",
+ "prjunnamed-lut",
  "prjunnamed-netlist",
 ]
 

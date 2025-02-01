@@ -1,5 +1,5 @@
 [package]
-name = "prjunnamed-siliconblue"
+name = "prjunnamed-lut"
 edition.workspace = true
 version.workspace = true
 license.workspace = true
@@ -8,5 +8,3 @@ authors.workspace = true
 
 [dependencies]
 prjunnamed-netlist.workspace = true
-prjunnamed-generic.workspace = true
-prjunnamed-lut.workspace = true

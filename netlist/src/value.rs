@@ -82,14 +82,8 @@ impl Const {
         Some(res)
     }
 
-    pub fn from_str(val: &str) -> Self {
-        Const::from_iter(val.chars().rev().filter_map(|c| match c {
-            '0' => Some(Trit::Zero),
-            '1' => Some(Trit::One),
-            'x' | 'X' => Some(Trit::Undef),
-            ' ' | '_' => None,
-            c => panic!("weird character in from_str: {c}"),
-        }))
+    pub fn from_str(value: &str) -> Self {
+        value.parse().expect("invalid constant")
     }
 
     pub fn len(&self) -> usize {
@@ -146,6 +140,16 @@ impl Const {
 
     pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Const {
         Const::from_iter(self[(range.start_bound().cloned(), range.end_bound().cloned())].iter().copied())
+    }
+
+    pub fn combine<'a, 'b>(lft: impl Into<Cow<'a, Const>>, rgt: impl Into<Cow<'b, Const>>) -> Option<Const> {
+        let (lft, rgt) = (lft.into(), rgt.into());
+        assert_eq!(lft.len(), rgt.len());
+        let mut trits = vec![];
+        for (lft, rgt) in std::iter::zip(lft.iter(), rgt.iter()) {
+            trits.push(Trit::combine(lft, rgt)?);
+        }
+        Some(Const { trits })
     }
 
     pub fn not(&self) -> Const {
@@ -260,6 +264,29 @@ impl Const {
             }
             res.slice(..self.len())
         }
+    }
+
+    pub fn expand_undef(&self) -> Vec<Const> {
+        let mut result = vec![self.clone()];
+        for (index, trit) in self.iter().enumerate() {
+            if trit == Trit::Undef {
+                result = Vec::from_iter(
+                    result
+                        .iter()
+                        .map(|value| {
+                            let mut value = value.clone();
+                            value[index] = Trit::Zero;
+                            value
+                        })
+                        .chain(result.iter().map(|value| {
+                            let mut value = value.clone();
+                            value[index] = Trit::One;
+                            value
+                        })),
+                );
+            }
+        }
+        result
     }
 }
 
@@ -727,28 +754,28 @@ mod test {
 
     #[test]
     fn test_not() {
-        for (a, y) in [("", ""), ("01", "10"), ("x10", "x01")] {
+        for (a, y) in [("", ""), ("01", "10"), ("X10", "X01")] {
             assert_eq!(Const::from_str(a).not(), Const::from_str(y));
         }
     }
 
     #[test]
     fn test_and() {
-        for (a, b, y) in [("", "", ""), ("1010", "1100", "1000"), ("x0x0", "xx00", "x000"), ("x1x1", "xx11", "xxx1")] {
+        for (a, b, y) in [("", "", ""), ("1010", "1100", "1000"), ("X0X0", "XX00", "X000"), ("X1X1", "XX11", "XXX1")] {
             assert_eq!(Const::from_str(a).and(Const::from_str(b)), Const::from_str(y));
         }
     }
 
     #[test]
     fn test_or() {
-        for (a, b, y) in [("", "", ""), ("1010", "1100", "1110"), ("x0x0", "xx00", "xxx0"), ("x1x1", "xx11", "x111")] {
+        for (a, b, y) in [("", "", ""), ("1010", "1100", "1110"), ("X0X0", "XX00", "XXX0"), ("X1X1", "XX11", "X111")] {
             assert_eq!(Const::from_str(a).or(Const::from_str(b)), Const::from_str(y));
         }
     }
 
     #[test]
     fn test_xor() {
-        for (a, b, y) in [("", "", ""), ("1010", "1100", "0110"), ("x0x0", "xx00", "xxx0"), ("x1x1", "xx11", "xxx0")] {
+        for (a, b, y) in [("", "", ""), ("1010", "1100", "0110"), ("X0X0", "XX00", "XXX0"), ("X1X1", "XX11", "XXX0")] {
             assert_eq!(Const::from_str(a).xor(Const::from_str(b)), Const::from_str(y));
         }
     }
@@ -757,9 +784,9 @@ mod test {
     fn test_mux() {
         for (s, a, b, y) in [
             ('0', "", "", ""),
-            ('0', "xxx101010", "x10xx1100", "x10xx1100"),
-            ('1', "xxx101010", "x10xx1100", "xxx101010"),
-            ('x', "xxx101010", "x10xx1100", "xxxxx1xx0"),
+            ('0', "XXX101010", "X10XX1100", "X10XX1100"),
+            ('1', "XXX101010", "X10XX1100", "XXX101010"),
+            ('X', "XXX101010", "X10XX1100", "XXXXX1XX0"),
         ] {
             assert_eq!(Trit::from_char(s).mux(Const::from_str(a), Const::from_str(b)), Const::from_str(y));
         }
@@ -772,7 +799,7 @@ mod test {
             ("", "", '1', "1"),
             ("10101010", "11001100", '0', "101110110"),
             ("1101", "1111", '1', "11101"),
-            ("1010x010", "11001100", '0', "xxxxxx110"),
+            ("1010X010", "11001100", '0', "XXXXXX110"),
         ] {
             assert_eq!(Const::from_str(a).adc(Const::from_str(b), Trit::from_char(c)), Const::from_str(y));
         }
@@ -780,8 +807,19 @@ mod test {
 
     #[test]
     fn test_mul() {
-        for (a, b, y) in [("", "", ""), ("0011", "0011", "1001"), ("0x11", "0011", "xxxx"), ("1101", "1101", "1001")] {
+        for (a, b, y) in [("", "", ""), ("0011", "0011", "1001"), ("0X11", "0011", "XXXX"), ("1101", "1101", "1001")] {
             assert_eq!(Const::from_str(a).mul(Const::from_str(b)), Const::from_str(y));
         }
+    }
+
+    #[test]
+    fn test_expand_undef() {
+        assert_eq!(Const::from_str("0101").expand_undef(), vec![Const::from_str("0101")]);
+        assert_eq!(Const::from_str("0XX1").expand_undef(), vec![
+            Const::from_str("0001"),
+            Const::from_str("0011"),
+            Const::from_str("0101"),
+            Const::from_str("0111"),
+        ]);
     }
 }

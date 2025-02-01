@@ -6,13 +6,14 @@ members = [
     "generic",
     "smt2",
     "yosys_json",
-    "cli", "siliconblue",
+    "cli", "siliconblue", "lut",
 ]
 
 [workspace.dependencies]
 prjunnamed-netlist.path = "netlist"
 prjunnamed-pattern.path = "pattern"
 prjunnamed-generic.path = "generic"
+prjunnamed-lut.path = "lut"
 prjunnamed-smt2.path = "smt2"
 prjunnamed-yosys_json.path = "yosys_json"
 prjunnamed-siliconblue.path = "siliconblue"

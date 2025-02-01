@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use std::collections::{btree_map, BTreeMap, BTreeSet};
 use std::fmt::Display;
 use std::str::FromStr;
+use std::hash::Hash;
 use std::sync::Arc;
 
 use crate::cell::{Cell, CellRepr};
@@ -117,7 +118,7 @@ impl Design {
         }
         let index = net.as_cell().unwrap();
         let (cell_index, bit_index) = match self.cells[index] {
-            Cell::Void => unreachable!(),
+            Cell::Void => panic!("located a void cell %{index} in design"),
             Cell::Skip(start) => (start as usize, index - start as usize),
             _ => (index, 0),
         };
@@ -219,6 +220,12 @@ impl PartialEq<CellRef<'_>> for CellRef<'_> {
 }
 
 impl Eq for CellRef<'_> {}
+
+impl Hash for CellRef<'_> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.index.hash(state);
+    }
+}
 
 impl<'a> CellRef<'a> {
     pub fn repr(&self) -> Cow<'a, CellRepr> {

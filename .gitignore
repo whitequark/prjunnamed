@@ -1,4 +1,5 @@
 /target
+/build
 *.il
 *.json
 *.dot
@@ -8,3 +9,4 @@
 *.profraw
 *.profdata
 lcov.info
+

@@ -1,13 +1,15 @@
 /// This library covers the Lattice iCE65 and iCE40 FPGA families (acquired with SiliconBlue).
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
 };
 
 use prjunnamed_netlist::{
-    CellRepr, Const, Design, Instance, Net, ParamValue, Target, TargetCell, TargetImportError,
-    TargetPrototype, Trit, Value,
+    CellRepr, Const, Design, Instance, Net, ParamValue, Target, TargetCell, TargetImportError, TargetPrototype, Trit,
+    Value,
 };
+
+use prjunnamed_lut::Lut;
 
 pub fn register() {
     prjunnamed_netlist::register_target("siliconblue", |options| Ok(SiliconBlueTarget::new(options)));
@@ -18,6 +20,17 @@ pub struct SiliconBlueTarget {
     prototypes: BTreeMap<String, TargetPrototype>,
 }
 
+pub const SB_LUT4: &str = "SB_LUT4";
+pub const SB_LUT4_CARRY: &str = "SB_LUT4_CARRY";
+pub const SB_CARRY: &str = "SB_CARRY";
+pub const SB_DFF: &str = "SB_DFF";
+pub const SB_IO: &str = "SB_IO";
+pub const SB_GB: &str = "SB_SB";
+pub const SB_RAM40_4K: &str = "SB_RAM40_4K";
+pub const SB_PLL40: &str = "SB_PLL40";
+pub const SB_MAC16: &str = "SB_MAC16";
+pub const SB_SPRAM256KA: &str = "SB_SPRAM256KA";
+
 impl SiliconBlueTarget {
     pub fn new(options: BTreeMap<String, String>) -> Arc<Self> {
         if !options.is_empty() {
@@ -25,14 +38,14 @@ impl SiliconBlueTarget {
         }
         let mut prototypes = BTreeMap::new();
         prototypes.insert(
-            "SB_LUT4".into(),
+            SB_LUT4.into(),
             TargetPrototype::new_pure()
                 .add_param_bits("LUT_INIT", Const::undef(16))
                 .add_input("I", Const::undef(4)) // synthetic; vendor uses separate I0-I3 ports
                 .add_output("O", 1),
         );
         prototypes.insert(
-            "SB_CARRY".into(),
+            SB_CARRY.into(),
             TargetPrototype::new_pure()
                 .add_input("I0", Const::undef(1))
                 .add_input("I1", Const::undef(1))
@@ -41,7 +54,7 @@ impl SiliconBlueTarget {
         );
         prototypes.insert(
             // synthetic; corresponds to SB_LUT4 + SB_CARRY
-            "SB_LUT4_CARRY".into(),
+            SB_LUT4_CARRY.into(),
             TargetPrototype::new_pure()
                 .add_param_bits("LUT_INIT", Const::undef(16))
                 .add_param_bool("IS_I3_CI", false)
@@ -52,7 +65,7 @@ impl SiliconBlueTarget {
         );
         prototypes.insert(
             // actually corresponds to SB_DFF* vendor cells
-            "SB_DFF".into(),
+            SB_DFF.into(),
             TargetPrototype::new_has_state()
                 .add_param_bits("RESET_VALUE", Const::undef(1)) // synthetic
                 .add_param_bool("IS_RESET_ASYNC", false) // synthetic
@@ -64,7 +77,7 @@ impl SiliconBlueTarget {
                 .add_output("Q", 1),
         );
         prototypes.insert(
-            "SB_GB".into(),
+            SB_GB.into(),
             TargetPrototype::new_pure()
                 .add_input("I", Const::undef(1)) // synthetic; USER_SIGNAL_TO_GLOBAL_BUFFER
                 .add_output("O", 1), // synthetic; GLOBAL_BUFFER_OUTPUT
@@ -76,7 +89,7 @@ impl SiliconBlueTarget {
             // - SB_IO_DS (when IO_STANDARD is differential)
             // - SB_IO_OD (when IO_STANDARD is OPEN_DRAIN)
             // TODO: SB_IO_I3C
-            "SB_IO".into(),
+            SB_IO.into(),
             TargetPrototype::new_has_effects()
                 .add_param_bits("PIN_TYPE", Const::zero(6))
                 .add_param_bool("PULLUP", false)
@@ -114,7 +127,7 @@ impl SiliconBlueTarget {
         );
         // TODO: iCE65 RAM (or just represent it as this cell with READ_MODE = WRITE_MODE = 0?)
         prototypes.insert(
-            "SB_RAM40_4K".into(),
+            SB_RAM40_4K.into(),
             TargetPrototype::new_has_state()
                 .add_param_int_enum("READ_MODE", &[0, 1, 2, 3])
                 .add_param_int_enum("WRITE_MODE", &[0, 1, 2, 3])
@@ -136,7 +149,7 @@ impl SiliconBlueTarget {
         // TODO: iCE65 PLL
         prototypes.insert(
             // actually corresponds to several vendor cells (selected by MODE parameter)
-            "SB_PLL40".into(),
+            SB_PLL40.into(),
             TargetPrototype::new_has_state()
                 .add_param_string_enum("MODE", &[
                     "SB_PLL40_CORE",
@@ -194,7 +207,7 @@ impl SiliconBlueTarget {
                 .add_input("BOOT", Const::zero(1)),
         );
         prototypes.insert(
-            "SB_MAC16".into(),
+            SB_MAC16.into(),
             TargetPrototype::new_has_state()
                 .add_param_bits("NEG_TRIGGER", Const::zero(1))
                 .add_param_bits("A_REG", Const::zero(1))
@@ -245,7 +258,7 @@ impl SiliconBlueTarget {
                 .add_output("SIGNEXTOUT", 1),
         );
         prototypes.insert(
-            "SB_SPRAM256KA".into(),
+            SB_SPRAM256KA.into(),
             TargetPrototype::new_has_state()
                 .add_input("ADDRESS", Const::undef(14))
                 .add_input("DATAIN", Const::undef(16))
@@ -346,7 +359,7 @@ impl Target for SiliconBlueTarget {
                 "SB_DFF" | "SB_DFFR" | "SB_DFFS" | "SB_DFFSR" | "SB_DFFSS" | "SB_DFFE" | "SB_DFFER" | "SB_DFFES"
                 | "SB_DFFESR" | "SB_DFFESS" | "SB_DFFN" | "SB_DFFNR" | "SB_DFFNS" | "SB_DFFNSR" | "SB_DFFNSS"
                 | "SB_DFFNE" | "SB_DFFNER" | "SB_DFFNES" | "SB_DFFNESR" | "SB_DFFNESS" => {
-                    instance.kind = "SB_DFF".into();
+                    instance.kind = SB_DFF.into();
                     let mut kind = orig_kind.strip_prefix("SB_DFF").unwrap();
                     if let Some(rest) = kind.strip_prefix('N') {
                         instance.add_param("IS_C_INVERTED", true);
@@ -383,14 +396,14 @@ impl Target for SiliconBlueTarget {
                     instance.rename_output("GLOBAL_BUFFER_OUTPUT", "O");
                 }
                 "SB_GB_IO" => {
-                    instance.kind = "SB_IO".into();
+                    instance.kind = SB_IO.into();
                     instance.add_param("IS_GB", true);
                 }
                 "SB_IO_DS" => {
-                    instance.kind = "SB_IO".into();
+                    instance.kind = SB_IO.into();
                 }
                 "SB_IO_OD" => {
-                    instance.kind = "SB_IO".into();
+                    instance.kind = SB_IO.into();
                     instance.add_param("IO_STANDARD", "OPEN_DRAIN");
                     instance.rename_input("DOUT0", "D_OUT_0");
                     instance.rename_input("DOUT1", "D_OUT_1");
@@ -430,7 +443,7 @@ impl Target for SiliconBlueTarget {
                         kind = rest;
                     }
                     assert!(kind.is_empty());
-                    instance.kind = "SB_RAM40_4K".into();
+                    instance.kind = SB_RAM40_4K.into();
                     let mut init = Const::new();
                     for index in 0..16 {
                         let param_name = format!("INIT_{index:01X}");
@@ -453,7 +466,7 @@ impl Target for SiliconBlueTarget {
                     instance.add_param("INIT", init);
                 }
                 "SB_PLL40_CORE" | "SB_PLL40_PAD" | "SB_PLL40_2_PAD" | "SB_PLL40_2F_CORE" | "SB_PLL40_2F_PAD" => {
-                    instance.kind = "SB_PLL40".into();
+                    instance.kind = SB_PLL40.into();
                     instance.add_param("MODE", orig_kind);
                     if matches!(orig_kind, "SB_PLL40_CORE" | "SB_PLL40_PAD") {
                         instance.rename_param("PLLOUT_SELECT", "PLLOUT_SELECT_PORTA");
@@ -547,17 +560,11 @@ impl Target for SiliconBlueTarget {
                     inst_lut4.inputs.insert("I0".into(), Value::from(i[0]));
                     inst_lut4.inputs.insert("I1".into(), Value::from(i[1]));
                     inst_lut4.inputs.insert("I2".into(), Value::from(i[2]));
-                    inst_lut4.inputs.insert("I3".into(), Value::from(
-                        if is_i3_ci {
-                            ci.unwrap_net()
-                        } else {
-                            i[3]
-                        }
-                    ));
+                    inst_lut4.inputs.insert("I3".into(), Value::from(if is_i3_ci { ci.unwrap_net() } else { i[3] }));
                     inst_lut4.outputs.insert("O".into(), 0..1);
                     let o = design.add_other(inst_lut4);
                     design.replace_value(prototype.extract_output(&target_output, "O"), o);
-                    let mut inst_carry = Instance::new("SB_CARRY");
+                    let mut inst_carry = Instance::new(SB_CARRY);
                     inst_carry.inputs.insert("I0".into(), Value::from(i[1]));
                     inst_carry.inputs.insert("I1".into(), Value::from(i[2]));
                     inst_carry.inputs.insert("CI".into(), ci);
@@ -679,19 +686,21 @@ impl Target for SiliconBlueTarget {
         self.lower_ffs(design);
         self.lower_iobs(design);
         prjunnamed_generic::canonicalize(design);
+        self.lower_luts(design);
+        prjunnamed_generic::canonicalize(design);
         Ok(())
     }
 }
 
 impl SiliconBlueTarget {
     pub fn lower_iobs(&self, design: &mut Design) {
-        let prototype = self.prototype("SB_IO").unwrap();
+        let prototype = self.prototype(SB_IO).unwrap();
         for cell_ref in design.iter_cells() {
             if let CellRepr::Iob(io_buffer) = &*cell_ref.repr() {
                 let enable = io_buffer.enable.into_pos(design);
                 let mut output_value = Value::EMPTY;
                 for bit_index in 0..io_buffer.output.len() {
-                    let mut target_cell = TargetCell::new("SB_IO", prototype);
+                    let mut target_cell = TargetCell::new(SB_IO, prototype);
                     if io_buffer.enable.is_always(false) {
                         // no output
                         prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::from_str("000001"));
@@ -717,7 +726,7 @@ impl SiliconBlueTarget {
     }
 
     pub fn lower_ffs(&self, design: &mut Design) {
-        let prototype = self.prototype("SB_DFF").unwrap();
+        let prototype = self.prototype(SB_DFF).unwrap();
         for cell_ref in design.iter_cells() {
             if let CellRepr::Dff(flip_flop) = &*cell_ref.repr() {
                 let mut flip_flop = flip_flop.clone();
@@ -747,7 +756,7 @@ impl SiliconBlueTarget {
                     } else {
                         ff_slice.reset_value[0]
                     };
-                    let mut target_cell = TargetCell::new("SB_DFF", prototype);
+                    let mut target_cell = TargetCell::new(SB_DFF, prototype);
                     prototype.apply_param(&mut target_cell, "RESET_VALUE", reset_value);
                     prototype.apply_param(&mut target_cell, "IS_RESET_ASYNC", is_reset_async);
                     prototype.apply_param(&mut target_cell, "IS_C_INVERTED", ff_slice.clock.is_negative());
@@ -762,6 +771,195 @@ impl SiliconBlueTarget {
                 cell_ref.unalive();
             }
         }
+        design.compact();
+    }
+
+    // a fanfic of https://people.eecs.berkeley.edu/~alanmi/publications/2007/tech07_fast.pdf
+    pub fn lower_luts(&self, design: &mut Design) {
+        let mut use_count: HashMap<_, u32> = HashMap::new();
+        for cell in design.iter_cells() {
+            cell.visit(|net| *use_count.entry(net).or_default() += 1);
+        }
+
+        let mut adc_carries = HashMap::new();
+        for cell in design.iter_cells() {
+            if let CellRepr::Adc(_, _, ci) = &*cell.repr() {
+                let output = cell.output();
+                let mut carry = Value::from(ci);
+                if output.len() > 1 {
+                    carry.extend(design.add_void(output.len() - 2));
+                    carry.extend([output.msb()]);
+                }
+                adc_carries.insert(cell, carry);
+            }
+        }
+
+        // TODO (later): emit void nets for mux intermediate products
+
+        #[derive(Debug, Clone)]
+        enum NetDisposition {
+            Lut(u32, Lut),
+            LutCarry(u32, Lut, Net, Net),
+            CarryOut(u32),
+        }
+
+        impl NetDisposition {
+            fn depth(&self) -> u32 {
+                match *self {
+                    NetDisposition::Lut(depth, _) => depth,
+                    NetDisposition::LutCarry(depth, _, _, _) => depth,
+                    NetDisposition::CarryOut(depth) => depth,
+                }
+            }
+        }
+
+        let mut net_dispositions: BTreeMap<Net, NetDisposition> = BTreeMap::new();
+        for cell in design.iter_cells_topo() {
+            match &*cell.repr() {
+                CellRepr::Buf(..)
+                | CellRepr::Not(..)
+                | CellRepr::And(..)
+                | CellRepr::Or(..)
+                | CellRepr::Xor(..)
+                | CellRepr::Mux(..) => {
+                    let output = cell.output();
+                    'cell_bits: for index in 0..output.len() {
+                        let slice = cell.repr().slice(index..index + 1).unwrap();
+                        let mut lut = Lut::from_cell(slice).unwrap();
+                        let mut inputs_by_depth = Vec::from_iter(
+                            lut.inputs()
+                                .iter()
+                                .map(|net| (net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0), net)),
+                        );
+                        inputs_by_depth.sort_by_key(|&(depth, net)| (std::cmp::Reverse(depth), net));
+                        for (_, net) in inputs_by_depth {
+                            let Some(input_disposition) = net_dispositions.get(&net) else {
+                                continue;
+                            };
+                            match *input_disposition {
+                                NetDisposition::CarryOut(_) => (),
+                                NetDisposition::Lut(_depth, ref input_lut) => {
+                                    let Some(input_index) = lut.inputs().iter().position(|input| input == net) else {
+                                        // input disappeared — optimized out by earlier merge?
+                                        continue;
+                                    };
+                                    let merged_lut = lut.merge(input_index, input_lut);
+                                    if merged_lut.inputs().len() <= 4 {
+                                        lut = merged_lut;
+                                    }
+                                }
+                                NetDisposition::LutCarry(depth, ref input_lut, ci, co) => {
+                                    if use_count[&net] != 1 {
+                                        continue;
+                                    }
+                                    let Some(input_index) = lut.inputs().iter().position(|input| input == net) else {
+                                        // input disappeared — optimized out by earlier merge?
+                                        continue;
+                                    };
+
+                                    if let Some(merged_lut) = lut.merge(input_index, input_lut).expand_with_fixed(&[
+                                        None,
+                                        Some(input_lut.inputs()[1]),
+                                        Some(input_lut.inputs()[2]),
+                                        if input_lut.inputs()[3] == ci { Some(input_lut.inputs()[3]) } else { None },
+                                    ]) {
+                                        net_dispositions.remove(&net);
+                                        let depth = (merged_lut
+                                            .inputs()
+                                            .iter()
+                                            .map(|net| {
+                                                net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0)
+                                            })
+                                            .max()
+                                            .unwrap()
+                                            + 1)
+                                        .max(depth);
+                                        net_dispositions
+                                            .insert(output[index], NetDisposition::LutCarry(depth, merged_lut, ci, co));
+                                        continue 'cell_bits;
+                                    }
+                                }
+                            }
+                        }
+                        let depth = lut
+                            .inputs()
+                            .iter()
+                            .map(|net| net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0))
+                            .max()
+                            .unwrap()
+                            + 1;
+                        net_dispositions.insert(output[index], NetDisposition::Lut(depth, lut));
+                    }
+                    cell.unalive();
+                }
+                CellRepr::Adc(arg1, arg2, ci) => {
+                    // TODO: check if doable in one step
+                    let output = cell.output();
+                    let carry = &adc_carries[&cell];
+                    let mut max_depth = net_dispositions.get(&ci).map(NetDisposition::depth).unwrap_or(0);
+                    for index in 0..output.len() - 1 {
+                        for net in [arg1[index], arg2[index]] {
+                            max_depth =
+                                max_depth.max(net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0));
+                        }
+                        net_dispositions.insert(
+                            output[index],
+                            NetDisposition::LutCarry(
+                                max_depth + 1,
+                                Lut::new_fixed(
+                                    Value::from_iter([Net::UNDEF, arg1[index], arg2[index], carry[index]]),
+                                    Const::from_str("1100001100111100"),
+                                ),
+                                carry[index],
+                                carry[index + 1],
+                            ),
+                        );
+                    }
+                    net_dispositions.insert(output.msb(), NetDisposition::CarryOut(max_depth + 1));
+                    cell.unalive();
+                }
+                _ => {}
+            }
+        }
+
+        let sb_lut4 = self.prototype(SB_LUT4).unwrap();
+        let sb_lut4_carry = self.prototype(SB_LUT4_CARRY).unwrap();
+        for (net, disposition) in net_dispositions {
+            match disposition {
+                NetDisposition::CarryOut(_) => {}
+                NetDisposition::Lut(_, lut) => {
+                    let lut = lut.expand_to(4).unwrap();
+                    let mut target_cell = TargetCell::new(SB_LUT4, sb_lut4);
+                    sb_lut4.apply_param(&mut target_cell, "LUT_INIT", lut.table());
+                    sb_lut4.apply_input(&mut target_cell, "I", lut.inputs());
+                    let target_output = design.add_target(target_cell);
+                    let o = sb_lut4.extract_output(&target_output, "O");
+                    design.replace_value(net, o);
+                }
+                NetDisposition::LutCarry(_, lut, net_ci, net_co) => {
+                    let lut = lut
+                        .expand_with_fixed(&[
+                            None,
+                            Some(lut.inputs()[1]),
+                            Some(lut.inputs()[2]),
+                            if lut.inputs()[3] == net_ci { Some(lut.inputs()[3]) } else { None },
+                        ])
+                        .unwrap();
+                    let mut target_cell = TargetCell::new(SB_LUT4_CARRY, sb_lut4_carry);
+                    sb_lut4_carry.apply_param(&mut target_cell, "LUT_INIT", lut.table());
+                    let inputs = lut.inputs();
+                    sb_lut4_carry.apply_param(&mut target_cell, "IS_I3_CI", inputs[3] == net_ci);
+                    sb_lut4_carry.apply_input(&mut target_cell, "I", inputs);
+                    sb_lut4_carry.apply_input(&mut target_cell, "CI", net_ci);
+                    let target_output = design.add_target(target_cell);
+                    let o = sb_lut4_carry.extract_output(&target_output, "O");
+                    design.replace_value(net, o);
+                    let co = sb_lut4_carry.extract_output(&target_output, "CO");
+                    design.replace_value(net_co, co);
+                }
+            }
+        }
+
         design.compact();
     }
 }
