@@ -1,9 +1,16 @@
 use std::collections::BTreeSet;
 
-use prjunnamed_netlist::{CellRepr, Design, FlipFlop, Net, Value, Const};
+use prjunnamed_netlist::{CellRepr, Const, Design, FlipFlop, Net, TargetCellPurity, Value};
 
-fn is_root_cell(cell_repr: &CellRepr) -> bool {
-    return matches!(cell_repr, CellRepr::Iob(_) | CellRepr::Other(_) | CellRepr::Output(_, _) | CellRepr::Name(_, _));
+fn is_root_cell(design: &Design, cell_repr: &CellRepr) -> bool {
+    match cell_repr {
+        CellRepr::Iob(_) | CellRepr::Other(_) | CellRepr::Output(_, _) | CellRepr::Name(_, _) => true,
+        CellRepr::Target(target_cell) => {
+            let prototype = design.target_prototype(target_cell);
+            prototype.purity == TargetCellPurity::HasEffects
+        }
+        _ => false,
+    }
 }
 
 pub fn split(design: &mut Design) -> bool {
@@ -12,7 +19,7 @@ pub fn split(design: &mut Design) -> bool {
     // Find roots.
     for cell_ref in design.iter_cells() {
         let cell_repr = cell_ref.repr();
-        if is_root_cell(&*cell_repr) {
+        if is_root_cell(design, &*cell_repr) {
             cell_repr.visit(|net| {
                 queue.insert(net);
             })
@@ -89,7 +96,7 @@ pub fn split(design: &mut Design) -> bool {
         let cell_repr = cell_ref.repr();
         let cell_output = cell_ref.output();
         let count_live = cell_output.iter().filter(|net| live_nets.contains(&net)).count();
-        if is_root_cell(&*cell_repr) {
+        if is_root_cell(design, &*cell_repr) {
             continue; // root
         } else if count_live == cell_ref.output_len() {
             continue; // fully live
