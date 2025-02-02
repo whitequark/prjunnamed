@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Display};
 
-use crate::{CellRef, CellRepr, ControlNet, Design, IoNet, IoValue, Net, ParamValue, Value};
+use crate::{CellRef, CellRepr, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, ParamValue, Value};
 
 struct DisplayFn<'a, F: for<'b> Fn(&Design, &mut std::fmt::Formatter<'b>) -> std::fmt::Result>(&'a Design, F);
 
@@ -309,6 +309,18 @@ impl Design {
                         if flip_flop.has_init_value() {
                             write!(f, " init={}", flip_flop.init_value)?;
                         }
+                        write!(f, " [")?;
+                        for (index, relation) in flip_flop.relations.iter().enumerate() {
+                            match relation {
+                                MemoryPortRelation::Undefined => write!(f, "undef")?,
+                                MemoryPortRelation::ReadBeforeWrite => write!(f, "rdfirst")?,
+                                MemoryPortRelation::Transparent => write!(f, "trans")?,
+                            }
+                            if index < flip_flop.relations.len() - 1 {
+                                write!(f, " ")?;
+                            }
+                        }
+                        write!(f, "]")?;
                     }
                     write!(f, "\n")?;
                 }

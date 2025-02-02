@@ -4,7 +4,8 @@ use yap::{one_of, types::WithContext, IntoTokens, TokenLocation, Tokens};
 
 use crate::{
     create_target, CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Memory,
-    MemoryReadFlipFlop, MemoryReadPort, MemoryWritePort, Net, ParamValue, Target, TargetCell, Value,
+    MemoryPortRelation, MemoryReadFlipFlop, MemoryReadPort, MemoryWritePort, Net, ParamValue, Target, TargetCell,
+    Value,
 };
 
 #[derive(Debug)]
@@ -494,6 +495,22 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                                 let reset_over_enable = t.optional(|t| parse_reset_over_enable_arg(t)).unwrap_or(false);
                                 let init_value =
                                     t.optional(|t| parse_dff_init_value_arg(t)).unwrap_or_else(|| Const::undef(width));
+                                let mut relations = vec![];
+                                parse_space(t);
+                                parse_symbol(t, '[');
+                                while let Some(()) = t.optional(|t| {
+                                    parse_space(t);
+                                    let keyword = parse_keyword(t)?;
+                                    relations.push(match keyword.as_str() {
+                                        "undef" => MemoryPortRelation::Undefined,
+                                        "rdfirst" => MemoryPortRelation::ReadBeforeWrite,
+                                        "trans" => MemoryPortRelation::Transparent,
+                                        _ => return None,
+                                    });
+                                    Some(())
+                                }) {}
+                                parse_space(t);
+                                parse_symbol(t, ']');
                                 Some(MemoryReadFlipFlop {
                                     clock,
                                     clear,
@@ -503,7 +520,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                                     enable,
                                     reset_over_enable,
                                     init_value,
-                                    relations: vec![], // TODO
+                                    relations,
                                 })
                             });
                             read_ports.push(MemoryReadPort { addr, data_len: width, flip_flop })
@@ -838,36 +855,56 @@ mod test {
         roundtrip(
             "%0:5 = buf 00000\n%5:3 = buf 000\n\
              %8:4 = memory depth=8 width=4 {\n  \
-             read addr=%5:3 width=4 clk=%0+1\n}\n",
+             read addr=%5:3 width=4 clk=%0+1 []\n}\n",
         );
         roundtrip(
             "%0:5 = buf 00000\n%5:3 = buf 000\n\
              %8:4 = memory depth=8 width=4 {\n  \
-             read addr=%5:3 width=4 clk=%0+1 init=1010\n}\n");
+             read addr=%5:3 width=4 clk=%0+1 init=1010 []\n}\n",
+        );
         roundtrip(
             "%0:5 = buf 00000\n%5:3 = buf 000\n\
              %8:4 = memory depth=8 width=4 {\n  \
-             read addr=%5:3 width=4 clk=%0+1 clr=%0+2\n}\n");
+             read addr=%5:3 width=4 clk=%0+1 clr=%0+2 []\n}\n",
+        );
         roundtrip(
             "%0:5 = buf 00000\n%5:3 = buf 000\n\
              %8:4 = memory depth=8 width=4 {\n  \
-             read addr=%5:3 width=4 clk=%0+1 rst=%0+2\n}\n");
+             read addr=%5:3 width=4 clk=%0+1 rst=%0+2 []\n}\n",
+        );
         roundtrip(
             "%0:5 = buf 00000\n%5:3 = buf 000\n\
              %8:4 = memory depth=8 width=4 {\n  \
-             read addr=%5:3 width=4 clk=%0+1 en=%0+2\n}\n");
+             read addr=%5:3 width=4 clk=%0+1 en=%0+2 []\n}\n",
+        );
         roundtrip(
             "%0:5 = buf 00000\n%5:3 = buf 000\n\
              %8:4 = memory depth=8 width=4 {\n  \
-             read addr=%5:3 width=4 clk=%0+1 rst=%0+2 en=%0+3 rst>en\n}\n");
+             read addr=%5:3 width=4 clk=%0+1 rst=%0+2 en=%0+3 rst>en []\n}\n",
+        );
         roundtrip(
             "%0:5 = buf 00000\n%5:3 = buf 000\n\
              %8:4 = memory depth=8 width=4 {\n  \
-             read addr=%5:3 width=4 clk=%0+1 rst=%0+2 en=!%0+3 en>rst\n}\n");
+             read addr=%5:3 width=4 clk=%0+1 rst=%0+2 en=!%0+3 en>rst []\n}\n",
+        );
         roundtrip(
             "%0:5 = buf 00000\n%5:3 = buf 000\n\
              %8:4 = memory depth=8 width=4 {\n  \
-             read addr=%5:3 width=4 clk=%0+1 clr=%0+2 rst=%0+3 en=%0+4 en>rst init=1010\n}\n");
+             read addr=%5:3 width=4 clk=%0+1 clr=%0+2 rst=%0+3 en=%0+4 en>rst init=1010 []\n}\n",
+        );
+        roundtrip(
+            "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n%8:4 = buf 0000\n\
+             %12:4 = memory depth=8 width=4 {\n  \
+             write addr=%1:3 data=%4:4 mask=%8:4 clk=%0\n  \
+             read addr=%1:3 width=4 clk=%0 [undef]\n}\n",
+        );
+        roundtrip(
+            "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n%8:4 = buf 0000\n\
+             %12:4 = memory depth=8 width=4 {\n  \
+             write addr=%1:3 data=%4:4 mask=%8:4 clk=%0\n  \
+             write addr=%1:3 data=%4:4 mask=%8:4 clk=%0\n  \
+             read addr=%1:3 width=4 clk=%0 [trans rdfirst]\n}\n",
+        );
     }
 
     #[test]
