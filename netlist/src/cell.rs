@@ -62,7 +62,7 @@ pub enum CellRepr {
     SModFloor(Value, Value),
 
     Match { value: Value, enable: Net, patterns: Vec<Const> }, // one-hot priority match of `value` against `patterns`
-    Assign { value: Value, enable: Net, update: Value }, // insert non-X bits from `update` into `value` if `enable`
+    Assign { value: Value, enable: Net, update: Value, offset: usize }, // replace `value[offset..]` with `update` if `enable`
 
     Dff(FlipFlop),
     Memory(Memory),
@@ -109,8 +109,8 @@ impl CellRepr {
                     assert_eq!(value.len(), pattern.len());
                 }
             }
-            CellRepr::Assign { value, update, .. } => {
-                assert_eq!(value.len(), update.len());
+            CellRepr::Assign { value, update, offset, .. } => {
+                assert!(value.len() >= update.len() + offset);
             }
 
             CellRepr::Dff(flip_flop) => {
@@ -378,7 +378,7 @@ impl CellRepr {
                 value.visit(&mut f);
                 enable.visit(&mut f);
             }
-            CellRepr::Assign { value, enable, update } => {
+            CellRepr::Assign { value, enable, update, .. } => {
                 value.visit(&mut f);
                 enable.visit(&mut f);
                 update.visit(&mut f);
@@ -426,7 +426,7 @@ impl CellRepr {
                 value.visit_mut(&mut f);
                 enable.visit_mut(&mut f);
             }
-            CellRepr::Assign { value, enable, update } => {
+            CellRepr::Assign { value, enable, update, .. } => {
                 value.visit_mut(&mut f);
                 enable.visit_mut(&mut f);
                 update.visit_mut(&mut f);

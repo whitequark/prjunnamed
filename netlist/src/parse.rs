@@ -447,7 +447,14 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                     })
                     .unwrap_or(Net::ONE);
                 let update = parse_value_arg(t)?;
-                CellRepr::Assign { value, enable, update }
+                let offset = t
+                    .optional(|t| {
+                        parse_space(t);
+                        parse_keyword_eq_expect(t, "at")?;
+                        parse_decimal(t)
+                    })
+                    .unwrap_or(0);
+                CellRepr::Assign { value, enable, update, offset }
             }
             "dff" => {
                 let data = parse_value_arg(t)?;

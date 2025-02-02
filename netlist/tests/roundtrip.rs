@@ -86,7 +86,7 @@ fn test_cells() {
     roundtrip("%0:2 = buf 00\n%2:4 = match %0:2 [00 01 10 11]\n");
     roundtrip("%0:2 = buf 00\n%2:2 = match %0+0 en=%0+1 [0 1]\n");
     roundtrip("%0:4 = buf 0000\n%4:2 = assign { %0:2 } { %0+2 %0+3 }\n");
-    roundtrip("%0:5 = buf 00000\n%5:2 = assign { %0:2 } en=%0+2 { %0+3 %0+4 }\n");
+    roundtrip("%0:4 = buf 0000\n%4:2 = assign { %0:2 } en=%0+2 %0+3 at=1\n");
     roundtrip("%0:2 = buf 00\n%2:1 = dff %0+0 clk=%0+1\n");
     roundtrip("%0:0 = memory depth=256 width=16 {\n}\n");
     roundtrip("#\"purr\":1\n%0:2 = buf 00\n%2:1 = iob #\"purr\" o=%0+0 en=%0+1\n");
