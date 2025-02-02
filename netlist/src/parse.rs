@@ -437,6 +437,18 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 parse_symbol(t, ']');
                 CellRepr::Match { value, enable, patterns }
             }
+            "assign" => {
+                let value = parse_value_arg(t)?;
+                let enable = t
+                    .optional(|t| {
+                        parse_space(t);
+                        parse_keyword_eq_expect(t, "en")?;
+                        parse_net_arg(t)
+                    })
+                    .unwrap_or(Net::ONE);
+                let update = parse_value_arg(t)?;
+                CellRepr::Assign { value, enable, update }
+            }
             "dff" => {
                 let data = parse_value_arg(t)?;
                 let clock = parse_control_arg(t, "clk")?;
@@ -839,6 +851,8 @@ mod test {
         roundtrip("%0:2 = buf 00\n%2:1 = smod_floor %0+0 %0+1\n");
         roundtrip("%0:2 = buf 00\n%2:4 = match %0:2 [00 01 10 11]\n");
         roundtrip("%0:2 = buf 00\n%2:2 = match %0+0 en=%0+1 [0 1]\n");
+        roundtrip("%0:4 = buf 0000\n%4:2 = assign { %0:2 } { %0+2 %0+3 }\n");
+        roundtrip("%0:5 = buf 00000\n%5:2 = assign { %0:2 } en=%0+2 { %0+3 %0+4 }\n");
         roundtrip("%0:2 = buf 00\n%2:1 = dff %0+0 clk=%0+1\n");
         roundtrip("%0:0 = memory depth=256 width=16 {\n}\n");
         roundtrip("#\"purr\":1\n%0:2 = buf 00\n%2:1 = iob #\"purr\" o=%0+0 en=%0+1\n");

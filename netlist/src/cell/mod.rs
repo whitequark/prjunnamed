@@ -61,7 +61,8 @@ pub enum CellRepr {
     SModTrunc(Value, Value),
     SModFloor(Value, Value),
 
-    Match { value: Value, enable: Net, patterns: Vec<Const> },
+    Match { value: Value, enable: Net, patterns: Vec<Const> }, // one-hot priority match of `value` against `patterns`
+    Assign { value: Value, enable: Net, update: Value }, // insert non-X bits from `update` into `value` if `enable`
 
     Dff(FlipFlop),
     Memory(Memory),
@@ -107,6 +108,9 @@ impl CellRepr {
                 for pattern in patterns {
                     assert_eq!(value.len(), pattern.len());
                 }
+            }
+            CellRepr::Assign { value, update, .. } => {
+                assert_eq!(value.len(), update.len());
             }
 
             CellRepr::Dff(flip_flop) => {
@@ -325,6 +329,7 @@ impl CellRepr {
             }
 
             CellRepr::Match { patterns, .. } => patterns.len(),
+            CellRepr::Assign { value, .. } => value.len(),
 
             CellRepr::Dff(flip_flop) => flip_flop.output_len(),
             CellRepr::Memory(memory) => memory.output_len(),
@@ -373,6 +378,11 @@ impl CellRepr {
                 value.visit(&mut f);
                 enable.visit(&mut f);
             }
+            CellRepr::Assign { value, enable, update } => {
+                value.visit(&mut f);
+                enable.visit(&mut f);
+                update.visit(&mut f);
+            }
             CellRepr::Dff(flip_flop) => flip_flop.visit(&mut f),
             CellRepr::Memory(memory) => memory.visit(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit(&mut f),
@@ -415,6 +425,11 @@ impl CellRepr {
             CellRepr::Match { value, enable, .. } => {
                 value.visit_mut(&mut f);
                 enable.visit_mut(&mut f);
+            }
+            CellRepr::Assign { value, enable, update } => {
+                value.visit_mut(&mut f);
+                enable.visit_mut(&mut f);
+                update.visit_mut(&mut f);
             }
             CellRepr::Dff(flip_flop) => flip_flop.visit_mut(&mut f),
             CellRepr::Memory(memory) => memory.visit_mut(&mut f),

@@ -250,6 +250,15 @@ impl Design {
                 }
                 write!(f, "]")?;
             }
+            CellRepr::Assign { value, enable, update } => {
+                write_common(f, "assign", &[&value])?;
+                if *enable != Net::ONE {
+                    write!(f, " en=")?;
+                    self.write_net(f, *enable)?;
+                }
+                write!(f, " ")?;
+                self.write_value(f, update)?;
+            }
 
             CellRepr::Dff(flip_flop) => {
                 write_common(f, "dff", &[&flip_flop.data])?;

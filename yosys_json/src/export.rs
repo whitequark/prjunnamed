@@ -226,6 +226,7 @@ fn export_module(mut design: Design) -> yosys::Module {
             CellRepr::SModFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$modfloor", arg1, arg2, true),
 
             CellRepr::Match { .. } => unimplemented!("match cells must be lowered first for Yosys JSON export"),
+            CellRepr::Assign { .. } => unimplemented!("assign cells must be lowered first for Yosys JSON export"),
 
             CellRepr::Dff(flip_flop) => {
                 let ys_cell_type = match (
