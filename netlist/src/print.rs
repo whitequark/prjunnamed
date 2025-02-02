@@ -1,6 +1,6 @@
 use std::{borrow::Cow, fmt::Display};
 
-use crate::{CellRef, CellRepr, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, ParamValue, Value};
+use crate::{CellRef, CellRepr, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, ParamValue, Trit, Value};
 
 struct DisplayFn<'a, F: for<'b> Fn(&Design, &mut std::fmt::Formatter<'b>) -> std::fmt::Result>(&'a Design, F);
 
@@ -321,6 +321,22 @@ impl Design {
                             }
                         }
                         write!(f, "]")?;
+                    }
+                    write!(f, "\n")?;
+                }
+                let fully_undef_rows_at_end = memory
+                    .init_value
+                    .iter()
+                    .rev()
+                    .enumerate()
+                    .find(|(_index, trit)| !matches!(trit, Trit::Undef))
+                    .map(|(index, _trit)| index)
+                    .unwrap_or(memory.width * memory.depth)
+                    / memory.width;
+                for index in 0..(memory.depth - fully_undef_rows_at_end) {
+                    write!(f, "  init ")?;
+                    for trit in memory.init_value[(index * memory.width)..((index + 1) * memory.width)].iter().rev() {
+                        write!(f, "{trit}")?;
                     }
                     write!(f, "\n")?;
                 }

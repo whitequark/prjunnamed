@@ -452,7 +452,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 parse_symbol(t, '{')?;
                 parse_space(t);
                 t.token('\n');
-                let init_value = Const::EMPTY;
+                let mut init_value = Const::EMPTY;
                 let mut write_ports = Vec::new();
                 let mut read_ports = Vec::new();
                 while let Some(()) = t.optional(|t| {
@@ -460,6 +460,9 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                     let keyword = parse_keyword(t)?;
                     parse_space(t);
                     match keyword.as_str() {
+                        "init" => {
+                            init_value.extend(parse_const(t)?);
+                        }
                         "write" => {
                             parse_keyword_eq_expect(t, "addr")?;
                             let addr = parse_value_arg(t)?;
@@ -837,6 +840,7 @@ mod test {
 
     #[test]
     fn test_memories() {
+        roundtrip("%0:0 = memory depth=3 width=4 {\n  init 0001\n  init 0010\n  init 1000\n}\n");
         roundtrip(
             "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n\
              %8:0 = memory depth=8 width=4 {\n  \
