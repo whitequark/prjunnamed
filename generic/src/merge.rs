@@ -36,7 +36,7 @@ impl Numberer {
         result
     }
 
-    fn bitwise_binary_commutative<F>(&mut self, rebuild: F, arg1: Value, arg2: Value, out: &Value) -> Value
+    fn commutative_bitwise_binary<F>(&mut self, rebuild: F, arg1: Value, arg2: Value, out: &Value) -> Value
     where
         F: Fn(Value, Value) -> CellRepr,
     {
@@ -49,7 +49,7 @@ impl Numberer {
         result
     }
 
-    fn bitwise_binary_noncommutative<F>(&mut self, rebuild: F, arg1: Value, arg2: Value, out: &Value) -> Value
+    fn bitwise_binary<F>(&mut self, rebuild: F, arg1: Value, arg2: Value, out: &Value) -> Value
     where
         F: Fn(Value, Value) -> CellRepr,
     {
@@ -80,15 +80,12 @@ pub fn merge(design: &mut Design) -> bool {
         let canon = match cell_repr {
             CellRepr::Buf(arg) => numberer.bitwise_unary(CellRepr::Buf, arg, &output),
             CellRepr::Not(arg) => numberer.bitwise_unary(CellRepr::Not, arg, &output),
-            CellRepr::And(arg1, arg2) => numberer.bitwise_binary_commutative(CellRepr::And, arg1, arg2, &output),
-            CellRepr::Or(arg1, arg2) => numberer.bitwise_binary_commutative(CellRepr::Or, arg1, arg2, &output),
-            CellRepr::Xor(arg1, arg2) => numberer.bitwise_binary_commutative(CellRepr::Xor, arg1, arg2, &output),
-            CellRepr::Mux(arg1, arg2, arg3) => numberer.bitwise_binary_noncommutative(
-                |arg2, arg3| CellRepr::Mux(arg1, arg2, arg3),
-                arg2,
-                arg3,
-                &output,
-            ),
+            CellRepr::And(arg1, arg2) => numberer.commutative_bitwise_binary(CellRepr::And, arg1, arg2, &output),
+            CellRepr::Or(arg1, arg2) => numberer.commutative_bitwise_binary(CellRepr::Or, arg1, arg2, &output),
+            CellRepr::Xor(arg1, arg2) => numberer.commutative_bitwise_binary(CellRepr::Xor, arg1, arg2, &output),
+            CellRepr::Mux(arg1, arg2, arg3) => {
+                numberer.bitwise_binary(|arg2, arg3| CellRepr::Mux(arg1, arg2, arg3), arg2, arg3, &output)
+            }
             CellRepr::Adc(arg1, arg2, arg3) => {
                 numberer.commutative_binary(|arg1, arg2| CellRepr::Adc(arg1, arg2, arg3), arg1, arg2, &output)
             }
