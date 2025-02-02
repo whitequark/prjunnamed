@@ -3,7 +3,8 @@ use std::{collections::BTreeMap, fmt::Display, ops::Range, str::FromStr, sync::A
 use yap::{one_of, types::WithContext, IntoTokens, TokenLocation, Tokens};
 
 use crate::{
-    create_target, CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Target, TargetCell, Value
+    create_target, CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Memory,
+    MemoryReadFlipFlop, MemoryReadPort, MemoryWritePort, Net, ParamValue, Target, TargetCell, Value,
 };
 
 #[derive(Debug)]
@@ -147,6 +148,23 @@ fn parse_keyword(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Opti
         return None;
     }
     Some(name)
+}
+
+fn parse_keyword_eq(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<String> {
+    let keyword = parse_keyword(t)?;
+    parse_space(t);
+    parse_symbol(t, '=')?;
+    parse_space(t);
+    Some(keyword)
+}
+
+#[must_use]
+fn parse_keyword_eq_expect(t: &mut WithContext<impl Tokens<Item = char>, Context>, expected: &str) -> Option<()> {
+    let keyword = parse_keyword_eq(t)?;
+    if keyword != expected {
+        return None;
+    }
+    Some(())
 }
 
 fn parse_io_name(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<String> {
@@ -330,12 +348,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
 
     fn parse_control_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>, name: &str) -> Option<ControlNet> {
         parse_space(t);
-        let keyword = parse_keyword(t)?;
-        if keyword != name {
-            return None;
-        }
-        parse_space(t);
-        parse_symbol(t, '=')?;
+        parse_keyword_eq_expect(t, name)?;
         parse_control_net_arg(t)
     }
 
@@ -374,13 +387,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
 
     fn parse_dff_init_value_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Const> {
         parse_space(t);
-        let keyword = parse_keyword(t)?;
-        if keyword != "init" {
-            return None;
-        }
-        parse_space(t);
-        parse_symbol(t, '=')?;
-        parse_space(t);
+        parse_keyword_eq_expect(t, "init")?;
         parse_const(t)
     }
 
@@ -433,23 +440,99 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                     init_value,
                 })
             }
+            "memory" => {
+                parse_space(t);
+                parse_keyword_eq_expect(t, "depth")?;
+                let depth = parse_decimal(t)?;
+                parse_space(t);
+                parse_keyword_eq_expect(t, "width")?;
+                let width = parse_decimal(t)?;
+                parse_space(t);
+                parse_symbol(t, '{')?;
+                parse_space(t);
+                t.token('\n');
+                let init_value = Const::EMPTY;
+                let mut write_ports = Vec::new();
+                let mut read_ports = Vec::new();
+                while let Some(()) = t.optional(|t| {
+                    parse_space(t);
+                    let keyword = parse_keyword(t)?;
+                    parse_space(t);
+                    match keyword.as_str() {
+                        "write" => {
+                            parse_keyword_eq_expect(t, "addr")?;
+                            let addr = parse_value_arg(t)?;
+                            parse_space(t);
+                            parse_keyword_eq_expect(t, "data")?;
+                            let data = parse_value_arg(t)?;
+                            parse_space(t);
+                            let mask = t
+                                .optional(|t| {
+                                    parse_keyword_eq_expect(t, "mask")?;
+                                    parse_value_arg(t)
+                                })
+                                .unwrap_or_else(|| Value::ones(data.len()));
+                            let clock = parse_control_arg(t, "clk")?;
+                            write_ports.push(MemoryWritePort { addr, data, mask, clock })
+                        }
+                        "read" => {
+                            parse_keyword_eq_expect(t, "addr")?;
+                            let addr = parse_value_arg(t)?;
+                            parse_space(t);
+                            parse_keyword_eq_expect(t, "width")?;
+                            let width = parse_decimal(t)?;
+                            let flip_flop = t.optional(|t| {
+                                let clock = parse_control_arg(t, "clk")?;
+                                let (clear, clear_value) = t
+                                    .optional(|t| parse_dff_reset_control_net_arg(t, "clr"))
+                                    .unwrap_or((ControlNet::Pos(Net::ZERO), None));
+                                let (reset, reset_value) = t
+                                    .optional(|t| parse_dff_reset_control_net_arg(t, "rst"))
+                                    .unwrap_or((ControlNet::Pos(Net::ZERO), None));
+                                let enable =
+                                    t.optional(|t| parse_control_arg(t, "en")).unwrap_or(ControlNet::Pos(Net::ONE));
+                                let reset_over_enable = t.optional(|t| parse_reset_over_enable_arg(t)).unwrap_or(false);
+                                let init_value =
+                                    t.optional(|t| parse_dff_init_value_arg(t)).unwrap_or_else(|| Const::undef(width));
+                                Some(MemoryReadFlipFlop {
+                                    clock,
+                                    clear,
+                                    clear_value: clear_value.unwrap_or_else(|| init_value.clone()),
+                                    reset,
+                                    reset_value: reset_value.unwrap_or_else(|| init_value.clone()),
+                                    enable,
+                                    reset_over_enable,
+                                    init_value,
+                                    relations: vec![], // TODO
+                                })
+                            });
+                            read_ports.push(MemoryReadPort { addr, data_len: width, flip_flop })
+                        }
+                        _ => return None,
+                    }
+                    parse_space(t);
+                    t.token('\n');
+                    Some(())
+                }) {}
+                parse_space(t);
+                parse_symbol(t, '}')?;
+                CellRepr::Memory(Memory {
+                    depth,
+                    width,
+                    init_value: init_value.concat(Const::undef((depth * width).checked_sub(init_value.len()).unwrap())),
+                    write_ports,
+                    read_ports,
+                })
+            }
             "iob" => {
                 parse_space(t);
                 let io = parse_io_value(t)?;
                 parse_space(t);
-                let keyword = parse_keyword(t)?;
-                if keyword != "o" {
-                    return None;
-                }
-                parse_space(t);
-                parse_symbol(t, '=')?;
+                parse_keyword_eq_expect(t, "o")?;
                 let output = parse_value_arg(t)?;
                 let enable = parse_control_arg(t, "en")?;
                 CellRepr::Iob(IoBuffer { io, output, enable })
-            },
-            "input" => CellRepr::Input(parse_string_arg(t)?, size),
-            "output" => CellRepr::Output(parse_string_arg(t)?, parse_value_arg(t)?),
-            "name" => CellRepr::Name(parse_string_arg(t)?, parse_value_arg(t)?),
+            }
             "target" => {
                 parse_space(t);
                 let instance = parse_instance(t)?;
@@ -482,6 +565,9 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 }
                 CellRepr::Target(target_cell)
             }
+            "input" => CellRepr::Input(parse_string_arg(t)?, size),
+            "output" => CellRepr::Output(parse_string_arg(t)?, parse_value_arg(t)?),
+            "name" => CellRepr::Name(parse_string_arg(t)?, parse_value_arg(t)?),
             _ => return None,
         })
     }
@@ -616,17 +702,30 @@ pub fn parse(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, Pa
     })
 }
 
+impl FromStr for Design {
+    type Err = crate::ParseError;
+
+    fn from_str(source: &str) -> Result<Self, Self::Err> {
+        crate::parse(None, source)
+    }
+}
+
 #[cfg(test)]
 mod test {
     use std::{collections::BTreeMap, sync::Arc};
 
     use crate::{register_target, Const, Design, Target, TargetCell, TargetImportError, TargetPrototype};
 
+    #[track_caller]
     fn onewaytrip(text: &str, expect: &str) {
-        let design = super::parse_without_compacting(None, text).map_err(|err| panic!("{}", err)).unwrap();
+        let design = match super::parse_without_compacting(None, text) {
+            Ok(design) => design,
+            Err(error) => panic!("{}", error),
+        };
         assert_eq!(format!("{:#}", design), format!("{}", expect))
     }
 
+    #[track_caller]
     fn roundtrip(text: &str) {
         onewaytrip(text, text); // one way both ways
     }
@@ -698,6 +797,7 @@ mod test {
         roundtrip("%0:2 = buf 00\n%2:1 = smod_trunc %0+0 %0+1\n");
         roundtrip("%0:2 = buf 00\n%2:1 = smod_floor %0+0 %0+1\n");
         roundtrip("%0:2 = buf 00\n%2:1 = dff %0+0 clk=%0+1\n");
+        roundtrip("%0:0 = memory depth=256 width=16 {\n}\n");
         roundtrip("#\"purr\":1\n%0:2 = buf 00\n%2:1 = iob #\"purr\" o=%0+0 en=%0+1\n");
         roundtrip("#\"purr\":2\n%0:2 = buf 00\n%2:2 = iob #\"purr\":2 o=%0:2 en=%0+1\n");
         roundtrip("%0:0 = \"instance\" {\n}\n");
@@ -716,6 +816,58 @@ mod test {
         roundtrip("%0:5 = buf 00000\n%5:1 = dff %0+0 clk=%0+1 rst=%0+2 en=%0+3 rst>en\n");
         roundtrip("%0:5 = buf 00000\n%5:1 = dff %0+0 clk=%0+1 rst=%0+2 en=!%0+3 en>rst\n");
         roundtrip("%0:5 = buf 00000\n%5:1 = dff %0+0 clk=%0+1 clr=%0+2 rst=%0+3 en=%0+4 en>rst init=1\n");
+    }
+
+    #[test]
+    fn test_memories() {
+        roundtrip(
+            "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n\
+             %8:0 = memory depth=8 width=4 {\n  \
+             write addr=%1:3 data=%4:4 clk=%0\n}\n",
+        );
+        roundtrip(
+            "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n%8:4 = buf 0000\n\
+             %12:0 = memory depth=8 width=4 {\n  \
+             write addr=%1:3 data=%4:4 mask=%8:4 clk=%0\n}\n",
+        );
+        roundtrip(
+            "%0:1 = buf 0\n%1:3 = buf 000\n\
+             %4:4 = memory depth=8 width=4 {\n  \
+             read addr=%1:3 width=4\n}\n",
+        );
+        roundtrip(
+            "%0:5 = buf 00000\n%5:3 = buf 000\n\
+             %8:4 = memory depth=8 width=4 {\n  \
+             read addr=%5:3 width=4 clk=%0+1\n}\n",
+        );
+        roundtrip(
+            "%0:5 = buf 00000\n%5:3 = buf 000\n\
+             %8:4 = memory depth=8 width=4 {\n  \
+             read addr=%5:3 width=4 clk=%0+1 init=1010\n}\n");
+        roundtrip(
+            "%0:5 = buf 00000\n%5:3 = buf 000\n\
+             %8:4 = memory depth=8 width=4 {\n  \
+             read addr=%5:3 width=4 clk=%0+1 clr=%0+2\n}\n");
+        roundtrip(
+            "%0:5 = buf 00000\n%5:3 = buf 000\n\
+             %8:4 = memory depth=8 width=4 {\n  \
+             read addr=%5:3 width=4 clk=%0+1 rst=%0+2\n}\n");
+        roundtrip(
+            "%0:5 = buf 00000\n%5:3 = buf 000\n\
+             %8:4 = memory depth=8 width=4 {\n  \
+             read addr=%5:3 width=4 clk=%0+1 en=%0+2\n}\n");
+        roundtrip(
+            "%0:5 = buf 00000\n%5:3 = buf 000\n\
+             %8:4 = memory depth=8 width=4 {\n  \
+             read addr=%5:3 width=4 clk=%0+1 rst=%0+2 en=%0+3 rst>en\n}\n");
+        roundtrip(
+            "%0:5 = buf 00000\n%5:3 = buf 000\n\
+             %8:4 = memory depth=8 width=4 {\n  \
+             read addr=%5:3 width=4 clk=%0+1 rst=%0+2 en=!%0+3 en>rst\n}\n");
+        roundtrip(
+            "%0:5 = buf 00000\n%5:3 = buf 000\n\
+             %8:4 = memory depth=8 width=4 {\n  \
+             read addr=%5:3 width=4 clk=%0+1 clr=%0+2 rst=%0+3 en=%0+4 en>rst init=1010\n}\n");
     }
 
     #[test]

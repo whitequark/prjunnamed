@@ -14,6 +14,8 @@ pub struct Const {
 }
 
 impl Const {
+    pub const EMPTY: Const = Const { trits: vec![] };
+
     pub const fn new() -> Self {
         Self { trits: vec![] }
     }
@@ -264,29 +266,6 @@ impl Const {
             }
             res.slice(..self.len())
         }
-    }
-
-    pub fn expand_undef(&self) -> Vec<Const> {
-        let mut result = vec![self.clone()];
-        for (index, trit) in self.iter().enumerate() {
-            if trit == Trit::Undef {
-                result = Vec::from_iter(
-                    result
-                        .iter()
-                        .map(|value| {
-                            let mut value = value.clone();
-                            value[index] = Trit::Zero;
-                            value
-                        })
-                        .chain(result.iter().map(|value| {
-                            let mut value = value.clone();
-                            value[index] = Trit::One;
-                            value
-                        })),
-                );
-            }
-        }
-        result
     }
 }
 
@@ -810,16 +789,5 @@ mod test {
         for (a, b, y) in [("", "", ""), ("0011", "0011", "1001"), ("0X11", "0011", "XXXX"), ("1101", "1101", "1001")] {
             assert_eq!(Const::from_str(a).mul(Const::from_str(b)), Const::from_str(y));
         }
-    }
-
-    #[test]
-    fn test_expand_undef() {
-        assert_eq!(Const::from_str("0101").expand_undef(), vec![Const::from_str("0101")]);
-        assert_eq!(Const::from_str("0XX1").expand_undef(), vec![
-            Const::from_str("0001"),
-            Const::from_str("0011"),
-            Const::from_str("0101"),
-            Const::from_str("0111"),
-        ]);
     }
 }

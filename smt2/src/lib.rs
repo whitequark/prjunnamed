@@ -179,6 +179,7 @@ impl<'a, 'b> SmtEmitter<'a, 'b> {
                 // self.context.bvsmod(arg1_sexpr, arg2_sexpr)
             }
             CellRepr::Dff(_flip_flop) => unimplemented!("flip-flops are not implemented yet"),
+            CellRepr::Memory(_memory) => unimplemented!("memories are not implemented yet"),
             CellRepr::Iob(_io_buffer) => unimplemented!("IOs are not implemented yet"),
             CellRepr::Other(_instance) => unimplemented!("instances are not implemented yet"),
             CellRepr::Target(_target_cell) => unimplemented!("target cells are not implemented yet"),

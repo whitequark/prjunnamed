@@ -329,9 +329,7 @@ impl TargetPrototype {
         let name = name.as_ref();
         if let Some(TargetParam { index, kind, .. }) = self.get_param(name) {
             assert_eq!(*kind, TargetParamKind::Bool);
-            let ParamValue::Const(ref value) = target_cell.params[*index] else {
-                unreachable!()
-            };
+            let ParamValue::Const(ref value) = target_cell.params[*index] else { unreachable!() };
             value[0] == Trit::One
         } else {
             panic!("param {:?} does not exist for target cell", name);

@@ -7,9 +7,9 @@ use crate::{Const, Design, Value};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Trit {
-    Undef,
-    Zero,
-    One,
+    Undef = -1,
+    Zero = 0,
+    One = 1,
 }
 
 impl Trit {
@@ -26,7 +26,7 @@ impl Trit {
         match (lft, rgt) {
             (Trit::Undef, trit) | (trit, Trit::Undef) => Some(trit),
             _ if lft == rgt => Some(lft),
-            _ => None
+            _ => None,
         }
     }
 
@@ -323,7 +323,7 @@ impl ControlNet {
                 } else {
                     design.add_not(net).unwrap_net()
                 }
-            },
+            }
         }
     }
 
@@ -335,7 +335,7 @@ impl ControlNet {
                 } else {
                     design.add_not(net).unwrap_net()
                 }
-            },
+            }
             ControlNet::Neg(net) => net,
         }
     }

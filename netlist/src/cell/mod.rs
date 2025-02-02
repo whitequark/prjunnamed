@@ -1,6 +1,18 @@
-use std::{borrow::Cow, collections::BTreeMap, hash::Hash, ops::Range};
+use std::{borrow::Cow, hash::Hash};
 
-use crate::{Const, ControlNet, Design, IoValue, Net, TargetPrototype, Trit, Value};
+use crate::{Const, Design, Net, Trit, Value};
+
+mod flip_flop;
+mod memory;
+mod io_buffer;
+mod target;
+mod instance;
+
+pub use flip_flop::FlipFlop;
+pub use memory::{Memory, MemoryWritePort, MemoryReadPort, MemoryReadFlipFlop, MemoryPortRelation};
+pub use io_buffer::IoBuffer;
+pub use target::TargetCell;
+pub use instance::Instance;
 
 // Space-optimized representation of a cell, for compact AIGs.
 #[derive(Debug, Clone)]
@@ -49,8 +61,8 @@ pub enum CellRepr {
     SModTrunc(Value, Value),
     SModFloor(Value, Value),
 
-    // TODO: memory
     Dff(FlipFlop),
+    Memory(Memory),
     Iob(IoBuffer),
     Target(TargetCell),
     Other(Instance),
@@ -93,6 +105,41 @@ impl CellRepr {
                 assert_eq!(flip_flop.data.len(), flip_flop.init_value.len());
                 assert_eq!(flip_flop.data.len(), flip_flop.clear_value.len());
                 assert_eq!(flip_flop.data.len(), flip_flop.reset_value.len());
+            }
+            CellRepr::Memory(memory) => {
+                assert_eq!(memory.init_value.len(), memory.depth * memory.width);
+                for port in &memory.write_ports {
+                    assert_eq!(port.data.len(), port.mask.len());
+                    if memory.width == 0 {
+                        assert_eq!(port.data.len(), 0);
+                    } else {
+                        assert_eq!(port.data.len() % memory.width, 0);
+                        let wide_factor = port.data.len() / memory.width;
+                        assert!(wide_factor.is_power_of_two());
+                        assert_eq!(memory.depth % wide_factor, 0);
+                    }
+                }
+                for port in &memory.read_ports {
+                    if memory.width == 0 {
+                        assert_eq!(port.data_len, 0);
+                    } else {
+                        assert_eq!(port.data_len % memory.width, 0);
+                        let wide_factor = port.data_len / memory.width;
+                        assert!(wide_factor.is_power_of_two());
+                        assert_eq!(memory.depth % wide_factor, 0);
+                    }
+                    if let Some(ref flip_flop) = port.flip_flop {
+                        assert_eq!(flip_flop.clear_value.len(), port.data_len);
+                        assert_eq!(flip_flop.reset_value.len(), port.data_len);
+                        assert_eq!(flip_flop.init_value.len(), port.data_len);
+                        assert_eq!(flip_flop.relations.len(), memory.write_ports.len());
+                        for (write_port_index, &relation) in flip_flop.relations.iter().enumerate() {
+                            if relation != MemoryPortRelation::Undefined {
+                                assert_eq!(memory.write_ports[write_port_index].clock, flip_flop.clock);
+                            }
+                        }
+                    }
+                }
             }
             CellRepr::Iob(io_buffer) => {
                 assert_eq!(io_buffer.output.len(), io_buffer.io.len());
@@ -263,6 +310,7 @@ impl CellRepr {
             }
 
             CellRepr::Dff(flip_flop) => flip_flop.output_len(),
+            CellRepr::Memory(memory) => memory.output_len(),
             CellRepr::Iob(io_buffer) => io_buffer.output_len(),
             CellRepr::Target(target_cell) => target_cell.output_len,
             CellRepr::Other(instance) => instance.output_len(),
@@ -305,6 +353,7 @@ impl CellRepr {
                 net.visit(&mut f);
             }
             CellRepr::Dff(flip_flop) => flip_flop.visit(&mut f),
+            CellRepr::Memory(memory) => memory.visit(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit(&mut f),
             CellRepr::Target(target_cell) => target_cell.visit(&mut f),
             CellRepr::Other(instance) => instance.visit(&mut f),
@@ -343,214 +392,10 @@ impl CellRepr {
                 net.visit_mut(&mut f);
             }
             CellRepr::Dff(flip_flop) => flip_flop.visit_mut(&mut f),
+            CellRepr::Memory(memory) => memory.visit_mut(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit_mut(&mut f),
             CellRepr::Target(target_cell) => target_cell.visit_mut(&mut f),
             CellRepr::Other(instance) => instance.visit_mut(&mut f),
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct FlipFlop {
-    pub data: Value,
-    pub clock: ControlNet,
-    pub clear: ControlNet, // async reset
-    pub reset: ControlNet, // sync reset
-    pub enable: ControlNet,
-    pub reset_over_enable: bool,
-
-    pub clear_value: Const,
-    pub reset_value: Const,
-    pub init_value: Const,
-}
-
-impl FlipFlop {
-    pub fn new(data: Value, clock: impl Into<ControlNet>) -> Self {
-        let size = data.len();
-        FlipFlop {
-            data,
-            clock: clock.into(),
-            clear: ControlNet::ZERO,
-            reset: ControlNet::ZERO,
-            enable: ControlNet::ONE,
-            reset_over_enable: false,
-            clear_value: Const::undef(size),
-            reset_value: Const::undef(size),
-            init_value: Const::undef(size),
-        }
-    }
-
-    pub fn with_data(self, data: impl Into<Value>) -> Self {
-        Self { data: data.into(), ..self }
-    }
-
-    pub fn with_clock(self, clock: impl Into<ControlNet>) -> Self {
-        Self { clock: clock.into(), ..self }
-    }
-
-    pub fn with_clear(self, clear: impl Into<ControlNet>) -> Self {
-        Self { clear: clear.into(), ..self }
-    }
-
-    pub fn with_clear_value(self, clear: impl Into<ControlNet>, clear_value: impl Into<Const>) -> Self {
-        Self { clear: clear.into(), clear_value: clear_value.into(), ..self }
-    }
-
-    pub fn with_reset(self, reset: impl Into<ControlNet>) -> Self {
-        Self { reset: reset.into(), reset_over_enable: false, ..self }
-    }
-
-    pub fn with_reset_value(self, reset: impl Into<ControlNet>, reset_value: impl Into<Const>) -> Self {
-        Self { reset: reset.into(), reset_over_enable: false, reset_value: reset_value.into(), ..self }
-    }
-
-    pub fn with_enable(self, enable: impl Into<ControlNet>) -> Self {
-        Self { enable: enable.into(), reset_over_enable: true, ..self }
-    }
-
-    pub fn with_init(self, value: impl Into<Const>) -> Self {
-        let value = value.into();
-        Self { clear_value: value.clone(), reset_value: value.clone(), init_value: value, ..self }
-    }
-
-    pub fn output_len(&self) -> usize {
-        self.data.len()
-    }
-
-    pub fn has_clock(&self) -> bool {
-        !self.clock.is_const()
-    }
-
-    pub fn has_enable(&self) -> bool {
-        !self.enable.is_always(true)
-    }
-
-    pub fn has_reset(&self) -> bool {
-        !self.reset.is_always(false)
-    }
-
-    pub fn has_reset_value(&self) -> bool {
-        !self.reset_value.is_undef()
-    }
-
-    pub fn has_clear(&self) -> bool {
-        !self.clear.is_always(false)
-    }
-
-    pub fn has_clear_value(&self) -> bool {
-        !self.clear_value.is_undef()
-    }
-
-    pub fn has_init_value(&self) -> bool {
-        !self.init_value.is_undef()
-    }
-
-    pub fn visit(&self, mut f: impl FnMut(Net)) {
-        self.data.visit(&mut f);
-        self.clock.visit(&mut f);
-        self.enable.visit(&mut f);
-        self.reset.visit(&mut f);
-        self.clear.visit(&mut f);
-    }
-
-    pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
-        self.data.visit_mut(&mut f);
-        self.clock.visit_mut(&mut f);
-        self.enable.visit_mut(&mut f);
-        self.reset.visit_mut(&mut f);
-        self.clear.visit_mut(&mut f);
-    }
-
-    pub fn slice(&self, range: impl std::ops::RangeBounds<usize> + Clone) -> FlipFlop {
-        FlipFlop {
-            data: self.data.slice(range.clone()),
-            clock: self.clock,
-            clear: self.clear,
-            reset: self.reset,
-            enable: self.enable,
-            reset_over_enable: self.reset_over_enable,
-            clear_value: self.clear_value.slice(range.clone()),
-            reset_value: self.reset_value.slice(range.clone()),
-            init_value: self.init_value.slice(range.clone()),
-        }
-    }
-
-    pub fn remap_reset_over_enable(&mut self, design: &Design) {
-        if self.reset_over_enable {
-            return;
-        }
-        self.reset_over_enable = true;
-        if self.reset.is_always(false) || self.enable.is_always(true) {
-            return;
-        }
-        let reset = self.reset.into_pos(design);
-        let enable = self.enable.into_pos(design);
-        self.reset = ControlNet::Pos(design.add_and(reset, enable).unwrap_net());
-    }
-
-    pub fn remap_enable_over_reset(&mut self, design: &Design) {
-        if !self.reset_over_enable {
-            return;
-        }
-        self.reset_over_enable = false;
-        if self.reset.is_always(false) || self.enable.is_always(true) {
-            return;
-        }
-        let reset = self.reset.into_pos(design);
-        let enable = self.enable.into_pos(design);
-        self.enable = ControlNet::Pos(design.add_or(reset, enable).unwrap_net());
-    }
-
-    pub fn unmap_reset(&mut self, design: &Design) {
-        self.remap_enable_over_reset(design);
-        self.data = design.add_mux(self.reset, &self.reset_value, &self.data);
-        self.reset = ControlNet::ZERO;
-    }
-
-    pub fn unmap_enable(&mut self, design: &Design, output: &Value) {
-        self.remap_reset_over_enable(design);
-        self.data = design.add_mux(self.enable, &self.data, output);
-        self.enable = ControlNet::ONE;
-    }
-
-    pub fn invert(&mut self, design: &Design, output: &Value) -> Value {
-        self.data = design.add_not(&self.data);
-        self.clear_value = self.clear_value.not();
-        self.reset_value = self.reset_value.not();
-        self.init_value = self.init_value.not();
-        let new_output = design.add_void(self.data.len());
-        design.replace_value(output, design.add_not(&new_output));
-        new_output
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct IoBuffer {
-    pub io: IoValue,
-    pub output: Value,
-    pub enable: ControlNet,
-}
-
-impl IoBuffer {
-    pub fn output_len(&self) -> usize {
-        self.io.len()
-    }
-
-    pub fn visit(&self, mut f: impl FnMut(Net)) {
-        self.output.visit(&mut f);
-        self.enable.visit(&mut f);
-    }
-
-    pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
-        self.output.visit_mut(&mut f);
-        self.enable.visit_mut(&mut f);
-    }
-
-    pub fn slice(&self, range: impl std::ops::RangeBounds<usize> + Clone) -> IoBuffer {
-        IoBuffer {
-            io: self.io.slice(range.clone()),
-            output: self.output.slice(range.clone()),
-            enable: self.enable,
         }
     }
 }
@@ -628,116 +473,6 @@ impl Hash for ParamValue {
             ParamValue::Float(val) => val.to_bits().hash(state),
             ParamValue::String(val) => val.hash(state),
         }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct Instance {
-    pub kind: String,
-    pub params: BTreeMap<String, ParamValue>,
-    pub inputs: BTreeMap<String, Value>,
-    pub outputs: BTreeMap<String, Range<usize>>,
-    pub ios: BTreeMap<String, IoValue>,
-}
-
-impl Instance {
-    pub fn new(kind: impl Into<String>) -> Self {
-        Instance {
-            kind: kind.into(),
-            params: Default::default(),
-            inputs: Default::default(),
-            outputs: Default::default(),
-            ios: Default::default(),
-        }
-    }
-
-    pub fn output_len(&self) -> usize {
-        self.outputs.values().map(|range| range.len()).sum()
-    }
-
-    pub fn get_param_string(&self, name: &str) -> Option<&str> {
-        let val = self.params.get(name)?;
-        if let ParamValue::String(val) = val {
-            Some(val)
-        } else {
-            None
-        }
-    }
-
-    pub fn add_param(&mut self, name: impl Into<String>, value: impl Into<ParamValue>) {
-        self.params.insert(name.into(), value.into());
-    }
-
-    pub fn rename_param(&mut self, name_from: impl AsRef<str>, name_to: impl Into<String>) {
-        if let Some(param) = self.params.remove(name_from.as_ref()) {
-            assert!(self.params.insert(name_to.into(), param).is_none());
-        }
-    }
-
-    pub fn rename_input(&mut self, name_from: impl AsRef<str>, name_to: impl Into<String>) {
-        if let Some(input) = self.inputs.remove(name_from.as_ref()) {
-            assert!(self.inputs.insert(name_to.into(), input).is_none());
-        }
-    }
-
-    pub fn rename_output(&mut self, name_from: impl AsRef<str>, name_to: impl Into<String>) {
-        if let Some(output) = self.outputs.remove(name_from.as_ref()) {
-            assert!(self.outputs.insert(name_to.into(), output).is_none());
-        }
-    }
-
-    pub fn rename_io(&mut self, name_from: impl AsRef<str>, name_to: impl Into<String>) {
-        if let Some(io) = self.ios.remove(name_from.as_ref()) {
-            assert!(self.ios.insert(name_to.into(), io).is_none());
-        }
-    }
-
-    pub fn visit(&self, mut f: impl FnMut(Net)) {
-        for val in self.inputs.values() {
-            val.visit(&mut f);
-        }
-    }
-
-    pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
-        for val in self.inputs.values_mut() {
-            val.visit_mut(&mut f);
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct TargetCell {
-    pub kind: String,
-    pub params: Vec<ParamValue>,
-    pub inputs: Value,
-    pub output_len: usize,
-    pub ios: IoValue,
-}
-
-impl TargetCell {
-    pub fn new(kind: impl Into<String>, prototype: &TargetPrototype) -> Self {
-        let mut result = Self {
-            kind: kind.into(),
-            params: vec![],
-            inputs: Value::EMPTY,
-            output_len: prototype.output_len,
-            ios: IoValue::floating(prototype.io_len),
-        };
-        for param in &prototype.params {
-            result.params.push(param.default.clone());
-        }
-        for input in &prototype.inputs {
-            result.inputs.extend(Value::from(&input.default));
-        }
-        result
-    }
-
-    pub fn visit(&self, f: impl FnMut(Net)) {
-        self.inputs.visit(f);
-    }
-
-    pub fn visit_mut(&mut self, f: impl FnMut(&mut Net)) {
-        self.inputs.visit_mut(f);
     }
 }
 

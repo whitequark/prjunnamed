@@ -1432,7 +1432,7 @@ mod test {
     }
 
     #[test]
-    fn test_ff_enable_pos_matching()  {
+    fn test_ff_enable_pos_matching() {
         let design = Design::new();
         let q = design.add_void(1);
         let d = design.add_mux(design.add_input_net("e"), design.add_input("d", 1), q.clone());
@@ -1446,7 +1446,7 @@ mod test {
     }
 
     #[test]
-    fn test_ff_enable_neg_matching()  {
+    fn test_ff_enable_neg_matching() {
         let design = Design::new();
         let q = design.add_void(1);
         let d = design.add_mux(design.add_input_net("e"), q.clone(), design.add_input("d", 1));

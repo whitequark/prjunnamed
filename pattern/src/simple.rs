@@ -30,8 +30,7 @@ impl<T: Clone, P: Pattern<T>> Pattern<T> for PBind<P> {
     type Capture = (T, P::Capture);
 
     fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
-        self.0.execute(design, target).and_then(|capture|
-            Some((target.clone(), capture)))
+        self.0.execute(design, target).and_then(|capture| Some((target.clone(), capture)))
     }
 }
 

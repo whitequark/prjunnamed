@@ -257,6 +257,10 @@ fn export_module(mut design: Design) -> yosys::Module {
                 continue; // skip default $out wire (init-less) creation
             }
 
+            CellRepr::Memory(_memory) => {
+                todo!()
+            }
+
             CellRepr::Iob(io_buffer) => {
                 let ys_enable = match io_buffer.enable {
                     ControlNet::Pos(net) => indexer.net(net),
