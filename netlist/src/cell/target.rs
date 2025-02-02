@@ -1,6 +1,6 @@
 use crate::{IoValue, Net, TargetPrototype, Value};
 
-use super::ParamValue;
+use crate::ParamValue;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TargetCell {

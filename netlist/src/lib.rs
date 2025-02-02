@@ -1,22 +1,26 @@
 mod net;
 mod value;
+mod param;
 mod io;
 mod cell;
 mod design;
 mod print;
 mod parse;
 mod target;
+mod isomorphic;
 
 pub use net::{ControlNet, Net, Trit};
 pub use value::{Const, Value};
+pub use param::ParamValue;
 pub use io::{IoNet, IoValue};
 pub use cell::{
     CellRepr, FlipFlop, IoBuffer, Memory, MemoryWritePort, MemoryReadPort, MemoryReadFlipFlop, MemoryPortRelation,
-    ParamValue, TargetCell, Instance,
+    TargetCell, Instance,
 };
-pub use design::{Design, CellRef, isomorphic};
-pub use parse::{parse, ParseError};
+pub use design::{Design, CellRef};
+pub use parse::{parse, _parse_without_compacting, ParseError};
 pub use target::{
     Target, TargetParamKind, TargetParam, TargetInput, TargetOutput, TargetIo, TargetCellPurity, TargetPrototype,
     TargetCellImportError, TargetImportError, register_target, create_target,
 };
+pub use isomorphic::{isomorphic, NotIsomorphic};
