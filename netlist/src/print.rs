@@ -235,6 +235,22 @@ impl Design {
             CellRepr::SModTrunc(arg1, arg2) => write_common(f, "smod_trunc", &[arg1, arg2])?,
             CellRepr::SModFloor(arg1, arg2) => write_common(f, "smod_floor", &[arg1, arg2])?,
 
+            CellRepr::Match { value, enable, patterns } => {
+                write_common(f, "match", &[&value])?;
+                if *enable != Net::ONE {
+                    write!(f, " en=")?;
+                    self.write_net(f, *enable)?;
+                }
+                write!(f, " [")?;
+                for (index, pattern) in patterns.iter().enumerate() {
+                    write!(f, "{pattern}")?;
+                    if index < patterns.len() - 1 {
+                        write!(f, " ")?;
+                    }
+                }
+                write!(f, "]")?;
+            }
+
             CellRepr::Dff(flip_flop) => {
                 write_common(f, "dff", &[&flip_flop.data])?;
                 write_control(f, " clk", flip_flop.clock)?;

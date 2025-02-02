@@ -61,6 +61,8 @@ pub enum CellRepr {
     SModTrunc(Value, Value),
     SModFloor(Value, Value),
 
+    Match { value: Value, enable: Net, patterns: Vec<Const> },
+
     Dff(FlipFlop),
     Memory(Memory),
     Iob(IoBuffer),
@@ -100,6 +102,12 @@ impl CellRepr {
             CellRepr::UShr(_, _, _) => (),
             CellRepr::SShr(arg1, _, _) => assert!(arg1.len() > 0),
             CellRepr::XShr(_, _, _) => (),
+
+            CellRepr::Match { value, patterns, .. } => {
+                for pattern in patterns {
+                    assert_eq!(value.len(), pattern.len());
+                }
+            }
 
             CellRepr::Dff(flip_flop) => {
                 assert_eq!(flip_flop.data.len(), flip_flop.init_value.len());
@@ -173,6 +181,11 @@ impl CellRepr {
             CellRepr::Or(arg1, arg2) => Some(CellRepr::Or(arg1.slice(range.clone()), arg2.slice(range))),
             CellRepr::Xor(arg1, arg2) => Some(CellRepr::Xor(arg1.slice(range.clone()), arg2.slice(range))),
             CellRepr::Mux(arg1, arg2, arg3) => Some(CellRepr::Mux(*arg1, arg2.slice(range.clone()), arg3.slice(range))),
+            CellRepr::Match { value, enable, patterns } => Some(CellRepr::Match {
+                value: value.slice(range.clone()),
+                enable: *enable,
+                patterns: Vec::from_iter(patterns.iter().map(|case| case.slice(range.clone()))),
+            }),
             CellRepr::Dff(flip_flop) => Some(CellRepr::Dff(flip_flop.slice(range))),
             CellRepr::Iob(io_buffer) => Some(CellRepr::Iob(io_buffer.slice(range))),
             _ => None,
@@ -241,6 +254,7 @@ impl Cell {
     pub(crate) fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
             Cell::Void | Cell::Skip(_) => unreachable!(),
+
             Cell::Buf(arg) | Cell::Not(arg) => arg.visit(&mut f),
             Cell::And(arg1, arg2) | Cell::Or(arg1, arg2) | Cell::Xor(arg1, arg2) => {
                 arg1.visit(&mut f);
@@ -251,6 +265,7 @@ impl Cell {
                 arg2.visit(&mut f);
                 arg3.visit(&mut f);
             }
+
             Cell::Coarse(coarse) => coarse.visit(&mut f),
         }
     }
@@ -258,6 +273,7 @@ impl Cell {
     pub(crate) fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
             Cell::Void | Cell::Skip(_) => unreachable!(),
+
             Cell::Buf(arg) | Cell::Not(arg) => arg.visit_mut(&mut f),
             Cell::And(arg1, arg2) | Cell::Or(arg1, arg2) | Cell::Xor(arg1, arg2) => {
                 arg1.visit_mut(&mut f);
@@ -268,6 +284,7 @@ impl Cell {
                 arg2.visit_mut(&mut f);
                 arg3.visit_mut(&mut f);
             }
+
             Cell::Coarse(coarse) => coarse.visit_mut(&mut f),
         }
     }
@@ -289,9 +306,7 @@ impl CellRepr {
                 arg1.len() + 1
             }
 
-            CellRepr::Eq(_arg1, _arg2) => 1,
-            CellRepr::ULt(_arg1, _arg2) => 1,
-            CellRepr::SLt(_arg1, _arg2) => 1,
+            CellRepr::Eq(_, _) | CellRepr::ULt(_, _) | CellRepr::SLt(_, _) => 1,
 
             CellRepr::Shl(arg1, _, _)
             | CellRepr::UShr(arg1, _, _)
@@ -308,6 +323,8 @@ impl CellRepr {
                 debug_assert_eq!(arg1.len(), arg2.len());
                 arg1.len()
             }
+
+            CellRepr::Match { patterns, .. } => patterns.len(),
 
             CellRepr::Dff(flip_flop) => flip_flop.output_len(),
             CellRepr::Memory(memory) => memory.output_len(),
@@ -352,6 +369,10 @@ impl CellRepr {
                 value2.visit(&mut f);
                 net.visit(&mut f);
             }
+            CellRepr::Match { value, enable, .. } => {
+                value.visit(&mut f);
+                enable.visit(&mut f);
+            }
             CellRepr::Dff(flip_flop) => flip_flop.visit(&mut f),
             CellRepr::Memory(memory) => memory.visit(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit(&mut f),
@@ -390,6 +411,10 @@ impl CellRepr {
                 value1.visit_mut(&mut f);
                 value2.visit_mut(&mut f);
                 net.visit_mut(&mut f);
+            }
+            CellRepr::Match { value, enable, .. } => {
+                value.visit_mut(&mut f);
+                enable.visit_mut(&mut f);
             }
             CellRepr::Dff(flip_flop) => flip_flop.visit_mut(&mut f),
             CellRepr::Memory(memory) => memory.visit_mut(&mut f),

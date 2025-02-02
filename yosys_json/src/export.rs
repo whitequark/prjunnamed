@@ -225,6 +225,8 @@ fn export_module(mut design: Design) -> yosys::Module {
             CellRepr::SModTrunc(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mod", arg1, arg2, true),
             CellRepr::SModFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$modfloor", arg1, arg2, true),
 
+            CellRepr::Match { .. } => unimplemented!("match cells must be lowered first for Yosys JSON export"),
+
             CellRepr::Dff(flip_flop) => {
                 let ys_cell_type = match (
                     flip_flop.has_clear(),
@@ -480,7 +482,9 @@ fn export_module(mut design: Design) -> yosys::Module {
                 }
                 ys_cell.add_to(&ys_cell_name, &mut ys_module);
             }
-            CellRepr::Target(_target_cell) => unreachable!(),
+            CellRepr::Target(_target_cell) => {
+                unimplemented!("target cells must be converted to instances first for Yosys JSON export")
+            }
 
             CellRepr::Input(port_name, _size) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Input, indexer.value(&output)))
