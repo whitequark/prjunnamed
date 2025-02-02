@@ -61,7 +61,7 @@ pub enum CellRepr {
     SModTrunc(Value, Value),
     SModFloor(Value, Value),
 
-    Match { value: Value, enable: Net, patterns: Vec<Const> }, // one-hot priority match of `value` against `patterns`
+    Match { value: Value, enable: Net, patterns: Vec<Vec<Const>> }, // one-hot priority match of `value` against `patterns`
     Assign { value: Value, enable: Net, update: Value, offset: usize }, // replace `value[offset..]` with `update` if `enable`
 
     Dff(FlipFlop),
@@ -105,8 +105,10 @@ impl CellRepr {
             CellRepr::XShr(_, _, _) => (),
 
             CellRepr::Match { value, patterns, .. } => {
-                for pattern in patterns {
-                    assert_eq!(value.len(), pattern.len());
+                for alternates in patterns {
+                    for pattern in alternates {
+                        assert_eq!(value.len(), pattern.len());
+                    }
                 }
             }
             CellRepr::Assign { value, update, offset, .. } => {
@@ -185,11 +187,15 @@ impl CellRepr {
             CellRepr::Or(arg1, arg2) => Some(CellRepr::Or(arg1.slice(range.clone()), arg2.slice(range))),
             CellRepr::Xor(arg1, arg2) => Some(CellRepr::Xor(arg1.slice(range.clone()), arg2.slice(range))),
             CellRepr::Mux(arg1, arg2, arg3) => Some(CellRepr::Mux(*arg1, arg2.slice(range.clone()), arg3.slice(range))),
-            CellRepr::Match { value, enable, patterns } => Some(CellRepr::Match {
-                value: value.slice(range.clone()),
-                enable: *enable,
-                patterns: Vec::from_iter(patterns.iter().map(|case| case.slice(range.clone()))),
-            }),
+            CellRepr::Match { value, enable, patterns } => {
+                Some(CellRepr::Match {
+                    value: value.slice(range.clone()),
+                    enable: *enable,
+                    patterns: Vec::from_iter(patterns.iter().map(|alternates| {
+                        Vec::from_iter(alternates.iter().map(|pattern| pattern.slice(range.clone())))
+                    })),
+                })
+            }
             CellRepr::Dff(flip_flop) => Some(CellRepr::Dff(flip_flop.slice(range))),
             CellRepr::Iob(io_buffer) => Some(CellRepr::Iob(io_buffer.slice(range))),
             _ => None,

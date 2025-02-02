@@ -83,8 +83,8 @@ fn test_cells() {
     roundtrip("%0:2 = buf 00\n%2:1 = sdiv_floor %0+0 %0+1\n");
     roundtrip("%0:2 = buf 00\n%2:1 = smod_trunc %0+0 %0+1\n");
     roundtrip("%0:2 = buf 00\n%2:1 = smod_floor %0+0 %0+1\n");
-    roundtrip("%0:2 = buf 00\n%2:4 = match %0:2 [00 01 10 11]\n");
-    roundtrip("%0:2 = buf 00\n%2:2 = match %0+0 en=%0+1 [0 1]\n");
+    roundtrip("%0:2 = buf 00\n%2:3 = match %0:2 [\n  00 01\n  10\n  11\n]\n");
+    roundtrip("%0:2 = buf 00\n%2:2 = match %0+0 en=%0+1 [\n  0\n  1\n]\n");
     roundtrip("%0:4 = buf 0000\n%4:2 = assign { %0:2 } { %0+2 %0+3 }\n");
     roundtrip("%0:4 = buf 0000\n%4:2 = assign { %0:2 } en=%0+2 %0+3 at=1\n");
     roundtrip("%0:2 = buf 00\n%2:1 = dff %0+0 clk=%0+1\n");

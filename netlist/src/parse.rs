@@ -301,7 +301,7 @@ fn parse_target(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Optio
         }
     }
     parse_space(t);
-    t.token('\n');
+    parse_symbol(t, '\n')?;
     let context = t.context_mut();
     if !context.is_empty {
         panic!("target specification must be the first line of the design");
@@ -315,7 +315,7 @@ fn parse_io(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Io
     parse_space(t);
     let (name, size) = parse_io_name_size(t)?;
     parse_space(t);
-    t.token('\n');
+    parse_symbol(t, '\n')?;
     Some(t.context_mut().add_io(name, size))
 }
 
@@ -428,9 +428,18 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 let mut patterns = Vec::new();
                 parse_space(t);
                 parse_symbol(t, '[');
+                parse_space(t);
+                parse_symbol(t, '\n')?;
                 while let Some(()) = t.optional(|t| {
+                    let mut alternates = Vec::new();
+                    while let Some(()) = t.optional(|t| {
+                        parse_space(t);
+                        alternates.push(parse_const(t)?);
+                        Some(())
+                    }) {}
                     parse_space(t);
-                    patterns.push(parse_const(t)?);
+                    parse_symbol(t, '\n')?;
+                    patterns.push(alternates);
                     Some(())
                 }) {}
                 parse_space(t);
@@ -491,7 +500,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 parse_space(t);
                 parse_symbol(t, '{')?;
                 parse_space(t);
-                t.token('\n');
+                parse_symbol(t, '\n')?;
                 let mut init_value = Const::EMPTY;
                 let mut write_ports = Vec::new();
                 let mut read_ports = Vec::new();
@@ -571,7 +580,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         _ => return None,
                     }
                     parse_space(t);
-                    t.token('\n');
+                    parse_symbol(t, '\n')?;
                     Some(())
                 }) {}
                 parse_space(t);
@@ -643,7 +652,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
         parse_space(t);
         parse_symbol(t, '{')?;
         parse_space(t);
-        t.token('\n');
+        parse_symbol(t, '\n')?;
         while let Some(()) = t.optional(|t| {
             parse_space(t);
             let keyword = parse_keyword(t)?;
@@ -690,7 +699,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 _ => return None,
             }
             parse_space(t);
-            t.token('\n');
+            parse_symbol(t, '\n')?;
             Some(())
         }) {}
         parse_space(t);
@@ -708,7 +717,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
         parse_instance(t).map(CellRepr::Other),
     )?;
     parse_space(t);
-    t.token('\n');
+    parse_symbol(t, '\n')?;
     Some(t.context_mut().add_cell(index, size, repr))
 }
 

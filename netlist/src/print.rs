@@ -241,12 +241,16 @@ impl Design {
                     write!(f, " en=")?;
                     self.write_net(f, *enable)?;
                 }
-                write!(f, " [")?;
-                for (index, pattern) in patterns.iter().enumerate() {
-                    write!(f, "{pattern}")?;
-                    if index < patterns.len() - 1 {
-                        write!(f, " ")?;
+                write!(f, " [\n")?;
+                for alternates in patterns {
+                    write!(f, "  ")?;
+                    for (index, pattern) in alternates.iter().enumerate() {
+                        if index > 0 {
+                            write!(f, " ")?;
+                        }
+                        write!(f, "{pattern}")?;
                     }
+                    write!(f, "\n")?;
                 }
                 write!(f, "]")?;
             }
