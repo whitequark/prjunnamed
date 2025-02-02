@@ -211,6 +211,12 @@ impl From<Trit> for Net {
     }
 }
 
+impl From<&Net> for Net {
+    fn from(net: &Net) -> Self {
+        *net
+    }
+}
+
 impl TryFrom<Value> for Net {
     type Error = ();
 

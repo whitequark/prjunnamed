@@ -11,17 +11,17 @@ fn lower_shift(
 ) {
     let mut stride = stride as usize;
     let mut value = value.clone();
-    for (i, bit) in shcnt.iter().enumerate() {
+    for (index, bit) in shcnt.iter().enumerate() {
         if stride < value.len() {
             let shval = shift(&value, stride);
             value = design.add_mux(bit, shval, value);
             stride *= 2;
         } else {
-            let mut ovf = Value::from(bit);
-            for bit in &shcnt[i + 1..] {
-                ovf = design.add_or(ovf, bit);
+            let mut did_overflow = bit;
+            for bit in &shcnt[index + 1..] {
+                did_overflow = design.add_or1(did_overflow, bit);
             }
-            value = design.add_mux(ovf.unwrap_net(), overflow, value);
+            value = design.add_mux(did_overflow, overflow, value);
             break;
         }
     }
@@ -69,44 +69,23 @@ pub fn lower(design: &mut Design) {
                 );
             }
             CellRepr::UShr(a, b, stride) => {
-                lower_shift(
-                    design,
-                    cell,
-                    a,
-                    b,
-                    *stride,
-                    |value, shcnt| Value::from(&value[shcnt..]).zext(a.len()),
-                    Value::zero(a.len()),
-                );
+                let shift = |value: &Value, shcnt| value.slice(shcnt..).zext(a.len());
+                lower_shift(design, cell, a, b, *stride, shift, Value::zero(a.len()));
             }
             CellRepr::SShr(a, b, stride) => {
-                lower_shift(
-                    design,
-                    cell,
-                    a,
-                    b,
-                    *stride,
-                    |value, shcnt| Value::from(&value[shcnt..]).sext(a.len()),
-                    Value::from(a.msb()).sext(a.len()),
-                );
+                let shift = |value: &Value, shcnt| value.slice(shcnt..).sext(a.len());
+                lower_shift(design, cell, a, b, *stride, shift, Value::from(a.msb()).sext(a.len()));
             }
             CellRepr::XShr(a, b, stride) => {
-                lower_shift(
-                    design,
-                    cell,
-                    a,
-                    b,
-                    *stride,
-                    |value, shcnt| Value::from(&value[shcnt..]).concat(Value::undef(shcnt)),
-                    Value::undef(a.len()),
-                );
+                let shift = |value: &Value, shcnt| value.slice(shcnt..).concat(Value::undef(shcnt));
+                lower_shift(design, cell, a, b, *stride, shift, Value::undef(a.len()));
             }
             CellRepr::Mul(a, b) => {
                 let mut value = Value::zero(a.len());
-                for (i, bit) in b.iter().enumerate() {
+                for (index, bit) in b.iter().enumerate() {
                     value = design.add_adc(
                         value,
-                        Value::zero(i).concat(design.add_mux(bit, a, Value::zero(a.len()))),
+                        Value::zero(index).concat(design.add_mux(bit, a, Value::zero(a.len()))),
                         Net::ZERO,
                     );
                 }

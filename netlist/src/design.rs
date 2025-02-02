@@ -386,8 +386,24 @@ impl Design {
         self.add_not(eq)
     }
 
-    pub fn add_input_net(&self, name: impl Into<String>) -> Net {
-        self.add_input(name, 1)[0]
+    pub fn add_not1(&self, arg: impl Into<Net>) -> Net {
+        self.add_not(arg.into()).unwrap_net()
+    }
+
+    pub fn add_and1(&self, arg1: impl Into<Net>, arg2: impl Into<Net>) -> Net {
+        self.add_and(arg1.into(), arg2.into()).unwrap_net()
+    }
+
+    pub fn add_or1(&self, arg1: impl Into<Net>, arg2: impl Into<Net>) -> Net {
+        self.add_or(arg1.into(), arg2.into()).unwrap_net()
+    }
+
+    pub fn add_xor1(&self, arg1: impl Into<Net>, arg2: impl Into<Net>) -> Net {
+        self.add_xor(arg1.into(), arg2.into()).unwrap_net()
+    }
+
+    pub fn add_input1(&self, name: impl Into<String>) -> Net {
+        self.add_input(name, 1).unwrap_net()
     }
 }
 
