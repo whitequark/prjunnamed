@@ -72,6 +72,10 @@ impl Memory {
 }
 
 impl MemoryWritePort {
+    pub fn wide_log2(&self, memory: &Memory) -> usize {
+        (self.data.len() / memory.width).ilog2() as usize
+    }
+
     pub fn visit(&self, mut f: impl FnMut(Net)) {
         self.addr.visit(&mut f);
         self.data.visit(&mut f);
@@ -108,6 +112,10 @@ impl MemoryReadPort {
                 relations: vec![],
             }),
         }
+    }
+
+    pub fn wide_log2(&self, memory: &Memory) -> usize {
+        (self.data_len / memory.width).ilog2() as usize
     }
 
     pub fn visit(&self, mut f: impl FnMut(Net)) {

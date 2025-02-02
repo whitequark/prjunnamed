@@ -2,7 +2,7 @@ use json::JsonValue;
 use std::{cell::RefCell, collections::BTreeMap, io::BufWriter};
 
 use crate::yosys::{self, CellDetails, NetDetails, PortDetails};
-use prjunnamed_netlist::{CellRepr, ControlNet, Design, IoNet, IoValue, Net, Trit, Value, Const};
+use prjunnamed_netlist::{CellRepr, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, Trit, Value};
 
 struct Counter(usize);
 
@@ -143,6 +143,23 @@ fn export_module(mut design: Design) -> yosys::Module {
                 .add_to(&format!("${}", cell_index), module)
         };
 
+        let ys_control_net_pos = |module: &mut yosys::Module, not_name: &str, cnet: ControlNet| -> yosys::Bit {
+            match cnet {
+                ControlNet::Pos(net) => indexer.net(net),
+                ControlNet::Neg(net) => {
+                    let result = indexer.synthetic_net();
+                    CellDetails::new("$not")
+                        .param("A_SIGNED", 0)
+                        .param("A_WIDTH", 1)
+                        .param("Y_WIDTH", output.len())
+                        .input("A", indexer.value(&net.into()))
+                        .output("Y", result)
+                        .add_to(not_name, module);
+                    result
+                }
+            }
+        };
+
         match cell_ref.repr().as_ref() {
             CellRepr::Buf(arg) => ys_cell_unary(&mut ys_module, "$pos", arg),
             CellRepr::Not(arg) => ys_cell_unary(&mut ys_module, "$not", arg),
@@ -257,25 +274,181 @@ fn export_module(mut design: Design) -> yosys::Module {
                 continue; // skip default $out wire (init-less) creation
             }
 
-            CellRepr::Memory(_memory) => {
-                todo!()
+            CellRepr::Memory(memory) => {
+                let abits = memory
+                    .write_ports
+                    .iter()
+                    .map(|port| port.addr.len() + port.wide_log2(memory))
+                    .max()
+                    .unwrap_or(0)
+                    .max(
+                        memory
+                            .read_ports
+                            .iter()
+                            .map(|port| port.addr.len() + port.wide_log2(memory))
+                            .max()
+                            .unwrap_or(0),
+                    );
+
+                let mut wr_ports = 0;
+                let mut wr_clk_polarity = Const::new();
+                let mut wr_wide_continuation = Const::new();
+                let mut wr_addr = Value::EMPTY;
+                let mut wr_data = Value::EMPTY;
+                let mut wr_clk = Value::EMPTY;
+                let mut wr_en = Value::EMPTY;
+                let mut write_port_indices = vec![];
+                for (port_index, port) in memory.write_ports.iter().enumerate() {
+                    let wide_log2 = port.wide_log2(memory);
+                    for index in 0..(1 << wide_log2) {
+                        let addr = Value::from(Const::from_uint(index, wide_log2)).concat(&port.addr).zext(abits);
+                        wr_clk.extend([port.clock.net()]);
+                        wr_addr.extend(&addr);
+                        wr_clk_polarity.push(port.clock.is_positive());
+                        wr_wide_continuation.push(index != 0);
+                        write_port_indices.push(port_index);
+                    }
+                    wr_data.extend(&port.data);
+                    wr_en.extend(&port.mask);
+                    wr_ports += 1 << wide_log2;
+                }
+                if wr_ports == 0 {
+                    wr_clk_polarity.push(false);
+                    wr_wide_continuation.push(false);
+                }
+
+                let mut rd_ports = 0;
+                let mut rd_clk_enable = Const::new();
+                let mut rd_clk_polarity = Const::new();
+                let mut rd_transparency_mask = Const::new();
+                let mut rd_collision_x_mask = Const::new();
+                let mut rd_wide_continuation = Const::new();
+                let mut rd_ce_over_srst = Const::new();
+                let mut rd_arst_value = Const::new();
+                let mut rd_srst_value = Const::new();
+                let mut rd_init_value = Const::new();
+                let mut rd_clk = Value::EMPTY;
+                let mut rd_en = yosys::BitVector(vec![]);
+                let mut rd_arst = yosys::BitVector(vec![]);
+                let mut rd_srst = yosys::BitVector(vec![]);
+                let mut rd_addr = Value::EMPTY;
+                for (port_index, port) in memory.read_ports.iter().enumerate() {
+                    let wide_log2 = port.wide_log2(memory);
+                    for index in 0..(1 << wide_log2) {
+                        let addr = Value::from(Const::from_uint(index, wide_log2)).concat(&port.addr).zext(abits);
+                        rd_addr.extend(&addr);
+                        if let Some(ref flip_flop) = port.flip_flop {
+                            rd_clk.extend([flip_flop.clock.net()]);
+                            rd_clk_enable.push(true);
+                            rd_clk_polarity.push(flip_flop.clock.is_positive());
+                            rd_ce_over_srst.push(!flip_flop.reset_over_enable);
+                            for &write_port_index in &write_port_indices {
+                                let (trans, col_x) = if flip_flop.clock == memory.write_ports[write_port_index].clock {
+                                    match flip_flop.relations[write_port_index] {
+                                        MemoryPortRelation::Undefined => (false, true),
+                                        MemoryPortRelation::ReadBeforeWrite => (false, false),
+                                        MemoryPortRelation::Transparent => (true, false),
+                                    }
+                                } else {
+                                    (false, false)
+                                };
+                                rd_transparency_mask.push(trans);
+                                rd_collision_x_mask.push(col_x);
+                            }
+                        } else {
+                            rd_clk.extend([Net::UNDEF]);
+                            rd_clk_enable.push(false);
+                            rd_clk_polarity.push(Trit::Undef);
+                            rd_ce_over_srst.push(Trit::Undef);
+                            rd_transparency_mask.extend(Const::undef(wr_ports));
+                            rd_collision_x_mask.extend(Const::undef(wr_ports));
+                        }
+                        rd_wide_continuation.push(index != 0);
+                    }
+                    if let Some(ref flip_flop) = port.flip_flop {
+                        rd_arst_value.extend(&flip_flop.clear_value);
+                        rd_srst_value.extend(&flip_flop.reset_value);
+                        rd_init_value.extend(&flip_flop.init_value);
+                        let enable = ys_control_net_pos(
+                            &mut ys_module,
+                            &format!("${cell_index}$rd{port_index}$en$not"),
+                            flip_flop.enable,
+                        );
+                        let clear = ys_control_net_pos(
+                            &mut ys_module,
+                            &format!("${cell_index}$rd{port_index}$arst$not"),
+                            flip_flop.clear,
+                        );
+                        let reset = ys_control_net_pos(
+                            &mut ys_module,
+                            &format!("${cell_index}$rd{port_index}$srst$not"),
+                            flip_flop.reset,
+                        );
+                        rd_en = rd_en.concat(&yosys::BitVector(vec![enable; 1 << wide_log2]));
+                        rd_srst = rd_srst.concat(&yosys::BitVector(vec![reset; 1 << wide_log2]));
+                        rd_arst = rd_arst.concat(&yosys::BitVector(vec![clear; 1 << wide_log2]));
+                    } else {
+                        rd_arst_value.extend(Const::undef(port.data_len));
+                        rd_srst_value.extend(Const::undef(port.data_len));
+                        rd_init_value.extend(Const::undef(port.data_len));
+                        rd_en = rd_en.concat(&yosys::BitVector(vec![yosys::Bit::Undef; 1 << wide_log2]));
+                        rd_srst = rd_srst.concat(&yosys::BitVector(vec![yosys::Bit::Undef; 1 << wide_log2]));
+                        rd_arst = rd_arst.concat(&yosys::BitVector(vec![yosys::Bit::Undef; 1 << wide_log2]));
+                    }
+                    rd_ports += 1 << wide_log2;
+                }
+                if rd_ports == 0 {
+                    rd_clk_enable.push(false);
+                    rd_clk_polarity.push(false);
+                    rd_wide_continuation.push(false);
+                    rd_ce_over_srst.push(false);
+                    rd_arst_value.push(false);
+                    rd_srst_value.push(false);
+                    rd_init_value.push(false);
+                }
+                if rd_ports == 0 || wr_ports == 0 {
+                    rd_transparency_mask.push(false);
+                    rd_collision_x_mask.push(false);
+                }
+
+                CellDetails::new("$mem_v2")
+                    .param("MEMID", format!("${}$mem", cell_index))
+                    .param("OFFSET", 0)
+                    .param("SIZE", memory.depth)
+                    .param("WIDTH", memory.width)
+                    .param("ABITS", abits)
+                    .param("INIT", memory.init_value.clone())
+                    .param("WR_PORTS", wr_ports)
+                    .param("WR_CLK_ENABLE", Const::ones(wr_ports.max(1)))
+                    .param("WR_CLK_POLARITY", wr_clk_polarity)
+                    .param("WR_PRIORITY_MASK", Const::zero(wr_ports.max(1)))
+                    .param("WR_WIDE_CONTINUATION", wr_wide_continuation)
+                    .input("WR_ADDR", indexer.value(&wr_addr))
+                    .input("WR_DATA", indexer.value(&wr_data))
+                    .input("WR_CLK", indexer.value(&wr_clk))
+                    .input("WR_EN", indexer.value(&wr_en))
+                    .param("RD_PORTS", rd_ports)
+                    .param("RD_CLK_ENABLE", rd_clk_enable)
+                    .param("RD_CLK_POLARITY", rd_clk_polarity)
+                    .param("RD_TRANSPARENCY_MASK", rd_transparency_mask)
+                    .param("RD_COLLISION_X_MASK", rd_collision_x_mask)
+                    .param("RD_WIDE_CONTINUATION", rd_wide_continuation)
+                    .param("RD_CE_OVER_SRST", rd_ce_over_srst)
+                    .param("RD_ARST_VALUE", rd_arst_value)
+                    .param("RD_SRST_VALUE", rd_srst_value)
+                    .param("RD_INIT_VALUE", rd_init_value)
+                    .input("RD_CLK", indexer.value(&rd_clk))
+                    .input("RD_EN", rd_en)
+                    .input("RD_ARST", rd_arst)
+                    .input("RD_SRST", rd_srst)
+                    .input("RD_ADDR", indexer.value(&rd_addr))
+                    .output("RD_DATA", indexer.value(&output))
+                    .add_to(&format!("${}", cell_index), &mut ys_module);
             }
 
             CellRepr::Iob(io_buffer) => {
-                let ys_enable = match io_buffer.enable {
-                    ControlNet::Pos(net) => indexer.net(net),
-                    ControlNet::Neg(net) => {
-                        let ys_enable_neg = indexer.synthetic_net();
-                        CellDetails::new("$not")
-                            .param("A_SIGNED", 0)
-                            .param("A_WIDTH", 1)
-                            .param("Y_WIDTH", output.len())
-                            .input("A", indexer.value(&net.into()))
-                            .output("Y", ys_enable_neg)
-                            .add_to(&format!("${}$not", cell_index), &mut ys_module);
-                        ys_enable_neg
-                    }
-                };
+                let ys_enable =
+                    ys_control_net_pos(&mut ys_module, &format!("${}$en$not", cell_index), io_buffer.enable);
                 CellDetails::new("$tribuf")
                     .param("WIDTH", output.len())
                     .input("A", indexer.value(&io_buffer.output))

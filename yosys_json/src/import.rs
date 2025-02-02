@@ -4,8 +4,8 @@ use std::{
 };
 
 use prjunnamed_netlist::{
-    Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Target, Trit,
-    Value,
+    Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, ParamValue, Target, Trit, Value,
+    Memory, MemoryWritePort, MemoryReadPort, MemoryReadFlipFlop, MemoryPortRelation,
 };
 
 use crate::yosys;
@@ -544,6 +544,119 @@ impl ModuleImporter<'_> {
                 });
                 self.port_drive(cell, "Q", q);
             }
+            "$mem_v2" => {
+                let offset = usize::try_from(cell.parameters.get("OFFSET").unwrap().as_i32()?).unwrap();
+                let size = usize::try_from(cell.parameters.get("SIZE").unwrap().as_i32()?).unwrap();
+                let depth = offset + size;
+                let abits = usize::try_from(cell.parameters.get("ABITS").unwrap().as_i32()?).unwrap();
+                let width = usize::try_from(cell.parameters.get("WIDTH").unwrap().as_i32()?).unwrap();
+                let mut init_value = cell.parameters.get("INIT").unwrap().as_const().unwrap();
+                assert_eq!(init_value.len(), size * width);
+                init_value = Const::undef(offset * width).concat(init_value);
+
+                let mut memory = Memory { depth, width, init_value, write_ports: vec![], read_ports: vec![] };
+
+                let wr_ports = usize::try_from(cell.parameters.get("WR_PORTS").unwrap().as_i32()?).unwrap();
+                let wr_clk_enable = cell.parameters.get("WR_CLK_ENABLE").unwrap().as_const().unwrap();
+                let wr_clk_polarity = cell.parameters.get("WR_CLK_POLARITY").unwrap().as_const().unwrap();
+                let wr_priority_mask = cell.parameters.get("WR_PRIORITY_MASK").unwrap().as_const().unwrap();
+                let wr_wide_continuation = cell.parameters.get("WR_WIDE_CONTINUATION").unwrap().as_const().unwrap();
+                let wr_clk = self.port_value(cell, "WR_CLK");
+                let wr_en = self.port_value(cell, "WR_EN");
+                let wr_addr = self.port_value(cell, "WR_ADDR");
+                let wr_data = self.port_value(cell, "WR_DATA");
+                let mut wr_port_indices = vec![];
+                assert!(wr_priority_mask.iter().all(|x| x == Trit::Zero));
+                assert!(wr_clk_enable.iter().all(|x| x == Trit::One));
+                let mut index = 0;
+                while index < wr_ports {
+                    let mut end_index = index + 1;
+                    while end_index < wr_ports && wr_wide_continuation[end_index] == Trit::One {
+                        end_index += 1;
+                    }
+                    let wide = end_index - index;
+                    let wide_log2 = wide.ilog2() as usize;
+                    assert!(wide.is_power_of_two());
+                    wr_port_indices.push(index);
+                    let clock = if wr_clk_polarity[index] == Trit::One {
+                        ControlNet::Pos(wr_clk[index])
+                    } else {
+                        ControlNet::Neg(wr_clk[index])
+                    };
+                    let addr = wr_addr.slice(index * abits..(index + 1) * abits).slice(wide_log2..);
+                    let data = wr_data.slice(index * width..end_index * width);
+                    let mask = wr_en.slice(index * width..end_index * width);
+                    memory.write_ports.push(MemoryWritePort { clock, addr, data, mask });
+                    index = end_index;
+                }
+
+                let rd_ports = usize::try_from(cell.parameters.get("RD_PORTS").unwrap().as_i32()?).unwrap();
+                let rd_clk_enable = cell.parameters.get("RD_CLK_ENABLE").unwrap().as_const().unwrap();
+                let rd_clk_polarity = cell.parameters.get("RD_CLK_POLARITY").unwrap().as_const().unwrap();
+                let rd_transparency_mask = cell.parameters.get("RD_TRANSPARENCY_MASK").unwrap().as_const().unwrap();
+                let rd_collision_x_mask = cell.parameters.get("RD_COLLISION_X_MASK").unwrap().as_const().unwrap();
+                let rd_wide_continuation = cell.parameters.get("RD_WIDE_CONTINUATION").unwrap().as_const().unwrap();
+                let rd_ce_over_srst = cell.parameters.get("RD_CE_OVER_SRST").unwrap().as_const().unwrap();
+                let rd_arst_value = cell.parameters.get("RD_ARST_VALUE").unwrap().as_const().unwrap();
+                let rd_srst_value = cell.parameters.get("RD_SRST_VALUE").unwrap().as_const().unwrap();
+                let rd_init_value = cell.parameters.get("RD_INIT_VALUE").unwrap().as_const().unwrap();
+                let rd_clk = self.port_value(cell, "RD_CLK");
+                let rd_en = self.port_value(cell, "RD_EN");
+                let rd_srst = self.port_value(cell, "RD_SRST");
+                let rd_arst = self.port_value(cell, "RD_ARST");
+                let rd_addr = self.port_value(cell, "RD_ADDR");
+                let mut index = 0;
+                while index < rd_ports {
+                    let mut end_index = index + 1;
+                    while end_index < wr_ports && rd_wide_continuation[end_index] == Trit::One {
+                        end_index += 1;
+                    }
+                    let wide = end_index - index;
+                    let wide_log2 = wide.ilog2() as usize;
+                    assert!(wide.is_power_of_two());
+                    let flip_flop = if rd_clk_enable[index] == Trit::One {
+                        let clock = if rd_clk_polarity[index] == Trit::One {
+                            ControlNet::Pos(rd_clk[index])
+                        } else {
+                            ControlNet::Neg(rd_clk[index])
+                        };
+                        let mut relations = vec![];
+                        for (new_index, &orig_index) in wr_port_indices.iter().enumerate() {
+                            let mask_index = index * wr_ports + orig_index;
+                            let relation = if memory.write_ports[new_index].clock != clock
+                                || rd_collision_x_mask[mask_index] == Trit::One
+                            {
+                                MemoryPortRelation::Undefined
+                            } else if rd_transparency_mask[mask_index] == Trit::One {
+                                MemoryPortRelation::Transparent
+                            } else {
+                                MemoryPortRelation::ReadBeforeWrite
+                            };
+                            relations.push(relation);
+                        }
+                        Some(MemoryReadFlipFlop {
+                            clock,
+                            clear: rd_arst[index].into(),
+                            reset: rd_srst[index].into(),
+                            enable: rd_en[index].into(),
+                            reset_over_enable: rd_ce_over_srst[index] != Trit::One,
+                            clear_value: rd_arst_value.slice(index * width..end_index * width),
+                            reset_value: rd_srst_value.slice(index * width..end_index * width),
+                            init_value: rd_init_value.slice(index * width..end_index * width),
+                            relations,
+                        })
+                    } else {
+                        None
+                    };
+                    let addr = rd_addr.slice(index * abits..(index + 1) * abits).slice(wide_log2..);
+                    let data_len = wide * width;
+                    memory.read_ports.push(MemoryReadPort { addr, data_len, flip_flop });
+                    index = end_index;
+                }
+
+                let mem_out = self.design.add_memory(memory);
+                self.port_drive(cell, "RD_DATA", mem_out);
+            }
             "$scopeinfo" => {
                 // not quite yet
             }
@@ -601,11 +714,13 @@ impl ModuleImporter<'_> {
             let Some(&net) = self.nets.get(&ynet) else { continue };
             self.design.replace_net(
                 net,
-                self.design.add_iob(IoBuffer {
-                    output: Value::undef(1),
-                    enable: ControlNet::Pos(Net::ZERO),
-                    io: io_net.into(),
-                }).unwrap_net(),
+                self.design
+                    .add_iob(IoBuffer {
+                        output: Value::undef(1),
+                        enable: ControlNet::Pos(Net::ZERO),
+                        io: io_net.into(),
+                    })
+                    .unwrap_net(),
             );
             self.driven_nets.insert(ynet);
         }

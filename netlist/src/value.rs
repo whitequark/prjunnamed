@@ -32,6 +32,10 @@ impl Const {
         Self::from_iter(std::iter::repeat_n(Trit::Undef, width))
     }
 
+    pub fn push(&mut self, trit: impl Into<Trit>) {
+        self.trits.push(trit.into());
+    }
+
     pub fn from_uint(val: u128, bits: usize) -> Self {
         let mut trits = vec![];
         if bits < 128 {
@@ -90,6 +94,10 @@ impl Const {
 
     pub fn len(&self) -> usize {
         self.trits.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.trits.is_empty()
     }
 
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = Trit> + DoubleEndedIterator + ExactSizeIterator + 'a {
