@@ -310,30 +310,16 @@ impl Target for SiliconBlueTarget {
             let mut instance = instance.clone();
             match orig_kind {
                 "GND" | "VCC" => {
-                    for (name, _value) in &instance.params {
-                        return Err(TargetImportError::unknown_parameter(cell_ref, name));
-                    }
-                    for (name, _value) in &instance.inputs {
-                        return Err(TargetImportError::unknown_input(cell_ref, name));
-                    }
-                    for (name, _value) in &instance.ios {
-                        return Err(TargetImportError::unknown_io(cell_ref, name));
-                    }
-                    if !instance.outputs.is_empty() {
-                        for (name, range) in &instance.outputs {
-                            if name != "Y" {
-                                return Err(TargetImportError::unknown_output(cell_ref, name));
-                            } else if range.len() != 1 {
-                                return Err(TargetImportError::output_size_mismatch(cell_ref, name));
-                            }
-                        }
-                        let value = match orig_kind {
-                            "GND" => Value::zero(1),
-                            "VCC" => Value::ones(1),
-                            _ => unreachable!(),
-                        };
-                        design.replace_value(cell_ref.output(), value);
-                    }
+                    let prototype = TargetPrototype::new_pure().add_output("Y", 1);
+                    let (_target_cell, value) = prototype
+                        .instance_to_target_cell(design, &instance, cell_ref.output())
+                        .map_err(|cause| TargetImportError::new(cell_ref, cause))?;
+                    let const_value = match orig_kind {
+                        "GND" => Value::zero(1),
+                        "VCC" => Value::ones(1),
+                        _ => unreachable!(),
+                    };
+                    design.replace_value(value, const_value);
                     cell_ref.unalive();
                     continue;
                 }
