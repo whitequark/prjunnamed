@@ -406,9 +406,9 @@ fn export_module(mut design: Design) -> yosys::Module {
                         rd_arst_value.extend(Const::undef(port.data_len));
                         rd_srst_value.extend(Const::undef(port.data_len));
                         rd_init_value.extend(Const::undef(port.data_len));
-                        rd_en = rd_en.concat(&yosys::BitVector(vec![yosys::Bit::Undef; 1 << wide_log2]));
-                        rd_srst = rd_srst.concat(&yosys::BitVector(vec![yosys::Bit::Undef; 1 << wide_log2]));
-                        rd_arst = rd_arst.concat(&yosys::BitVector(vec![yosys::Bit::Undef; 1 << wide_log2]));
+                        rd_en = rd_en.concat(&yosys::BitVector(vec![yosys::Bit::One; 1 << wide_log2]));
+                        rd_srst = rd_srst.concat(&yosys::BitVector(vec![yosys::Bit::Zero; 1 << wide_log2]));
+                        rd_arst = rd_arst.concat(&yosys::BitVector(vec![yosys::Bit::Zero; 1 << wide_log2]));
                     }
                     rd_ports += 1 << wide_log2;
                 }
