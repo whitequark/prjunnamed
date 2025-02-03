@@ -17,6 +17,7 @@ pub enum Error {
     Syntax(yosys::SyntaxError),
     MetaDataType(yosys::MetadataTypeError),
     Semantic,
+    Unsupported(String),
 }
 
 impl From<std::io::Error> for Error {
@@ -51,6 +52,7 @@ impl std::fmt::Display for Error {
             Error::Syntax(error) => write!(f, "{}", error),
             Error::MetaDataType(error) => write!(f, "{}", error),
             Error::Semantic => write!(f, "semantic error"),
+            Error::Unsupported(feature) => write!(f, "unsupported feature: {}", feature),
         }
     }
 }
@@ -660,9 +662,15 @@ impl ModuleImporter<'_> {
             "$scopeinfo" => {
                 // not quite yet
             }
+            "$memrd" | "$memwr" | "$meminit" | "$memrd_v2" | "$memwr_v2" | "$meminit_v2" => {
+                return Err(Error::Unsupported(format!(
+                    "{} cell; run the Yosys `memory_collect` pass before writing JSON",
+                    cell.type_
+                )))
+            }
             _ => {
                 if cell.type_.starts_with('$') {
-                    panic!("unrecognized cell type {}", cell.type_);
+                    return Err(Error::Unsupported(format!("{} cell", cell.type_)));
                 }
                 // instance
                 let mut out_bits = vec![];

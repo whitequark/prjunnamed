@@ -2,7 +2,7 @@ use std::{collections::BTreeMap, fs::File};
 
 use prjunnamed_generic::{canonicalize, lower};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn run() -> Result<(), Box<dyn std::error::Error>> {
     prjunnamed_siliconblue::register();
 
     let mut input = String::new();
@@ -42,4 +42,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("error: {}", error);
+        std::process::exit(1)
+    }
 }
