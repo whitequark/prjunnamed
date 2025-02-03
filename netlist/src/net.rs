@@ -183,6 +183,10 @@ impl Net {
         }
     }
 
+    pub fn is_cell(self) -> bool {
+        self.as_const().is_none()
+    }
+
     pub fn visit(self, mut f: impl FnMut(Net)) {
         f(self)
     }

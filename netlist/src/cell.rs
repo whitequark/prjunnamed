@@ -1,13 +1,15 @@
 use std::{borrow::Cow, hash::Hash};
 
-use crate::{Const, Design, Net, Value};
+use crate::{Design, Net, Value};
 
+mod decision;
 mod flip_flop;
 mod memory;
 mod io_buffer;
 mod target;
 mod instance;
 
+pub use decision::{MatchCell, AssignCell};
 pub use flip_flop::FlipFlop;
 pub use memory::{Memory, MemoryWritePort, MemoryReadPort, MemoryReadFlipFlop, MemoryPortRelation};
 pub use io_buffer::IoBuffer;
@@ -61,8 +63,8 @@ pub enum CellRepr {
     SModTrunc(Value, Value),
     SModFloor(Value, Value),
 
-    Match { value: Value, enable: Net, patterns: Vec<Vec<Const>> }, // one-hot priority match of `value` against `patterns`
-    Assign { value: Value, enable: Net, update: Value, offset: usize }, // replace `value[offset..]` with `update` if `enable`
+    Match(MatchCell),
+    Assign(AssignCell),
 
     Dff(FlipFlop),
     Memory(Memory),
@@ -104,15 +106,15 @@ impl CellRepr {
             CellRepr::SShr(arg1, _, _) => assert!(arg1.len() > 0),
             CellRepr::XShr(_, _, _) => (),
 
-            CellRepr::Match { value, patterns, .. } => {
-                for alternates in patterns {
+            CellRepr::Match(match_cell) => {
+                for alternates in &match_cell.patterns {
                     for pattern in alternates {
-                        assert_eq!(value.len(), pattern.len());
+                        assert_eq!(match_cell.value.len(), pattern.len());
                     }
                 }
             }
-            CellRepr::Assign { value, update, offset, .. } => {
-                assert!(value.len() >= update.len() + offset);
+            CellRepr::Assign(assign_cell) => {
+                assert!(assign_cell.value.len() >= assign_cell.update.len() + assign_cell.offset);
             }
 
             CellRepr::Dff(flip_flop) => {
@@ -187,14 +189,14 @@ impl CellRepr {
             CellRepr::Or(arg1, arg2) => Some(CellRepr::Or(arg1.slice(range.clone()), arg2.slice(range))),
             CellRepr::Xor(arg1, arg2) => Some(CellRepr::Xor(arg1.slice(range.clone()), arg2.slice(range))),
             CellRepr::Mux(arg1, arg2, arg3) => Some(CellRepr::Mux(*arg1, arg2.slice(range.clone()), arg3.slice(range))),
-            CellRepr::Match { value, enable, patterns } => {
-                Some(CellRepr::Match {
-                    value: value.slice(range.clone()),
-                    enable: *enable,
-                    patterns: Vec::from_iter(patterns.iter().map(|alternates| {
+            CellRepr::Match(match_cell) => {
+                Some(CellRepr::Match(MatchCell {
+                    value: match_cell.value.slice(range.clone()),
+                    enable: match_cell.enable,
+                    patterns: Vec::from_iter(match_cell.patterns.iter().map(|alternates| {
                         Vec::from_iter(alternates.iter().map(|pattern| pattern.slice(range.clone())))
                     })),
-                })
+                }))
             }
             CellRepr::Dff(flip_flop) => Some(CellRepr::Dff(flip_flop.slice(range))),
             CellRepr::Iob(io_buffer) => Some(CellRepr::Iob(io_buffer.slice(range))),
@@ -334,8 +336,8 @@ impl CellRepr {
                 arg1.len()
             }
 
-            CellRepr::Match { patterns, .. } => patterns.len(),
-            CellRepr::Assign { value, .. } => value.len(),
+            CellRepr::Match(match_cell) => match_cell.output_len(),
+            CellRepr::Assign(assign_cell) => assign_cell.output_len(),
 
             CellRepr::Dff(flip_flop) => flip_flop.output_len(),
             CellRepr::Memory(memory) => memory.output_len(),
@@ -380,15 +382,8 @@ impl CellRepr {
                 value2.visit(&mut f);
                 net.visit(&mut f);
             }
-            CellRepr::Match { value, enable, .. } => {
-                value.visit(&mut f);
-                enable.visit(&mut f);
-            }
-            CellRepr::Assign { value, enable, update, .. } => {
-                value.visit(&mut f);
-                enable.visit(&mut f);
-                update.visit(&mut f);
-            }
+            CellRepr::Match(match_cell) => match_cell.visit(&mut f),
+            CellRepr::Assign(assign_cell) => assign_cell.visit(&mut f),
             CellRepr::Dff(flip_flop) => flip_flop.visit(&mut f),
             CellRepr::Memory(memory) => memory.visit(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit(&mut f),
@@ -428,15 +423,8 @@ impl CellRepr {
                 value2.visit_mut(&mut f);
                 net.visit_mut(&mut f);
             }
-            CellRepr::Match { value, enable, .. } => {
-                value.visit_mut(&mut f);
-                enable.visit_mut(&mut f);
-            }
-            CellRepr::Assign { value, enable, update, .. } => {
-                value.visit_mut(&mut f);
-                enable.visit_mut(&mut f);
-                update.visit_mut(&mut f);
-            }
+            CellRepr::Match(match_cell) => match_cell.visit_mut(&mut f),
+            CellRepr::Assign(assign_cell) => assign_cell.visit_mut(&mut f),
             CellRepr::Dff(flip_flop) => flip_flop.visit_mut(&mut f),
             CellRepr::Memory(memory) => memory.visit_mut(&mut f),
             CellRepr::Iob(io_buffer) => io_buffer.visit_mut(&mut f),

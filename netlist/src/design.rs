@@ -7,8 +7,8 @@ use std::sync::Arc;
 
 use crate::cell::{Cell, CellRepr};
 use crate::{
-    ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Net, Target, Trit, Value, TargetCellPurity, TargetCell,
-    TargetPrototype, Memory,
+    AssignCell, ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, MatchCell, Memory, Net, Target, TargetCell,
+    TargetCellPurity, TargetPrototype, Trit, Value,
 };
 
 #[derive(Debug, Clone)]
@@ -223,6 +223,21 @@ impl PartialEq<CellRef<'_>> for CellRef<'_> {
 
 impl Eq for CellRef<'_> {}
 
+impl PartialOrd<CellRef<'_>> for CellRef<'_> {
+    fn partial_cmp(&self, other: &CellRef<'_>) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl Ord for CellRef<'_> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        match (self.design as *const Design).cmp(&(other.design as *const Design)) {
+            core::cmp::Ordering::Equal => self.index.cmp(&other.index),
+            ord => return ord,
+        }
+    }
+}
+
 impl Hash for CellRef<'_> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.index.hash(state);
@@ -354,6 +369,10 @@ impl Design {
         add_smod_floor(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
             SModFloor(arg1.into(), arg2.into());
 
+        add_match(arg: impl Into<MatchCell>) ->
+            Match(arg.into());
+        add_assign(arg: impl Into<AssignCell>) ->
+            Assign(arg.into());
         add_dff(arg: impl Into<FlipFlop>) ->
             Dff(arg.into());
         add_memory(arg: impl Into<Memory>) ->

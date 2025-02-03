@@ -3,9 +3,9 @@ use std::{collections::BTreeMap, fmt::Display, ops::Range, str::FromStr, sync::A
 use yap::{one_of, types::WithContext, IntoTokens, TokenLocation, Tokens};
 
 use crate::{
-    create_target, CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet, IoValue, Memory,
-    MemoryPortRelation, MemoryReadFlipFlop, MemoryReadPort, MemoryWritePort, Net, ParamValue, Target, TargetCell,
-    Value,
+    AssignCell, MatchCell, create_target, CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet,
+    IoValue, Memory, MemoryPortRelation, MemoryReadFlipFlop, MemoryReadPort, MemoryWritePort, Net, ParamValue, Target,
+    TargetCell, Value,
 };
 
 #[derive(Debug)]
@@ -444,7 +444,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 }) {}
                 parse_space(t);
                 parse_symbol(t, ']');
-                CellRepr::Match { value, enable, patterns }
+                CellRepr::Match(MatchCell { value, enable, patterns })
             }
             "assign" => {
                 let value = parse_value_arg(t)?;
@@ -463,7 +463,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         parse_decimal(t)
                     })
                     .unwrap_or(0);
-                CellRepr::Assign { value, enable, update, offset }
+                CellRepr::Assign(AssignCell { value, enable, update, offset })
             }
             "dff" => {
                 let data = parse_value_arg(t)?;

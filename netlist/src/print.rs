@@ -235,14 +235,14 @@ impl Design {
             CellRepr::SModTrunc(arg1, arg2) => write_common(f, "smod_trunc", &[arg1, arg2])?,
             CellRepr::SModFloor(arg1, arg2) => write_common(f, "smod_floor", &[arg1, arg2])?,
 
-            CellRepr::Match { value, enable, patterns } => {
-                write_common(f, "match", &[&value])?;
-                if *enable != Net::ONE {
+            CellRepr::Match(match_cell) => {
+                write_common(f, "match", &[&match_cell.value])?;
+                if match_cell.enable != Net::ONE {
                     write!(f, " en=")?;
-                    self.write_net(f, *enable)?;
+                    self.write_net(f, match_cell.enable)?;
                 }
                 write!(f, " [\n")?;
-                for alternates in patterns {
+                for alternates in &match_cell.patterns {
                     write!(f, "  ")?;
                     for (index, pattern) in alternates.iter().enumerate() {
                         if index > 0 {
@@ -254,16 +254,16 @@ impl Design {
                 }
                 write!(f, "]")?;
             }
-            CellRepr::Assign { value, enable, update, offset } => {
-                write_common(f, "assign", &[&value])?;
-                if *enable != Net::ONE {
+            CellRepr::Assign(assign_cell) => {
+                write_common(f, "assign", &[&assign_cell.value])?;
+                if assign_cell.enable != Net::ONE {
                     write!(f, " en=")?;
-                    self.write_net(f, *enable)?;
+                    self.write_net(f, assign_cell.enable)?;
                 }
                 write!(f, " ")?;
-                self.write_value(f, update)?;
-                if *offset != 0 {
-                    write!(f, " at={offset}")?;
+                self.write_value(f, &assign_cell.update)?;
+                if assign_cell.offset != 0 {
+                    write!(f, " at={}", assign_cell.offset)?;
                 }
             }
 
