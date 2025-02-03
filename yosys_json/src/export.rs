@@ -2,7 +2,9 @@ use json::JsonValue;
 use std::{cell::RefCell, collections::BTreeMap, io::BufWriter};
 
 use crate::yosys::{self, CellDetails, NetDetails, PortDetails};
-use prjunnamed_netlist::{CellRepr, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, Trit, Value};
+use prjunnamed_netlist::{
+    CellRepr, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, Trit, Value,
+};
 
 struct Counter(usize);
 
@@ -72,6 +74,18 @@ fn export_module(mut design: Design) -> yosys::Module {
     if let Some(target) = design.target() {
         target.export(&mut design);
     }
+
+    // Yosys IR cannot express DFFs with both asynchronous and synchronous reset.
+    for cell_ref in design.iter_cells() {
+        if let CellRepr::Dff(flip_flop) = &*cell_ref.repr() {
+            if flip_flop.has_clear() && flip_flop.has_reset() {
+                let mut flip_flop = flip_flop.clone();
+                flip_flop.unmap_reset(&design);
+                cell_ref.replace(CellRepr::Dff(flip_flop));
+            }
+        }
+    }
+    design.apply();
 
     for (name, io_value) in design.iter_ios() {
         ys_module.ports.add(name, PortDetails::new(yosys::PortDirection::Inout, indexer.io_value(&io_value)))
@@ -235,9 +249,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                     flip_flop.has_enable(),
                     flip_flop.reset_over_enable,
                 ) {
-                    // Support for this case requires emulating synchronous reset using a mux.
-                    (true, true, _, _) =>
-                        panic!("Flip-flops with both synchronous and asynchronous reset are not implemented for Yosys JSON export"),
+                    (true, true, _, _) => unreachable!(),
                     (true, false, false, _) => "$adff",
                     (true, false, true, _) => "$adffe",
                     (false, true, false, _) => "$sdff",
