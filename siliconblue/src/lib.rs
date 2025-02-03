@@ -858,7 +858,7 @@ impl SiliconBlueTarget {
                                                 net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0)
                                             })
                                             .max()
-                                            .unwrap()
+                                            .unwrap_or(0)
                                             + 1)
                                         .max(depth);
                                         net_dispositions
@@ -873,7 +873,7 @@ impl SiliconBlueTarget {
                             .iter()
                             .map(|net| net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0))
                             .max()
-                            .unwrap()
+                            .unwrap_or(0)
                             + 1;
                         net_dispositions.insert(output[index], NetDisposition::Lut(depth, lut));
                     }
