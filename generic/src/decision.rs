@@ -241,47 +241,50 @@ impl MatchMatrix {
 }
 
 impl Decision {
-    fn emit_subtree(
-        &self,
-        design: &Design,
-        sop: &mut BTreeMap<Net, Vec<Net>>,
-        nets: &mut Vec<Net>,
-        bits: &mut Vec<Trit>,
-        cache: &mut HashMap<CellRepr, Net>,
-    ) {
-        match self {
-            Decision::Result { rules } => {
-                let cond_repr = match &bits[..] {
-                    [] => CellRepr::Buf(Trit::One.into()),
-                    [Trit::One] => CellRepr::Buf(nets[0].into()),
-                    [Trit::Zero] => CellRepr::Not(nets[0].into()),
-                    _ => CellRepr::Eq(nets.clone().into(), Const::from(bits.clone()).into()),
-                };
-                let cond =
-                    *cache.entry(cond_repr).or_insert_with_key(|repr| design.add_cell(repr.clone()).unwrap_net());
-                for rule in rules {
-                    sop.entry(*rule).or_default().push(cond);
+    fn emit(&self, design: &Design, cache: &mut HashMap<CellRepr, Net>) -> BTreeSet<Net> {
+        fn subtree(
+            design: &Design,
+            decision: &Decision,
+            all_rules: &mut BTreeSet<Net>,
+            sop: &mut BTreeMap<Net, Vec<Net>>,
+            nets: &mut Vec<Net>,
+            bits: &mut Vec<Trit>,
+            cache: &mut HashMap<CellRepr, Net>,
+        ) {
+            match decision {
+                Decision::Result { rules } => {
+                    let cond_repr = match &bits[..] {
+                        [] => CellRepr::Buf(Trit::One.into()),
+                        [Trit::One] => CellRepr::Buf(nets[0].into()),
+                        [Trit::Zero] => CellRepr::Not(nets[0].into()),
+                        _ => CellRepr::Eq(nets.clone().into(), Const::from(bits.clone()).into()),
+                    };
+                    let cond =
+                        *cache.entry(cond_repr).or_insert_with_key(|repr| design.add_cell(repr.clone()).unwrap_net());
+                    for &rule in rules {
+                        all_rules.insert(rule);
+                        sop.entry(rule).or_default().push(cond);
+                    }
+                }
+                Decision::Branch { net, if0, if1 } => {
+                    nets.push(*net);
+                    bits.push(Trit::Zero);
+                    subtree(design, if0, all_rules, sop, nets, bits, cache);
+                    bits.pop();
+                    bits.push(Trit::One);
+                    subtree(design, if1, all_rules, sop, nets, bits, cache);
+                    bits.pop();
+                    nets.pop();
                 }
             }
-            Decision::Branch { net, if0, if1 } => {
-                nets.push(*net);
-                bits.push(Trit::Zero);
-                if0.emit_subtree(design, sop, nets, bits, cache);
-                bits.pop();
-                bits.push(Trit::One);
-                if1.emit_subtree(design, sop, nets, bits, cache);
-                bits.pop();
-                nets.pop();
-            }
         }
-    }
 
-    fn emit(&self, design: &Design, cache: &mut HashMap<CellRepr, Net>) {
         // Convert decision tree into sum-of-products representation, and emit products as `eq` cells.
         // Although they will be merged later, this function avoids emitting duplicate cells anyway.
+        let mut all_rules = BTreeSet::new();
         let mut sop = BTreeMap::new();
         let (mut nets, mut bits) = (Vec::new(), Vec::new());
-        self.emit_subtree(design, &mut sop, &mut nets, &mut bits, cache);
+        subtree(design, self, &mut all_rules, &mut sop, &mut nets, &mut bits, cache);
 
         // Emit sums as `or` cell sequences, and replace the void nets introduced for rules with the sum nets.
         for (rule, products) in sop {
@@ -296,6 +299,10 @@ impl Decision {
             }
             design.replace_net(rule, sum.unwrap());
         }
+
+        // Return the set of all encountered rules. The caller will need to replace void nets for rules
+        // that never appear in the decision trees to keep the netlist well-formed.
+        all_rules
     }
 }
 
@@ -317,6 +324,7 @@ fn match_tree_into_matrix(
             matrix.add(MatchRow::new(pattern.clone(), [output_net]));
         }
     }
+    matrix.add(MatchRow::empty(match_cell.value.len()));
 
     // Create matrices for subtrees and merge them into the matrix for this cell.
     for (offset, output_net) in output.iter().enumerate() {
@@ -388,9 +396,9 @@ pub fn decision(design: &mut Design) {
             eprintln!(">matrix (normalized):\n{root_matrix}");
         }
 
+        let mut unused_outputs = all_outputs.clone();
         for net in all_outputs {
             let sliced_matrix = root_matrix.clone().slice(&BTreeSet::from_iter([net]));
-            // let sliced_matrix = root_matrix;
             if cfg!(feature = "trace") {
                 eprintln!(">matrix (sliced):\n{sliced_matrix}")
             }
@@ -400,7 +408,15 @@ pub fn decision(design: &mut Design) {
                 eprintln!(">decision tree:\n{decision_tree}")
             }
 
-            decision_tree.emit(design, &mut cache);
+            let replaced = decision_tree.emit(design, &mut cache);
+            unused_outputs = BTreeSet::from_iter(unused_outputs.difference(&replaced).cloned());
+        }
+
+        for net in unused_outputs {
+            if cfg!(feature = "trace") {
+                eprintln!(">unused rule: {net}")
+            }
+            design.replace_net(net, Net::ZERO);
         }
     }
 
