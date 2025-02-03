@@ -1324,13 +1324,13 @@ mod test {
     #[test]
     fn test_lower_iob_input() {
         let (target, mut design) = parse! {r#"
-            #"io":1
-            %0:1 = iob #"io" o=X en=0
+            &"io":1
+            %0:1 = iob &"io" o=X en=0
             %1:0 = output "x" %0
         "#};
         target.lower_iobs(&mut design);
         let (_, mut gold) = parse! {r#"
-            #"io":1
+            &"io":1
             %0:0 = output "x" %1+0
             %1:3 = target "SB_IO" {
                 p@"PIN_TYPE"=const(000001)
@@ -1345,8 +1345,8 @@ mod test {
                 i@"INPUT_CLK"=X
                 i@"OUTPUT_CLK"=X
                 i@"LATCH_INPUT_ENABLE"=X
-                io@"PACKAGE_PIN"=#"io"
-                io@"PACKAGE_PIN_B"=#_
+                io@"PACKAGE_PIN"=&"io"
+                io@"PACKAGE_PIN_B"=&_
             }
         "#};
         assert_isomorphic!(design, gold);
@@ -1355,14 +1355,14 @@ mod test {
     #[test]
     fn test_lower_iob_output() {
         let (target, mut design) = parse! {r#"
-            #"io":1
-            %0:1 = iob #"io" o=%1 en=1
+            &"io":1
+            %0:1 = iob &"io" o=%1 en=1
             %1:1 = input "o"
             %2:0 = output "i" %0
         "#};
         target.lower_iobs(&mut design);
         let (_, mut gold) = parse! {r#"
-            #"io":1
+            &"io":1
             %0:1 = input "o"
             %1:3 = target "SB_IO" {
                 p@"PIN_TYPE"=const(011001)
@@ -1377,8 +1377,8 @@ mod test {
                 i@"INPUT_CLK"=X
                 i@"OUTPUT_CLK"=X
                 i@"LATCH_INPUT_ENABLE"=X
-                io@"PACKAGE_PIN"=#"io"
-                io@"PACKAGE_PIN_B"=#_
+                io@"PACKAGE_PIN"=&"io"
+                io@"PACKAGE_PIN_B"=&_
             }
             %4:0 = output "i" %1+0
         "#};
@@ -1388,15 +1388,15 @@ mod test {
     #[test]
     fn test_lower_iob_tristate() {
         let (target, mut design) = parse! {r#"
-            #"io":1
-            %0:1 = iob #"io" o=%1 en=%2
+            &"io":1
+            %0:1 = iob &"io" o=%1 en=%2
             %1:1 = input "o"
             %2:1 = input "oe"
             %3:0 = output "i" %0
         "#};
         target.lower_iobs(&mut design);
         let (_, mut gold) = parse! {r#"
-            #"io":1
+            &"io":1
             %0:1 = input "o"
             %1:1 = input "oe"
             %2:0 = output "i" %3+0
@@ -1413,8 +1413,8 @@ mod test {
                 i@"INPUT_CLK"=X
                 i@"OUTPUT_CLK"=X
                 i@"LATCH_INPUT_ENABLE"=X
-                io@"PACKAGE_PIN"=#"io"
-                io@"PACKAGE_PIN_B"=#_
+                io@"PACKAGE_PIN"=&"io"
+                io@"PACKAGE_PIN_B"=&_
             }
         "#};
         assert_isomorphic!(design, gold);
@@ -1423,15 +1423,15 @@ mod test {
     #[test]
     fn test_lower_iob_tristate_inv() {
         let (target, mut design) = parse! {r#"
-            #"io":1
-            %0:1 = iob #"io" o=%1 en=!%2
+            &"io":1
+            %0:1 = iob &"io" o=%1 en=!%2
             %1:1 = input "o"
             %2:1 = input "t"
             %3:0 = output "i" %0
         "#};
         target.lower_iobs(&mut design);
         let (_, mut gold) = parse! {r#"
-            #"io":1
+            &"io":1
             %0:1 = input "o"
             %1:1 = input "t"
             %2:0 = output "i" %4+0
@@ -1449,8 +1449,8 @@ mod test {
                 i@"INPUT_CLK"=X
                 i@"OUTPUT_CLK"=X
                 i@"LATCH_INPUT_ENABLE"=X
-                io@"PACKAGE_PIN"=#"io"
-                io@"PACKAGE_PIN_B"=#_
+                io@"PACKAGE_PIN"=&"io"
+                io@"PACKAGE_PIN_B"=&_
             }
         "#};
         assert_isomorphic!(design, gold);
@@ -1459,15 +1459,15 @@ mod test {
     #[test]
     fn test_lower_iob_tristate_wide() {
         let (target, mut design) = parse! {r#"
-            #"io":4
+            &"io":4
             %0:4 = input "o"
             %4:1 = input "oe"
-            %5:4 = iob #"io":4 o=%0:4 en=%4
+            %5:4 = iob &"io":4 o=%0:4 en=%4
             %9:0 = output "i" %5:4
         "#};
         target.lower_iobs(&mut design);
         let (_, mut gold) = parse! {r#"
-            #"io":4
+            &"io":4
             %0:4 = input "o"
             %4:1 = input "oe"
             %5:0 = output "i" {%6+0 %9+0 %12+0 %15+0}
@@ -1484,8 +1484,8 @@ mod test {
                 i@"INPUT_CLK"=X
                 i@"OUTPUT_CLK"=X
                 i@"LATCH_INPUT_ENABLE"=X
-                io@"PACKAGE_PIN"=#"io"+0
-                io@"PACKAGE_PIN_B"=#_
+                io@"PACKAGE_PIN"=&"io"+0
+                io@"PACKAGE_PIN_B"=&_
             }
             %9:3 = target "SB_IO" {
                 p@"PIN_TYPE"=const(101001)
@@ -1500,8 +1500,8 @@ mod test {
                 i@"INPUT_CLK"=X
                 i@"OUTPUT_CLK"=X
                 i@"LATCH_INPUT_ENABLE"=X
-                io@"PACKAGE_PIN"=#"io"+1
-                io@"PACKAGE_PIN_B"=#_
+                io@"PACKAGE_PIN"=&"io"+1
+                io@"PACKAGE_PIN_B"=&_
             }
             %12:3 = target "SB_IO" {
                 p@"PIN_TYPE"=const(101001)
@@ -1516,8 +1516,8 @@ mod test {
                 i@"INPUT_CLK"=X
                 i@"OUTPUT_CLK"=X
                 i@"LATCH_INPUT_ENABLE"=X
-                io@"PACKAGE_PIN"=#"io"+2
-                io@"PACKAGE_PIN_B"=#_
+                io@"PACKAGE_PIN"=&"io"+2
+                io@"PACKAGE_PIN_B"=&_
             }
             %15:3 = target "SB_IO" {
                 p@"PIN_TYPE"=const(101001)
@@ -1532,8 +1532,8 @@ mod test {
                 i@"INPUT_CLK"=X
                 i@"OUTPUT_CLK"=X
                 i@"LATCH_INPUT_ENABLE"=X
-                io@"PACKAGE_PIN"=#"io"+3
-                io@"PACKAGE_PIN_B"=#_
+                io@"PACKAGE_PIN"=&"io"+3
+                io@"PACKAGE_PIN_B"=&_
             }
         "#};
         assert_isomorphic!(design, gold);

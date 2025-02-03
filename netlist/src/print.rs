@@ -1,6 +1,8 @@
 use std::{borrow::Cow, fmt::Display};
 
-use crate::{CellRef, CellRepr, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, ParamValue, Trit, Value};
+use crate::{
+    CellRef, CellRepr, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, ParamValue, Trit, Value,
+};
 
 struct DisplayFn<'a, F: for<'b> Fn(&Design, &mut std::fmt::Formatter<'b>) -> std::fmt::Result>(&'a Design, F);
 
@@ -100,9 +102,9 @@ impl Design {
 
     fn write_io_net(&self, f: &mut std::fmt::Formatter, io_net: IoNet) -> std::fmt::Result {
         if io_net.is_floating() {
-            write!(f, "#_")
+            write!(f, "&_")
         } else {
-            write!(f, "#")?;
+            write!(f, "&")?;
             match self.find_io(io_net) {
                 Some((name, offset)) => {
                     self.write_string(f, name)?;
@@ -122,11 +124,11 @@ impl Design {
         } else if io_value.len() == 1 {
             self.write_io_net(f, io_value[0])
         } else if io_value.iter().all(IoNet::is_floating) {
-            write!(f, "#_:{}", io_value.len())
+            write!(f, "&_:{}", io_value.len())
         } else {
             if let Some((name, _offset)) = self.find_io(io_value[0]) {
                 if self.get_io(name).unwrap() == *io_value {
-                    write!(f, "#")?;
+                    write!(f, "&")?;
                     self.write_string(f, name)?;
                     write!(f, ":{}", io_value.len())?;
                     return Ok(());
@@ -169,7 +171,7 @@ impl Design {
                 self.write_value(f, arg1)?;
                 write!(f, " ")?;
                 self.write_value(f, arg2)?;
-                write!(f, " {stride:b}")?;
+                write!(f, " #{stride}")?;
                 Ok(())
             };
 
@@ -189,7 +191,7 @@ impl Design {
 
         let write_cell_argument = |f: &mut std::fmt::Formatter, sigil: &str, name: &str| -> std::fmt::Result {
             write!(f, "  {sigil}@")?;
-            self.write_string(f, &name)?;
+            self.write_string(f, name)?;
             write!(f, "=")?;
             Ok(())
         };
@@ -236,34 +238,63 @@ impl Design {
             CellRepr::SModFloor(arg1, arg2) => write_common(f, "smod_floor", &[arg1, arg2])?,
 
             CellRepr::Match(match_cell) => {
-                write_common(f, "match", &[&match_cell.value])?;
+                write!(f, "match")?;
                 if match_cell.enable != Net::ONE {
                     write!(f, " en=")?;
                     self.write_net(f, match_cell.enable)?;
                 }
-                write!(f, " [\n")?;
-                for alternates in &match_cell.patterns {
-                    write!(f, "  ")?;
-                    for (index, pattern) in alternates.iter().enumerate() {
-                        if index > 0 {
-                            write!(f, " ")?;
-                        }
-                        write!(f, "{pattern}")?;
-                    }
-                    write!(f, "\n")?;
+                write!(f, " ")?;
+                self.write_value(f, &match_cell.value)?;
+                let multiline = match_cell
+                    .patterns
+                    .iter()
+                    .map(|alternates| alternates.iter().map(Const::len).sum::<usize>())
+                    .sum::<usize>()
+                    > 80;
+                write!(f, " {{")?;
+                if multiline {
+                    writeln!(f)?;
                 }
-                write!(f, "]")?;
+                for alternates in &match_cell.patterns {
+                    if multiline {
+                        write!(f, "  ")?;
+                    } else {
+                        write!(f, " ")?;
+                    }
+                    if alternates.len() == 1 {
+                        let pattern = &alternates[0];
+                        write!(f, "{pattern}")?;
+                    } else {
+                        write!(f, "[")?;
+                        for (index, pattern) in alternates.iter().enumerate() {
+                            if index > 0 {
+                                write!(f, " ")?;
+                            }
+                            write!(f, "{pattern}")?;
+                        }
+                        write!(f, "]")?;
+                    }
+                    if multiline {
+                        writeln!(f)?;
+                    }
+                }
+                if !multiline {
+                    write!(f, " ")?;
+                }
+                write!(f, "}}")?;
             }
             CellRepr::Assign(assign_cell) => {
-                write_common(f, "assign", &[&assign_cell.value])?;
+                write!(f, "assign")?;
                 if assign_cell.enable != Net::ONE {
                     write!(f, " en=")?;
                     self.write_net(f, assign_cell.enable)?;
                 }
                 write!(f, " ")?;
+                self.write_value(f, &assign_cell.value)?;
+                write!(f, " ")?;
                 self.write_value(f, &assign_cell.update)?;
                 if assign_cell.offset != 0 {
-                    write!(f, " at={}", assign_cell.offset)?;
+                    write!(f, " at=#{}", assign_cell.offset)?;
                 }
             }
 
@@ -297,7 +328,7 @@ impl Design {
                 }
             }
             CellRepr::Memory(memory) => {
-                write!(f, "memory depth={} width={} {{\n", memory.depth, memory.width)?;
+                writeln!(f, "memory depth=#{} width=#{} {{", memory.depth, memory.width)?;
                 for write_port in &memory.write_ports {
                     write!(f, "  write addr=")?;
                     self.write_value(f, &write_port.addr)?;
@@ -308,12 +339,12 @@ impl Design {
                         self.write_value(f, &write_port.mask)?;
                     }
                     write_control(f, " clk", write_port.clock)?;
-                    write!(f, "\n")?;
+                    writeln!(f)?;
                 }
                 for read_port in &memory.read_ports {
                     write!(f, "  read addr=")?;
                     self.write_value(f, &read_port.addr)?;
-                    write!(f, " width={}", read_port.data_len)?;
+                    write!(f, " width=#{}", read_port.data_len)?;
                     if let Some(ref flip_flop) = read_port.flip_flop {
                         write_control(f, " clk", flip_flop.clock)?;
                         if flip_flop.has_clear() {
@@ -354,7 +385,7 @@ impl Design {
                         }
                         write!(f, "]")?;
                     }
-                    write!(f, "\n")?;
+                    writeln!(f)?;
                 }
                 let fully_undef_rows_at_end = memory
                     .init_value
@@ -370,7 +401,7 @@ impl Design {
                     for trit in memory.init_value[(index * memory.width)..((index + 1) * memory.width)].iter().rev() {
                         write!(f, "{trit}")?;
                     }
-                    write!(f, "\n")?;
+                    writeln!(f)?;
                 }
                 write!(f, "}}")?;
             }
@@ -383,25 +414,25 @@ impl Design {
             }
             CellRepr::Other(instance) => {
                 self.write_string(f, instance.kind.as_str())?;
-                write!(f, " {{\n")?;
+                writeln!(f, " {{")?;
                 for (name, value) in instance.params.iter() {
                     write_cell_argument(f, "p", name)?;
                     write_param_value(f, value)?;
-                    write!(f, "\n")?;
+                    writeln!(f)?;
                 }
                 for (name, value) in instance.inputs.iter() {
                     write_cell_argument(f, "i", name)?;
                     self.write_value(f, value)?;
-                    write!(f, "\n")?;
+                    writeln!(f)?;
                 }
                 for (name, range) in instance.outputs.iter() {
                     write_cell_argument(f, "o", name)?;
-                    write!(f, "{}:{}\n", range.start, range.len())?;
+                    writeln!(f, "{}:{}", range.start, range.len())?;
                 }
                 for (name, value) in instance.ios.iter() {
                     write_cell_argument(f, "io", name)?;
                     self.write_io_value(f, value)?;
-                    write!(f, "\n")?;
+                    writeln!(f)?;
                 }
                 write!(f, "}}")?;
             }
@@ -409,21 +440,21 @@ impl Design {
                 write!(f, "target ")?;
                 let prototype = self.target_prototype(target_cell);
                 self.write_string(f, &target_cell.kind)?;
-                write!(f, " {{\n")?;
+                writeln!(f, " {{")?;
                 for (param, value) in prototype.params.iter().zip(target_cell.params.iter()) {
                     write_cell_argument(f, "p", &param.name)?;
                     write_param_value(f, value)?;
-                    write!(f, "\n")?;
+                    writeln!(f)?;
                 }
                 for input in &prototype.inputs {
                     write_cell_argument(f, "i", &input.name)?;
                     self.write_value(f, &target_cell.inputs.slice(input.range.clone()))?;
-                    write!(f, "\n")?;
+                    writeln!(f)?;
                 }
                 for io in &prototype.ios {
                     write_cell_argument(f, "io", &io.name)?;
                     self.write_io_value(f, &target_cell.ios.slice(io.range.clone()))?;
-                    write!(f, "\n")?;
+                    writeln!(f)?;
                 }
                 write!(f, "}}")?;
             }
@@ -448,13 +479,13 @@ impl Design {
         Ok(())
     }
 
-    pub fn display_net<'a>(&'a self, net: impl Into<Net>) -> impl Display + 'a {
+    pub fn display_net(&self, net: impl Into<Net>) -> impl Display + '_ {
         let net = net.into();
         DisplayFn(self, move |design: &Design, f| design.write_net(f, net))
     }
 
     pub fn display_value<'a, 'b: 'a>(&'a self, value: impl Into<Cow<'b, Value>>) -> impl Display + 'a {
-        let value = value.into().to_owned();
+        let value = value.into();
         DisplayFn(self, move |design: &Design, f| design.write_value(f, &value))
     }
 
@@ -474,24 +505,24 @@ impl Display for Design {
                 write!(f, "=")?;
                 self.write_string(f, &value)?;
             }
-            write!(f, "\n")?;
+            writeln!(f)?;
         }
 
         for (name, io_value) in self.iter_ios() {
-            write!(f, "#")?;
+            write!(f, "&")?;
             self.write_string(f, name)?;
-            write!(f, ":{}\n", io_value.len())?;
+            writeln!(f, ":{}", io_value.len())?;
         }
 
         if f.alternate() {
             for cell_ref in self.iter_cells() {
                 self.write_cell(f, cell_ref)?;
-                write!(f, "\n")?;
+                writeln!(f)?;
             }
         } else {
             for cell_ref in self.iter_cells_topo() {
                 self.write_cell(f, cell_ref)?;
-                write!(f, "\n")?;
+                writeln!(f)?;
             }
         }
 

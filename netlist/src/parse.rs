@@ -98,10 +98,6 @@ fn parse_decimal<T: FromStr>(t: &mut WithContext<impl Tokens<Item = char>, Conte
     t.take_while(|c| c.is_digit(10) || *c == '-').parse::<T, String>().ok()
 }
 
-fn parse_binary(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<usize> {
-    usize::from_str_radix(&t.take_while(|c| c.is_digit(2)).collect::<String>(), 2).ok()
-}
-
 fn parse_string_char(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<u8> {
     match t.next() {
         Some('"' | '\\') => None,
@@ -169,7 +165,7 @@ fn parse_keyword_eq_expect(t: &mut WithContext<impl Tokens<Item = char>, Context
 }
 
 fn parse_io_name(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<String> {
-    parse_symbol(t, '#')?;
+    parse_symbol(t, '&')?;
     parse_string(t)
 }
 
@@ -189,14 +185,14 @@ fn parse_io_name_offset(t: &mut WithContext<impl Tokens<Item = char>, Context>) 
 
 fn parse_io_net(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoNet> {
     one_of!(t;
-        parse_symbol(t, '#').and_then(|()| parse_symbol(t, '_')).map(|()| IoNet::FLOATING),
+        parse_symbol(t, '&').and_then(|()| parse_symbol(t, '_')).map(|()| IoNet::FLOATING),
         parse_io_name_offset(t).map(|(name, offset)| t.context().get_io(name)[offset]),
         parse_io_name(t).map(|name| t.context().get_io_with_width(name, 1)[0])
     )
 }
 
 fn parse_io_value_floating(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
-    parse_symbol(t, '#')?;
+    parse_symbol(t, '&')?;
     parse_symbol(t, '_')?;
     parse_symbol(t, ':')?;
     let size = parse_decimal(t)?;
@@ -355,7 +351,8 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
 
     fn parse_int_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<usize> {
         parse_space(t);
-        parse_binary(t)
+        parse_symbol(t, '#')?;
+        parse_decimal(t)
     }
 
     fn parse_string_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<String> {
@@ -417,7 +414,6 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
             "smod_trunc" => CellRepr::SModTrunc(parse_value_arg(t)?, parse_value_arg(t)?),
             "smod_floor" => CellRepr::SModFloor(parse_value_arg(t)?, parse_value_arg(t)?),
             "match" => {
-                let value = parse_value_arg(t)?;
                 let enable = t
                     .optional(|t| {
                         parse_space(t);
@@ -425,29 +421,36 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         parse_net_arg(t)
                     })
                     .unwrap_or(Net::ONE);
+                let value = parse_value_arg(t)?;
                 let mut patterns = Vec::new();
                 parse_space(t);
-                parse_symbol(t, '[');
+                parse_symbol(t, '{');
                 parse_space(t);
-                parse_symbol(t, '\n')?;
+                parse_symbol(t, '\n');
                 while let Some(()) = t.optional(|t| {
-                    let mut alternates = Vec::new();
-                    while let Some(()) = t.optional(|t| {
-                        parse_space(t);
-                        alternates.push(parse_const(t)?);
-                        Some(())
-                    }) {}
                     parse_space(t);
-                    parse_symbol(t, '\n')?;
+                    let mut alternates = Vec::new();
+                    if let Some(()) = parse_symbol(t, '[') {
+                        while let Some(()) = t.optional(|t| {
+                            parse_space(t);
+                            alternates.push(parse_const(t)?);
+                            Some(())
+                        }) {}
+                        parse_space(t);
+                        parse_symbol(t, ']')?;
+                    } else {
+                        alternates.push(parse_const(t)?);
+                    }
+                    parse_space(t);
+                    parse_symbol(t, '\n');
                     patterns.push(alternates);
                     Some(())
                 }) {}
                 parse_space(t);
-                parse_symbol(t, ']');
+                parse_symbol(t, '}');
                 CellRepr::Match(MatchCell { value, enable, patterns })
             }
             "assign" => {
-                let value = parse_value_arg(t)?;
                 let enable = t
                     .optional(|t| {
                         parse_space(t);
@@ -455,11 +458,13 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         parse_net_arg(t)
                     })
                     .unwrap_or(Net::ONE);
+                let value = parse_value_arg(t)?;
                 let update = parse_value_arg(t)?;
                 let offset = t
                     .optional(|t| {
                         parse_space(t);
                         parse_keyword_eq_expect(t, "at")?;
+                        parse_symbol(t, '#')?;
                         parse_decimal(t)
                     })
                     .unwrap_or(0);
@@ -493,9 +498,11 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
             "memory" => {
                 parse_space(t);
                 parse_keyword_eq_expect(t, "depth")?;
+                parse_symbol(t, '#')?;
                 let depth = parse_decimal(t)?;
                 parse_space(t);
                 parse_keyword_eq_expect(t, "width")?;
+                parse_symbol(t, '#')?;
                 let width = parse_decimal(t)?;
                 parse_space(t);
                 parse_symbol(t, '{')?;
@@ -533,6 +540,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                             let addr = parse_value_arg(t)?;
                             parse_space(t);
                             parse_keyword_eq_expect(t, "width")?;
+                            parse_symbol(t, '#')?;
                             let width = parse_decimal(t)?;
                             let flip_flop = t.optional(|t| {
                                 let clock = parse_control_arg(t, "clk")?;
@@ -672,9 +680,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 }
                 "o" => {
                     let start: usize = parse_decimal(t)?;
-                    parse_space(t);
                     parse_symbol(t, ':')?;
-                    parse_space(t);
                     let end: usize = parse_decimal(t)?;
                     assert!(
                         instance.outputs.insert(name, start..start + end).is_none(),
