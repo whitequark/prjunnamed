@@ -568,8 +568,10 @@ impl ModuleImporter<'_> {
                 let wr_addr = self.port_value(cell, "WR_ADDR");
                 let wr_data = self.port_value(cell, "WR_DATA");
                 let mut wr_port_indices = vec![];
-                assert!(wr_priority_mask.iter().all(|x| x == Trit::Zero));
-                assert!(wr_clk_enable.iter().all(|x| x == Trit::One));
+                if wr_ports != 0 {
+                    assert!(wr_priority_mask.iter().all(|x| x == Trit::Zero));
+                    assert!(wr_clk_enable.iter().all(|x| x == Trit::One));
+                }
                 let mut index = 0;
                 while index < wr_ports {
                     let mut end_index = index + 1;
