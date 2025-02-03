@@ -284,26 +284,27 @@ impl ModuleImporter<'_> {
             "$reduce_and" | "$reduce_or" | "$reduce_xor" | "$reduce_xnor" | "$reduce_bool" | "$logic_not" => {
                 let width = cell.parameters.get("Y_WIDTH").unwrap().as_i32()? as usize;
                 let a = self.port_value(cell, "A");
-                let mut value = match &cell.type_[..] {
+                let net = match &cell.type_[..] {
                     "$reduce_and" => self.design.add_eq(Value::ones(a.len()), a),
                     "$reduce_or" | "$reduce_bool" => self.design.add_ne(Value::zero(a.len()), a),
                     "$reduce_xor" => {
-                        let mut val = Value::zero(1);
+                        let mut net = Net::ZERO;
                         for bit in &a {
-                            val = self.design.add_xor(val, bit);
+                            net = self.design.add_xor1(net, bit);
                         }
-                        val
+                        net
                     }
                     "$reduce_xnor" => {
-                        let mut val = Value::ones(1);
+                        let mut net = Net::ONE;
                         for bit in &a {
-                            val = self.design.add_xor(val, bit);
+                            net = self.design.add_xor1(net, bit);
                         }
-                        val
+                        net
                     }
                     "$logic_not" => self.design.add_eq(Value::zero(a.len()), a),
                     _ => unreachable!(),
                 };
+                let mut value = Value::from(net);
                 if width == 0 {
                     value = Value::EMPTY;
                 } else if width > 1 {
@@ -421,7 +422,7 @@ impl ModuleImporter<'_> {
                 assert_eq!(a_signed, b_signed);
                 let a = self.value_ext(cell, "A", width, a_signed);
                 let b = self.value_ext(cell, "B", width, b_signed);
-                let (mut value, inv) = match &cell.type_[..] {
+                let (mut net, inv) = match &cell.type_[..] {
                     "$lt" if !a_signed => (self.design.add_ult(a, b), false),
                     "$gt" if !a_signed => (self.design.add_ult(b, a), false),
                     "$le" if !a_signed => (self.design.add_ult(b, a), true),
@@ -435,8 +436,9 @@ impl ModuleImporter<'_> {
                     _ => unreachable!(),
                 };
                 if inv {
-                    value = self.design.add_not(value);
+                    net = self.design.add_not1(net);
                 }
+                let mut value = Value::from(net);
                 if y_width == 0 {
                     value = Value::EMPTY;
                 } else if y_width > 1 {

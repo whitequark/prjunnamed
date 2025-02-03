@@ -251,7 +251,7 @@ impl Display for Net {
             Net { index: u32::MAX } => write!(f, "X"),
             _ => {
                 let cell_index = self.index.checked_sub(Net::FIRST_CELL).unwrap();
-                write!(f, "%{cell_index}")
+                write!(f, "%_{cell_index}")
             }
         }
     }

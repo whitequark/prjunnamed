@@ -305,17 +305,17 @@ impl<'a> Iterator for CellIter<'a> {
 macro_rules! builder_fn {
     () => {};
 
-    ($func:ident( $($arg:ident : $ty:ty),+ ) -> $repr:ident $body:tt; $($rest:tt)*) => {
-        pub fn $func(&self, $( $arg: $ty ),+) -> Value {
-            self.add_cell(CellRepr::$repr $body)
+    ($func:ident( $($arg:ident : $argty:ty),+ ) -> $retty:ty : $repr:ident $body:tt; $($rest:tt)*) => {
+        pub fn $func(&self, $( $arg: $argty ),+) -> $retty {
+            self.add_cell(CellRepr::$repr $body).try_into().unwrap()
         }
 
         builder_fn!{ $($rest)* }
     };
 
     // For cells with no output value.
-    ($func:ident( $($arg:ident : $ty:ty),+ ) : $repr:ident $body:tt; $($rest:tt)*) => {
-        pub fn $func(&self, $( $arg: $ty ),+) {
+    ($func:ident( $($arg:ident : $argty:ty),+ ) : $repr:ident $body:tt; $($rest:tt)*) => {
+        pub fn $func(&self, $( $arg: $argty ),+) {
             self.add_cell(CellRepr::$repr $body);
         }
 
@@ -325,67 +325,79 @@ macro_rules! builder_fn {
 
 impl Design {
     builder_fn! {
-        add_buf(arg: impl Into<Value>) ->
+        add_buf(arg: impl Into<Value>) -> Value :
             Buf(arg.into());
-        add_not(arg: impl Into<Value>) ->
+        add_buf1(arg: impl Into<Net>) -> Net :
+            Buf(arg.into().into());
+        add_not(arg: impl Into<Value>) -> Value :
             Not(arg.into());
-        add_and(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_not1(arg: impl Into<Net>) -> Net :
+            Not(arg.into().into());
+        add_and(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             And(arg1.into(), arg2.into());
-        add_or(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_and1(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Net :
+            And(arg1.into().into(), arg2.into().into());
+        add_or(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             Or(arg1.into(), arg2.into());
-        add_xor(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_or1(arg1: impl Into<Net>, arg2: impl Into<Net>) -> Net :
+            Or(arg1.into().into(), arg2.into().into());
+        add_xor(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             Xor(arg1.into(), arg2.into());
-        add_adc(arg1: impl Into<Value>, arg2: impl Into<Value>, arg3: impl Into<Net>) ->
+        add_xor1(arg1: impl Into<Net>, arg2: impl Into<Net>) -> Net :
+            Xor(arg1.into().into(), arg2.into().into());
+        add_adc(arg1: impl Into<Value>, arg2: impl Into<Value>, arg3: impl Into<Net>) -> Value :
             Adc(arg1.into(), arg2.into(), arg3.into());
 
-        add_eq(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_eq(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Net :
             Eq(arg1.into(), arg2.into());
-        add_ult(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_ult(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Net :
             ULt(arg1.into(), arg2.into());
-        add_slt(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_slt(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Net :
             SLt(arg1.into(), arg2.into());
 
-        add_shl(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) ->
+        add_shl(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) -> Value :
             Shl(arg1.into(), arg2.into(), stride);
-        add_ushr(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) ->
+        add_ushr(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) -> Value :
             UShr(arg1.into(), arg2.into(), stride);
-        add_sshr(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) ->
+        add_sshr(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) -> Value :
             SShr(arg1.into(), arg2.into(), stride);
-        add_xshr(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) ->
+        add_xshr(arg1: impl Into<Value>, arg2: impl Into<Value>, stride: u32) -> Value :
             XShr(arg1.into(), arg2.into(), stride);
 
-        add_mul(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_mul(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             Mul(arg1.into(), arg2.into());
-        add_udiv(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_udiv(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             UDiv(arg1.into(), arg2.into());
-        add_umod(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_umod(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             UMod(arg1.into(), arg2.into());
-        add_sdiv_trunc(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_sdiv_trunc(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             SDivTrunc(arg1.into(), arg2.into());
-        add_sdiv_floor(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_sdiv_floor(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             SDivFloor(arg1.into(), arg2.into());
-        add_smod_trunc(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_smod_trunc(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             SModTrunc(arg1.into(), arg2.into());
-        add_smod_floor(arg1: impl Into<Value>, arg2: impl Into<Value>) ->
+        add_smod_floor(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             SModFloor(arg1.into(), arg2.into());
 
-        add_match(arg: impl Into<MatchCell>) ->
+        add_match(arg: impl Into<MatchCell>) -> Value :
             Match(arg.into());
-        add_assign(arg: impl Into<AssignCell>) ->
+        add_assign(arg: impl Into<AssignCell>) -> Value :
             Assign(arg.into());
-        add_dff(arg: impl Into<FlipFlop>) ->
+        add_dff(arg: impl Into<FlipFlop>) -> Value :
             Dff(arg.into());
-        add_memory(arg: impl Into<Memory>) ->
+        add_memory(arg: impl Into<Memory>) -> Value :
             Memory(arg.into());
-        add_iob(arg: impl Into<IoBuffer>) ->
+        add_iob(arg: impl Into<IoBuffer>) -> Value :
             Iob(arg.into());
-        add_other(arg: impl Into<Instance>) ->
+        add_other(arg: impl Into<Instance>) -> Value :
             Other(arg.into());
-        add_target(arg: impl Into<TargetCell>) ->
+        add_target(arg: impl Into<TargetCell>) -> Value :
             Target(arg.into());
 
-        add_input(name: impl Into<String>, width: usize) ->
+        add_input(name: impl Into<String>, width: usize) -> Value :
             Input(name.into(), width);
+        add_input1(name: impl Into<String>) -> Net :
+            Input(name.into(), 1);
         add_output(name: impl Into<String>, value: impl Into<Value>) :
             Output(name.into(), value.into());
         add_name(name: impl Into<String>, value: impl Into<Value>) :
@@ -399,29 +411,9 @@ impl Design {
         }
     }
 
-    pub fn add_ne(&self, arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value {
+    pub fn add_ne(&self, arg1: impl Into<Value>, arg2: impl Into<Value>) -> Net {
         let eq = self.add_eq(arg1, arg2);
-        self.add_not(eq)
-    }
-
-    pub fn add_not1(&self, arg: impl Into<Net>) -> Net {
-        self.add_not(arg.into()).unwrap_net()
-    }
-
-    pub fn add_and1(&self, arg1: impl Into<Net>, arg2: impl Into<Net>) -> Net {
-        self.add_and(arg1.into(), arg2.into()).unwrap_net()
-    }
-
-    pub fn add_or1(&self, arg1: impl Into<Net>, arg2: impl Into<Net>) -> Net {
-        self.add_or(arg1.into(), arg2.into()).unwrap_net()
-    }
-
-    pub fn add_xor1(&self, arg1: impl Into<Net>, arg2: impl Into<Net>) -> Net {
-        self.add_xor(arg1.into(), arg2.into()).unwrap_net()
-    }
-
-    pub fn add_input1(&self, name: impl Into<String>) -> Net {
-        self.add_input(name, 1).unwrap_net()
+        self.add_not1(eq)
     }
 }
 
