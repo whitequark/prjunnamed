@@ -1,11 +1,13 @@
 use prjunnamed_netlist::Design;
 
+mod decision;
 mod simplify;
 mod merge;
 mod split;
 mod lower;
 mod iob_insert;
 
+pub use decision::decision;
 pub use lower::lower;
 pub use iob_insert::iob_insert;
 
