@@ -871,6 +871,7 @@ mod test {
             MatchRow::new(Const::from_str("000"), [y[0]]),
             MatchRow::new(Const::from_str("111"), [y[0]]),
             MatchRow::new(Const::from_str("010"), [y[1]]),
+            MatchRow::new(Const::from_str("XXX"), []),
         ]);
     }
 
@@ -909,6 +910,8 @@ mod test {
         mr.add(MatchRow::new(Const::from_str("00010"), [ya[1], yb[0]]));
         mr.add(MatchRow::new(Const::from_str("11010"), [ya[1], yb[1]]));
         mr.add(MatchRow::new(Const::from_str("XX010"), [ya[1]]));
+        mr.add(MatchRow::new(Const::from_str("XX010"), [ya[1]]));
+        mr.add(MatchRow::new(Const::from_str("XXXXX"), []));
 
         assert_eq!(ml, mr, "\n{ml} != \n{mr}");
     }
