@@ -1,5 +1,19 @@
 use prjunnamed_netlist::{Design, CellRepr, Value, Net, CellRef};
 
+fn lower_horiz_or(design: &Design, value: Value) -> Net {
+    let mut nets = Vec::from_iter(value.iter());
+    while nets.len() > 1 {
+        for chunk in std::mem::take(&mut nets).chunks(2) {
+            if chunk.len() == 2 {
+                nets.push(design.add_or1(chunk[0], chunk[1]))
+            } else {
+                nets.push(chunk[0]);
+            }
+        }
+    }
+    *nets.first().unwrap_or(&Net::ZERO)
+}
+
 fn lower_shift(
     design: &Design,
     cell: CellRef,
@@ -39,11 +53,7 @@ pub fn lower(design: &mut Design) {
                     cell.replace(CellRepr::Buf(Value::ones(1)));
                 } else {
                     let xor = design.add_xor(a, b);
-                    let mut diff = Value::from(xor[0]);
-                    for &net in &xor[1..] {
-                        diff = design.add_or(diff, net);
-                    }
-                    cell.replace(CellRepr::Not(diff));
+                    cell.replace(CellRepr::Not(lower_horiz_or(design, xor).into()));
                 }
             }
             CellRepr::ULt(a, b) => {
