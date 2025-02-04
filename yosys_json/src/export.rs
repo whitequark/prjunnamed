@@ -122,9 +122,9 @@ fn export_module(mut design: Design) -> yosys::Module {
 
         let ys_shift_count = |module: &mut yosys::Module, a: &Value, stride: u32| -> yosys::BitVector {
             if stride == 1 {
-                return indexer.value(a);
+                indexer.value(a)
             } else if stride == 0 {
-                return indexer.value(&Value::zero(1));
+                indexer.value(&Value::zero(1))
             } else {
                 let stride_bits = stride.ilog2() + 1;
                 let stride = Const::from_uint(stride.into(), stride_bits as usize);
@@ -198,8 +198,8 @@ fn export_module(mut design: Design) -> yosys::Module {
                             .param("B_SIGNED", 0)
                             .param("B_WIDTH", arg2.len())
                             .param("Y_WIDTH", output.len())
-                            .input("A", indexer.value(&arg1))
-                            .input("B", indexer.value(&arg2))
+                            .input("A", indexer.value(arg1))
+                            .input("B", indexer.value(arg2))
                             .output("Y", indexer.value(&output))
                             .add_to(&format!("${}", cell_index), &mut ys_module);
                     }
@@ -482,16 +482,16 @@ fn export_module(mut design: Design) -> yosys::Module {
             CellRepr::Other(instance) => {
                 let mut ys_cell = CellDetails::new(&instance.kind);
                 for (name, value) in instance.params.iter() {
-                    ys_cell = ys_cell.param(&name, value);
+                    ys_cell = ys_cell.param(name, value);
                 }
                 for (name, value) in instance.inputs.iter() {
-                    ys_cell = ys_cell.input(&name, indexer.value(&value));
+                    ys_cell = ys_cell.input(name, indexer.value(value));
                 }
                 for (name, value_range) in instance.outputs.iter() {
-                    ys_cell = ys_cell.output(&name, indexer.value(&Value::from(&output[value_range.clone()])));
+                    ys_cell = ys_cell.output(name, indexer.value(&Value::from(&output[value_range.clone()])));
                 }
                 for (name, io_value) in instance.ios.iter() {
-                    ys_cell = ys_cell.inout(&name, indexer.io_value(&io_value));
+                    ys_cell = ys_cell.inout(name, indexer.io_value(io_value));
                 }
                 ys_cell.add_to(&ys_cell_name, &mut ys_module);
             }

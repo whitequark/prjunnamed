@@ -66,7 +66,7 @@ impl Numberer {
         F: Fn(Value, Value) -> CellRepr,
     {
         let (arg1, arg2) = if arg1 <= arg2 { (arg1, arg2) } else { (arg2, arg1) };
-        let cell_repr = rebuild(Value::from(arg1), Value::from(arg2));
+        let cell_repr = rebuild(arg1, arg2);
         self.find_or_insert(cell_repr, out)
     }
 }

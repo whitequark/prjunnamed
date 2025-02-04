@@ -56,7 +56,7 @@ impl NetOrValue for Value {
     }
 
     fn as_const(&self) -> Option<Const> {
-        Value::as_const(&self)
+        Value::as_const(self)
     }
 
     fn try_from(other: impl NetOrValue) -> Option<Self> {

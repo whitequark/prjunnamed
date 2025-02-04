@@ -131,7 +131,7 @@ fn parse_string(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Optio
 
 fn parse_const(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Const> {
     t.take_while(|c| *c == 'X' || *c == '0' || *c == '1').parse::<Const, String>().ok().and_then(|value| {
-        if value.len() > 0 {
+        if !value.is_empty() {
             Some(value)
         } else {
             None
@@ -141,7 +141,7 @@ fn parse_const(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option
 
 fn parse_keyword(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<String> {
     let name: String = t.take_while(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '>')).collect();
-    if name.len() == 0 {
+    if name.is_empty() {
         return None;
     }
     Some(name)

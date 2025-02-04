@@ -19,7 +19,7 @@ pub fn split(design: &mut Design) -> bool {
     // Find roots.
     for cell_ref in design.iter_cells() {
         let cell_repr = cell_ref.repr();
-        if is_root_cell(design, &*cell_repr) {
+        if is_root_cell(design, &cell_repr) {
             cell_repr.visit(|net| {
                 queue.insert(net);
             })
@@ -95,8 +95,8 @@ pub fn split(design: &mut Design) -> bool {
     for cell_ref in design.iter_cells() {
         let cell_repr = cell_ref.repr();
         let cell_output = cell_ref.output();
-        let count_live = cell_output.iter().filter(|net| live_nets.contains(&net)).count();
-        if is_root_cell(design, &*cell_repr) {
+        let count_live = cell_output.iter().filter(|&net| live_nets.contains(&net)).count();
+        if is_root_cell(design, &cell_repr) {
             continue; // root
         } else if count_live == cell_ref.output_len() {
             continue; // fully live
@@ -112,7 +112,7 @@ pub fn split(design: &mut Design) -> bool {
                 cell_output
                     .iter()
                     .enumerate()
-                    .filter(|(_offset, out_net)| live_nets.contains(&out_net))
+                    .filter(|&(_offset, out_net)| live_nets.contains(&out_net))
                     .map(|(offset, _out_net)| arg[offset]),
             )
         };
@@ -121,7 +121,7 @@ pub fn split(design: &mut Design) -> bool {
                 cell_output
                     .iter()
                     .enumerate()
-                    .filter(|(_offset, out_net)| live_nets.contains(&out_net))
+                    .filter(|&(_offset, out_net)| live_nets.contains(&out_net))
                     .map(|(offset, _out_net)| arg[offset]),
             )
         };

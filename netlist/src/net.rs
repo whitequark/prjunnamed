@@ -13,13 +13,17 @@ pub enum Trit {
 }
 
 impl Trit {
-    pub fn from_char(chr: char) -> Self {
+    pub fn from_char(chr: char) -> Result<Self, ()> {
         match chr {
-            '0' => Trit::Zero,
-            '1' => Trit::One,
-            'X' => Trit::Undef,
-            _ => panic!("invalid trit {chr}"),
+            '0' => Ok(Trit::Zero),
+            '1' => Ok(Trit::One),
+            'X' => Ok(Trit::Undef),
+            _ => Err(()),
         }
+    }
+
+    pub fn lit(chr: char) -> Self {
+        Self::from_char(chr).unwrap()
     }
 
     pub fn combine(lft: Trit, rgt: Trit) -> Option<Trit> {

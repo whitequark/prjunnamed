@@ -46,7 +46,7 @@ impl Design {
     }
 
     fn write_value(&self, f: &mut std::fmt::Formatter, value: &Value) -> std::fmt::Result {
-        if value.len() == 0 {
+        if value.is_empty() {
             return write!(f, "{{}}");
         } else if value.len() == 1 {
             return self.write_net(f, value[0]);
@@ -119,7 +119,7 @@ impl Design {
     }
 
     fn write_io_value(&self, f: &mut std::fmt::Formatter, io_value: &IoValue) -> std::fmt::Result {
-        if io_value.len() == 0 {
+        if io_value.is_empty() {
             write!(f, "{{}}")
         } else if io_value.len() == 1 {
             self.write_io_net(f, io_value[0])

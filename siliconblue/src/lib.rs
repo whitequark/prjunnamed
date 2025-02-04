@@ -690,16 +690,16 @@ impl SiliconBlueTarget {
                     let mut target_cell = TargetCell::new(SB_IO, prototype);
                     if io_buffer.enable.is_always(false) {
                         // no output
-                        prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::from_str("000001"));
+                        prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::lit("000001"));
                     } else if io_buffer.enable.is_always(true) {
                         // always-on output
                         prototype.apply_input(&mut target_cell, "D_OUT_0", io_buffer.output[bit_index]);
-                        prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::from_str("011001"));
+                        prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::lit("011001"));
                     } else {
                         // tristate output
                         prototype.apply_input(&mut target_cell, "D_OUT_0", io_buffer.output[bit_index]);
                         prototype.apply_input(&mut target_cell, "OUTPUT_ENABLE", enable);
-                        prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::from_str("101001"));
+                        prototype.apply_param(&mut target_cell, "PIN_TYPE", Const::lit("101001"));
                     }
                     prototype.apply_io(&mut target_cell, "PACKAGE_PIN", io_buffer.io[bit_index]);
                     let target_output = design.add_target(target_cell);
@@ -883,7 +883,7 @@ impl SiliconBlueTarget {
                     // TODO: check if doable in one step
                     let output = cell.output();
                     let carry = &adc_carries[&cell];
-                    let mut max_depth = net_dispositions.get(&ci).map(NetDisposition::depth).unwrap_or(0);
+                    let mut max_depth = net_dispositions.get(ci).map(NetDisposition::depth).unwrap_or(0);
                     for index in 0..output.len() - 1 {
                         for net in [arg1[index], arg2[index]] {
                             max_depth =
@@ -895,7 +895,7 @@ impl SiliconBlueTarget {
                                 max_depth + 1,
                                 Lut::new_fixed(
                                     Value::from_iter([Net::UNDEF, arg1[index], arg2[index], carry[index]]),
-                                    Const::from_str("1100001100111100"),
+                                    Const::lit("1100001100111100"),
                                 ),
                                 carry[index],
                                 carry[index + 1],

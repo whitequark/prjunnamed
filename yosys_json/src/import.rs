@@ -371,12 +371,10 @@ impl ModuleImporter<'_> {
                     if cell.type_ == "$shiftx" {
                         let a_width = a.len();
                         a = a.concat(Value::undef(width - a_width))
+                    } else if a_signed {
+                        a = a.sext(width);
                     } else {
-                        if a_signed {
-                            a = a.sext(width);
-                        } else {
-                            a = a.zext(width);
-                        }
+                        a = a.zext(width);
                     }
                 }
                 let b = self.port_value(cell, "B");

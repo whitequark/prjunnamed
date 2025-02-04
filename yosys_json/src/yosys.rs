@@ -264,7 +264,7 @@ impl TryFrom<JsonValue> for MetadataValue {
 
     fn try_from(value: JsonValue) -> Result<Self, Self::Error> {
         if let Some(value) = value.as_str() {
-            Ok(match MetadataValueClass::compute(&value) {
+            Ok(match MetadataValueClass::compute(value) {
                 MetadataValueClass::Bits => MetadataValue::Const(
                     value
                         .chars()

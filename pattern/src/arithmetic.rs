@@ -14,7 +14,7 @@ impl<P1: Pattern<Value>, P2: Pattern<Value>, P3: Pattern<Net>> Pattern<Value> fo
     type Capture = (Value, P1::Capture, P2::Capture, P3::Capture);
 
     fn execute(&self, design: &Design, target: &Value) -> Option<Self::Capture> {
-        if target.len() == 0 {
+        if target.is_empty() {
             return None;
         }
         let (cap1, cap2, cap3);

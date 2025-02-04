@@ -246,16 +246,14 @@ pub fn verify_transformation(design: &mut Design, transform: impl FnOnce(&mut De
         Response::Unsat => Ok(()),
         Response::Sat => {
             let environment: HashMap<SExpr, SExpr> = HashMap::from_iter(
-                context
-                    .get_value(
-                        inputs_before
-                            .values()
-                            .chain(outputs_before.values())
-                            .chain(outputs_after.values())
-                            .map(|x| *x)
-                            .collect(),
-                    )?
-                    .into_iter(),
+                context.get_value(
+                    inputs_before
+                        .values()
+                        .chain(outputs_before.values())
+                        .chain(outputs_after.values())
+                        .copied()
+                        .collect(),
+                )?,
             );
             let get_value = |mangled: SExpr| {
                 let value_sexpr = environment.get(&mangled).expect("solver should return a value");

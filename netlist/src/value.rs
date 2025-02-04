@@ -88,8 +88,8 @@ impl Const {
         Some(res)
     }
 
-    pub fn from_str(value: &str) -> Self {
-        value.parse().expect("invalid constant")
+    pub fn lit(value: &str) -> Self {
+        value.parse().unwrap()
     }
 
     pub fn len(&self) -> usize {
@@ -100,7 +100,7 @@ impl Const {
         self.trits.is_empty()
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Trit> + DoubleEndedIterator + ExactSizeIterator + 'a {
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Trit> + ExactSizeIterator + '_ {
         self.trits.iter().copied()
     }
 
@@ -294,9 +294,8 @@ impl FromStr for Const {
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut trits = vec![];
-        let mut chars = s.chars();
-        while let Some(char) = chars.next() {
-            trits.push(Trit::from_str(&String::from(char))?)
+        for char in s.chars() {
+            trits.push(Trit::from_char(char)?)
         }
         trits.reverse();
         Ok(Const { trits })
@@ -364,13 +363,13 @@ impl<'a> From<&'a Const> for Cow<'a, Const> {
     }
 }
 
-impl<'a> From<Const> for Cow<'a, Const> {
+impl From<Const> for Cow<'_, Const> {
     fn from(value: Const) -> Self {
         Cow::Owned(value)
     }
 }
 
-impl<'a> From<Trit> for Cow<'a, Const> {
+impl From<Trit> for Cow<'_, Const> {
     fn from(value: Trit) -> Self {
         Cow::Owned(Const::from(value))
     }
@@ -437,8 +436,16 @@ impl Value {
         self.nets.len()
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = Net> + DoubleEndedIterator + ExactSizeIterator + 'a {
+    pub fn is_empty(&self) -> bool {
+        self.nets.is_empty()
+    }
+
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Net> + ExactSizeIterator + '_ {
         self.nets.iter().copied()
+    }
+
+    pub fn push(&mut self, net: impl Into<Net>) {
+        self.nets.push(net.into());
     }
 
     pub fn is_undef(&self) -> bool {
@@ -503,7 +510,7 @@ impl Value {
     }
 
     pub fn sext(&self, width: usize) -> Self {
-        assert!(self.len() > 0);
+        assert!(!self.is_empty());
         assert!(width >= self.len());
         Self::from_iter(self.iter().chain(std::iter::repeat_n(self[self.len() - 1], width - self.len())))
     }
@@ -513,11 +520,11 @@ impl Value {
         if other.has_undef() {
             return Value::undef(self.len());
         }
-        let shcnt = shift_count(&*other, stride);
+        let shcnt = shift_count(&other, stride);
         if shcnt >= self.len() {
             return Value::zero(self.len());
         }
-        return Value::zero(shcnt).concat(Value::from(&self[..self.len() - shcnt]));
+        Value::zero(shcnt).concat(Value::from(&self[..self.len() - shcnt]))
     }
 
     pub fn ushr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -525,11 +532,11 @@ impl Value {
         if other.has_undef() {
             return Value::undef(self.len());
         }
-        let shcnt = shift_count(&*other, stride);
+        let shcnt = shift_count(&other, stride);
         if shcnt >= self.len() {
             return Value::zero(self.len());
         }
-        return Value::from(&self[shcnt..]).zext(self.len());
+        Value::from(&self[shcnt..]).zext(self.len())
     }
 
     pub fn sshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -537,11 +544,11 @@ impl Value {
         if other.has_undef() {
             return Value::undef(self.len());
         }
-        let shcnt = shift_count(&*other, stride);
+        let shcnt = shift_count(&other, stride);
         if shcnt >= self.len() {
             return Value::from(self.msb()).sext(self.len());
         }
-        return Value::from(&self[shcnt..]).sext(self.len());
+        Value::from(&self[shcnt..]).sext(self.len())
     }
 
     pub fn xshr<'a>(&self, other: impl Into<Cow<'a, Const>>, stride: u32) -> Value {
@@ -549,11 +556,11 @@ impl Value {
         if other.has_undef() {
             return Value::undef(self.len());
         }
-        let shcnt = shift_count(&*other, stride);
+        let shcnt = shift_count(&other, stride);
         if shcnt >= self.len() {
             return Value::undef(self.len());
         }
-        return Value::from(&self[shcnt..]).concat(Value::undef(shcnt));
+        Value::from(&self[shcnt..]).concat(Value::undef(shcnt))
     }
 
     pub fn visit(&self, mut f: impl FnMut(Net)) {
@@ -585,7 +592,7 @@ impl Debug for Value {
 
 impl Display for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        if self.len() == 0 {
+        if self.is_empty() {
             write!(f, "{{}}")
         } else if self.len() == 1 {
             write!(f, "{}", self[0])
@@ -742,28 +749,28 @@ mod test {
     #[test]
     fn test_not() {
         for (a, y) in [("", ""), ("01", "10"), ("X10", "X01")] {
-            assert_eq!(Const::from_str(a).not(), Const::from_str(y));
+            assert_eq!(Const::lit(a).not(), Const::lit(y));
         }
     }
 
     #[test]
     fn test_and() {
         for (a, b, y) in [("", "", ""), ("1010", "1100", "1000"), ("X0X0", "XX00", "X000"), ("X1X1", "XX11", "XXX1")] {
-            assert_eq!(Const::from_str(a).and(Const::from_str(b)), Const::from_str(y));
+            assert_eq!(Const::lit(a).and(Const::lit(b)), Const::lit(y));
         }
     }
 
     #[test]
     fn test_or() {
         for (a, b, y) in [("", "", ""), ("1010", "1100", "1110"), ("X0X0", "XX00", "XXX0"), ("X1X1", "XX11", "X111")] {
-            assert_eq!(Const::from_str(a).or(Const::from_str(b)), Const::from_str(y));
+            assert_eq!(Const::lit(a).or(Const::lit(b)), Const::lit(y));
         }
     }
 
     #[test]
     fn test_xor() {
         for (a, b, y) in [("", "", ""), ("1010", "1100", "0110"), ("X0X0", "XX00", "XXX0"), ("X1X1", "XX11", "XXX0")] {
-            assert_eq!(Const::from_str(a).xor(Const::from_str(b)), Const::from_str(y));
+            assert_eq!(Const::lit(a).xor(Const::lit(b)), Const::lit(y));
         }
     }
 
@@ -775,7 +782,7 @@ mod test {
             ('1', "XXX101010", "X10XX1100", "XXX101010"),
             ('X', "XXX101010", "X10XX1100", "XXXXX1XX0"),
         ] {
-            assert_eq!(Trit::from_char(s).mux(Const::from_str(a), Const::from_str(b)), Const::from_str(y));
+            assert_eq!(Trit::lit(s).mux(Const::lit(a), Const::lit(b)), Const::lit(y));
         }
     }
 
@@ -788,14 +795,14 @@ mod test {
             ("1101", "1111", '1', "11101"),
             ("1010X010", "11001100", '0', "XXXXXX110"),
         ] {
-            assert_eq!(Const::from_str(a).adc(Const::from_str(b), Trit::from_char(c)), Const::from_str(y));
+            assert_eq!(Const::lit(a).adc(Const::lit(b), Trit::lit(c)), Const::lit(y));
         }
     }
 
     #[test]
     fn test_mul() {
         for (a, b, y) in [("", "", ""), ("0011", "0011", "1001"), ("0X11", "0011", "XXXX"), ("1101", "1101", "1001")] {
-            assert_eq!(Const::from_str(a).mul(Const::from_str(b)), Const::from_str(y));
+            assert_eq!(Const::lit(a).mul(Const::lit(b)), Const::lit(y));
         }
     }
 }

@@ -185,7 +185,7 @@ impl TargetPrototype {
         let name = name.into();
         let index = self.params.len();
         self.params_by_name.insert(name.clone(), index);
-        self.params.push(TargetParam { name: name.into(), kind, default, index });
+        self.params.push(TargetParam { name, kind, default, index });
         self
     }
 
@@ -205,7 +205,7 @@ impl TargetPrototype {
     }
 
     pub fn add_param_string_enum(self, name: impl Into<String>, variants: &[impl AsRef<str>]) -> Self {
-        let variants = Vec::from_iter(variants.into_iter().map(|s| s.as_ref().to_owned()));
+        let variants = Vec::from_iter(variants.iter().map(|s| s.as_ref().to_owned()));
         let default = variants[0].clone();
         self.add_param_raw(name, TargetParamKind::StringEnum(variants), ParamValue::String(default))
     }

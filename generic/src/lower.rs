@@ -45,7 +45,7 @@ pub fn lower(design: &mut Design) {
     for cell in design.iter_cells() {
         let new_repr = match &*cell.repr() {
             CellRepr::Eq(a, b) => {
-                if a.len() == 0 {
+                if a.is_empty() {
                     CellRepr::Buf(Value::ones(1))
                 } else {
                     let xor = design.add_xor(a, b);

@@ -2,7 +2,6 @@ use std::borrow::Cow;
 use std::fmt::{Debug, Display};
 use std::ops::{Index, IndexMut, Range};
 use std::slice::SliceIndex;
-use std::u32;
 
 #[derive(Clone, Copy, Eq, PartialEq, PartialOrd, Ord, Hash)]
 pub struct IoNet {
@@ -55,7 +54,11 @@ impl IoValue {
         self.nets.len()
     }
 
-    pub fn iter<'a>(&'a self) -> impl Iterator<Item = IoNet> + DoubleEndedIterator + ExactSizeIterator + 'a {
+    pub fn is_empty(&self) -> bool {
+        self.nets.is_empty()
+    }
+
+    pub fn iter(&self) -> impl DoubleEndedIterator<Item = IoNet> + ExactSizeIterator + '_ {
         self.nets.iter().copied()
     }
 

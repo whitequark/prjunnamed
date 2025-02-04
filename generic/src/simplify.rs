@@ -443,11 +443,11 @@ mod test {
     }
 
     fn iter_interesting_consts() -> impl Iterator<Item = Const> {
-        ["0", "1", "X", "00", "11", "XX", "01", "10"].into_iter().map(Const::from_str)
+        ["0", "1", "X", "00", "11", "XX", "01", "10"].into_iter().map(Const::lit)
     }
 
     fn iter_has_undef_consts() -> impl Iterator<Item = Const> {
-        ["X", "XX", "0X", "X1"].into_iter().map(Const::from_str)
+        ["X", "XX", "0X", "X1"].into_iter().map(Const::lit)
     }
 
     fn iter_interesting_const_pairs() -> impl Iterator<Item = (Const, Const)> {
@@ -900,8 +900,8 @@ mod test {
         let a = design.add_input("a", 4);
         let b = design.add_input("b", 4);
         let y = design.add_adc(
-            Value::from(Const::from_str("0111")).concat(&a),
-            Value::from(Const::from_str("1101")).concat(&b),
+            Value::from(Const::lit("0111")).concat(&a),
+            Value::from(Const::lit("1101")).concat(&b),
             Net::ZERO,
         );
         design.add_output("y", y);
@@ -915,7 +915,7 @@ mod test {
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
         let y = gold.add_adc(a, b, Net::ONE);
-        gold.add_output("y", Value::from(Const::from_str("0100")).concat(&y));
+        gold.add_output("y", Value::from(Const::lit("0100")).concat(&y));
         gold.apply();
         assert_isomorphic!(design, gold);
     }
@@ -947,7 +947,7 @@ mod test {
         let mut design = Design::new();
         let a = design.add_input("a", 8);
         let b = design.add_input("b", 4);
-        let y = design.add_adc(a, Value::from(Const::from_str("1111")).concat(&b), Net::ONE);
+        let y = design.add_adc(a, Value::from(Const::lit("1111")).concat(&b), Net::ONE);
         design.add_output("y", y);
         design.apply();
         verify_transformation(&mut design, |design| {

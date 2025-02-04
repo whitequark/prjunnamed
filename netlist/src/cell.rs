@@ -98,12 +98,12 @@ impl CellRepr {
             | CellRepr::SModTrunc(arg1, arg2)
             | CellRepr::SModFloor(arg1, arg2) => {
                 assert_eq!(arg1.len(), arg2.len());
-                assert!(arg1.len() > 0);
+                assert!(!arg1.is_empty());
             }
 
             CellRepr::Shl(_, _, _) => (),
             CellRepr::UShr(_, _, _) => (),
-            CellRepr::SShr(arg1, _, _) => assert!(arg1.len() > 0),
+            CellRepr::SShr(arg1, _, _) => assert!(!arg1.is_empty()),
             CellRepr::XShr(_, _, _) => (),
 
             CellRepr::Match(match_cell) => {
@@ -218,7 +218,7 @@ impl From<CellRepr> for Cow<'_, CellRepr> {
 }
 
 impl Cell {
-    pub fn repr<'a>(&'a self) -> Cow<'a, CellRepr> {
+    pub fn repr(&self) -> Cow<'_, CellRepr> {
         match *self {
             Cell::Void | Cell::Skip(_) => unreachable!(),
 
@@ -345,7 +345,7 @@ impl CellRepr {
             CellRepr::Target(target_cell) => target_cell.output_len,
             CellRepr::Other(instance) => instance.output_len(),
 
-            CellRepr::Input(_, width) => *width as usize,
+            CellRepr::Input(_, width) => *width,
             CellRepr::Output(_, _) => 0,
             CellRepr::Name(_, _) => 0,
         }

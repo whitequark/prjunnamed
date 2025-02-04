@@ -99,12 +99,12 @@ impl Lut {
         let cell_repr = cell_repr.into();
         assert_eq!(cell_repr.output_len(), 1);
         Some(match &*cell_repr {
-            CellRepr::Buf(arg) => Self::lut1(arg[0], Const::from_str("10")),
-            CellRepr::Not(arg) => Self::lut1(arg[0], Const::from_str("01")),
-            CellRepr::And(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::from_str("1000")),
-            CellRepr::Or(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::from_str("1110")),
-            CellRepr::Xor(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::from_str("0110")),
-            CellRepr::Mux(arg1, arg2, arg3) => Self::lut3(arg3[0], arg2[0], *arg1, Const::from_str("11001010")),
+            CellRepr::Buf(arg) => Self::lut1(arg[0], Const::lit("10")),
+            CellRepr::Not(arg) => Self::lut1(arg[0], Const::lit("01")),
+            CellRepr::And(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::lit("1000")),
+            CellRepr::Or(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::lit("1110")),
+            CellRepr::Xor(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::lit("0110")),
+            CellRepr::Mux(arg1, arg2, arg3) => Self::lut3(arg3[0], arg2[0], *arg1, Const::lit("11001010")),
             _ => return None,
         })
     }

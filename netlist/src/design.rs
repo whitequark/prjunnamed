@@ -157,8 +157,8 @@ impl Design {
         let mapped_net = *changes.replaced_nets.get(&net).unwrap_or(&net);
         // Assume the caller might want to locate the cell behind the net.
         match mapped_net.as_cell() {
-            Some(index) if index >= self.cells.len() => return net,
-            _ => return mapped_net,
+            Some(index) if index >= self.cells.len() => net,
+            _ => mapped_net,
         }
     }
 
@@ -233,7 +233,7 @@ impl Ord for CellRef<'_> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match (self.design as *const Design).cmp(&(other.design as *const Design)) {
             core::cmp::Ordering::Equal => self.index.cmp(&other.index),
-            ord => return ord,
+            ord => ord,
         }
     }
 }
@@ -263,7 +263,7 @@ impl<'a> CellRef<'a> {
 
     pub fn replace(&self, to_cell: CellRepr) {
         if *self.design.cells[self.index].repr() != to_cell {
-            to_cell.validate(&self.design);
+            to_cell.validate(self.design);
             let mut changes = self.design.changes.borrow_mut();
             assert!(changes.replaced_cells.insert(self.index, to_cell).is_none());
         }
@@ -335,7 +335,7 @@ impl Design {
             Not(arg.into().into());
         add_and(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             And(arg1.into(), arg2.into());
-        add_and1(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Net :
+        add_and1(arg1: impl Into<Net>, arg2: impl Into<Net>) -> Net :
             And(arg1.into().into(), arg2.into().into());
         add_or(arg1: impl Into<Value>, arg2: impl Into<Value>) -> Value :
             Or(arg1.into(), arg2.into());
@@ -411,6 +411,17 @@ impl Design {
         }
     }
 
+    pub fn add_mux1(&self, arg1: impl Into<ControlNet>, arg2: impl Into<Net>, arg3: impl Into<Net>) -> Net {
+        match arg1.into() {
+            ControlNet::Pos(net) => {
+                self.add_cell(CellRepr::Mux(net, arg2.into().into(), arg3.into().into())).unwrap_net()
+            }
+            ControlNet::Neg(net) => {
+                self.add_cell(CellRepr::Mux(net, arg3.into().into(), arg2.into().into())).unwrap_net()
+            }
+        }
+    }
+
     pub fn add_ne(&self, arg1: impl Into<Value>, arg2: impl Into<Value>) -> Net {
         let eq = self.add_eq(arg1, arg2);
         self.add_not1(eq)
@@ -418,7 +429,7 @@ impl Design {
 }
 
 impl Design {
-    pub fn iter_cells_topo<'a>(&'a self) -> impl DoubleEndedIterator<Item = CellRef<'a>> {
+    pub fn iter_cells_topo(&self) -> impl DoubleEndedIterator<Item = CellRef<'_>> {
         fn get_deps(design: &Design, cell: CellRef) -> BTreeSet<usize> {
             let mut result = BTreeSet::new();
             cell.visit(|net| {

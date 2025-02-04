@@ -548,7 +548,7 @@ mod test {
         }
 
         fn pat(&self, pattern: &str) -> Const {
-            Const::from_iter(pattern.chars().map(|c| Trit::from_char(c)))
+            Const::from_iter(pattern.chars().map(Trit::lit))
         }
 
         fn val(&self, width: usize) -> Value {
@@ -656,31 +656,31 @@ mod test {
         let h = Helper::new();
         let n = h.net();
 
-        let mut m00 = MatchMatrix::new(&Value::from(Const::from_str("0")));
+        let mut m00 = MatchMatrix::new(&Value::from(Const::lit("0")));
         m00.add(MatchRow::new(h.pat("0"), [n]));
 
-        let mut m01 = MatchMatrix::new(&Value::from(Const::from_str("0")));
+        let mut m01 = MatchMatrix::new(&Value::from(Const::lit("0")));
         m01.add(MatchRow::new(h.pat("1"), [n]));
 
-        let mut m0X = MatchMatrix::new(&Value::from(Const::from_str("0")));
+        let mut m0X = MatchMatrix::new(&Value::from(Const::lit("0")));
         m0X.add(MatchRow::new(h.pat("X"), [n]));
 
-        let mut m10 = MatchMatrix::new(&Value::from(Const::from_str("1")));
+        let mut m10 = MatchMatrix::new(&Value::from(Const::lit("1")));
         m10.add(MatchRow::new(h.pat("0"), [n]));
 
-        let mut m11 = MatchMatrix::new(&Value::from(Const::from_str("1")));
+        let mut m11 = MatchMatrix::new(&Value::from(Const::lit("1")));
         m11.add(MatchRow::new(h.pat("1"), [n]));
 
-        let mut m1X = MatchMatrix::new(&Value::from(Const::from_str("1")));
+        let mut m1X = MatchMatrix::new(&Value::from(Const::lit("1")));
         m1X.add(MatchRow::new(h.pat("X"), [n]));
 
-        let mut mX0 = MatchMatrix::new(&Value::from(Const::from_str("X")));
+        let mut mX0 = MatchMatrix::new(&Value::from(Const::lit("X")));
         mX0.add(MatchRow::new(h.pat("0"), [n]));
 
-        let mut mX1 = MatchMatrix::new(&Value::from(Const::from_str("X")));
+        let mut mX1 = MatchMatrix::new(&Value::from(Const::lit("X")));
         mX1.add(MatchRow::new(h.pat("1"), [n]));
 
-        let mut mXX = MatchMatrix::new(&Value::from(Const::from_str("X")));
+        let mut mXX = MatchMatrix::new(&Value::from(Const::lit("X")));
         mXX.add(MatchRow::new(h.pat("X"), [n]));
 
         for must_reject in [m01, m10, mX0, mX1] {
@@ -870,7 +870,7 @@ mod test {
         let y = design.add_match(MatchCell {
             value: a.clone(),
             enable: Net::ONE,
-            patterns: vec![vec![Const::from_str("000"), Const::from_str("111")], vec![Const::from_str("010")]],
+            patterns: vec![vec![Const::lit("000"), Const::lit("111")], vec![Const::lit("010")]],
         });
         let yy = design.add_buf(&y);
         design.add_output("y", &yy);
@@ -881,12 +881,15 @@ mod test {
 
         let CellRepr::Buf(y) = &*design.find_cell(yy[0]).unwrap().0.repr() else { unreachable!() };
         assert_eq!(m.value, a);
-        assert_eq!(m.rows, vec![
-            MatchRow::new(Const::from_str("000"), [y[0]]),
-            MatchRow::new(Const::from_str("111"), [y[0]]),
-            MatchRow::new(Const::from_str("010"), [y[1]]),
-            MatchRow::new(Const::from_str("XXX"), []),
-        ]);
+        assert_eq!(
+            m.rows,
+            vec![
+                MatchRow::new(Const::lit("000"), [y[0]]),
+                MatchRow::new(Const::lit("111"), [y[0]]),
+                MatchRow::new(Const::lit("010"), [y[1]]),
+                MatchRow::new(Const::lit("XXX"), []),
+            ]
+        );
     }
 
     #[test]
@@ -897,12 +900,12 @@ mod test {
         let ya = design.add_match(MatchCell {
             value: a.clone(),
             enable: Net::ONE,
-            patterns: vec![vec![Const::from_str("000"), Const::from_str("111")], vec![Const::from_str("010")]],
+            patterns: vec![vec![Const::lit("000"), Const::lit("111")], vec![Const::lit("010")]],
         });
         let yb = design.add_match(MatchCell {
             value: b.clone(),
             enable: ya[1],
-            patterns: vec![vec![Const::from_str("00")], vec![Const::from_str("11")]],
+            patterns: vec![vec![Const::lit("00")], vec![Const::lit("11")]],
         });
         let yya = design.add_buf(&ya);
         let yyb = design.add_buf(&yb);
@@ -919,13 +922,13 @@ mod test {
         let CellRepr::Buf(ya) = &*design.find_cell(yya[0]).unwrap().0.repr() else { unreachable!() };
         let CellRepr::Buf(yb) = &*design.find_cell(yyb[0]).unwrap().0.repr() else { unreachable!() };
         let mut mr = MatchMatrix::new(a.concat(b));
-        mr.add(MatchRow::new(Const::from_str("XX000"), [ya[0]]));
-        mr.add(MatchRow::new(Const::from_str("XX111"), [ya[0]]));
-        mr.add(MatchRow::new(Const::from_str("00010"), [ya[1], yb[0]]));
-        mr.add(MatchRow::new(Const::from_str("11010"), [ya[1], yb[1]]));
-        mr.add(MatchRow::new(Const::from_str("XX010"), [ya[1]]));
-        mr.add(MatchRow::new(Const::from_str("XX010"), [ya[1]]));
-        mr.add(MatchRow::new(Const::from_str("XXXXX"), []));
+        mr.add(MatchRow::new(Const::lit("XX000"), [ya[0]]));
+        mr.add(MatchRow::new(Const::lit("XX111"), [ya[0]]));
+        mr.add(MatchRow::new(Const::lit("00010"), [ya[1], yb[0]]));
+        mr.add(MatchRow::new(Const::lit("11010"), [ya[1], yb[1]]));
+        mr.add(MatchRow::new(Const::lit("XX010"), [ya[1]]));
+        mr.add(MatchRow::new(Const::lit("XX010"), [ya[1]]));
+        mr.add(MatchRow::new(Const::lit("XXXXX"), []));
 
         assert_eq!(ml, mr, "\n{ml} != \n{mr}");
     }
