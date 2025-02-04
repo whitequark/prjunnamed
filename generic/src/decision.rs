@@ -312,10 +312,15 @@ fn match_tree_into_matrix(
     design: &Design,
     subtrees: &BTreeMap<(CellRef, usize), CellRef>,
     cell_ref: CellRef,
+    enable: Net,
 ) -> MatchMatrix {
     let CellRepr::Match(match_cell) = &*cell_ref.repr() else { unreachable!() };
     let output = design.add_void(match_cell.output_len());
-    design.replace_value(cell_ref.output(), &output);
+    if enable == Net::ONE {
+        design.replace_value(cell_ref.output(), &output);
+    } else {
+        design.replace_value(cell_ref.output(), design.add_mux(enable, &output, Const::zero(output.len())));
+    }
 
     // Create matrix for this cell.
     let mut matrix = MatchMatrix::new(&match_cell.value);
@@ -332,7 +337,7 @@ fn match_tree_into_matrix(
     // Create matrices for subtrees and merge them into the matrix for this cell.
     for (offset, output_net) in output.iter().enumerate() {
         if let Some(&sub_cell_ref) = subtrees.get(&(cell_ref, offset)) {
-            let sub_matrix = match_tree_into_matrix(design, subtrees, sub_cell_ref);
+            let sub_matrix = match_tree_into_matrix(design, subtrees, sub_cell_ref, enable);
             matrix = matrix.merge(output_net, &sub_matrix);
         }
     }
@@ -383,7 +388,8 @@ pub fn decision(design: &mut Design) {
     // Combine each tree of `match` cells into a single match matrix.
     let mut root_matrices = Vec::new();
     for root_cell_ref in roots {
-        root_matrices.push(match_tree_into_matrix(design, &subtrees, root_cell_ref));
+        let CellRepr::Match(MatchCell { enable, .. }) = &*root_cell_ref.repr() else { unreachable!() };
+        root_matrices.push(match_tree_into_matrix(design, &subtrees, root_cell_ref, *enable));
     }
 
     // Compute the decision tree(s) for each of the root matrices and translate them to logic gates.
@@ -870,7 +876,7 @@ mod test {
         design.add_output("y", &yy);
         design.apply();
 
-        let m = match_tree_into_matrix(&design, &BTreeMap::new(), design.find_cell(y[0]).unwrap().0);
+        let m = match_tree_into_matrix(&design, &BTreeMap::new(), design.find_cell(y[0]).unwrap().0, Net::ONE);
         design.apply();
 
         let CellRepr::Buf(y) = &*design.find_cell(yy[0]).unwrap().0.repr() else { unreachable!() };
@@ -907,7 +913,7 @@ mod test {
         let mut subtrees = BTreeMap::new();
         subtrees.insert(design.find_cell(ya[1]).unwrap(), design.find_cell(yb[0]).unwrap().0);
 
-        let ml = match_tree_into_matrix(&design, &subtrees, design.find_cell(ya[0]).unwrap().0);
+        let ml = match_tree_into_matrix(&design, &subtrees, design.find_cell(ya[0]).unwrap().0, Net::ONE);
         design.apply();
 
         let CellRepr::Buf(ya) = &*design.find_cell(yya[0]).unwrap().0.repr() else { unreachable!() };
