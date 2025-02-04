@@ -14,7 +14,7 @@ pub use value::{Const, Value};
 pub use param::ParamValue;
 pub use io::{IoNet, IoValue};
 pub use cell::{
-    CellRepr, MatchCell, AssignCell, FlipFlop, IoBuffer, Memory, MemoryWritePort, MemoryReadPort, MemoryReadFlipFlop,
+    Cell, MatchCell, AssignCell, FlipFlop, IoBuffer, Memory, MemoryWritePort, MemoryReadPort, MemoryReadFlipFlop,
     MemoryPortRelation, TargetCell, Instance,
 };
 pub use design::{Design, CellRef};

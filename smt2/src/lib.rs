@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io;
 
 use easy_smt::{Context, ContextBuilder, Response, SExpr, SExprData};
-use prjunnamed_netlist::{CellRef, CellRepr, Design, Net, Value};
+use prjunnamed_netlist::{CellRef, Cell, Design, Net, Value};
 
 fn unimplemented_undef() -> ! {
     unimplemented!("SMT emitter does not support X values")
@@ -56,8 +56,8 @@ impl<'a, 'b> SmtEmitter<'a, 'b> {
     }
 
     fn cell_ref(&mut self, cell_ref: CellRef) -> io::Result<SExpr> {
-        let name = match &*cell_ref.repr() {
-            CellRepr::Input(name, _width) => format!("<{}", name),
+        let name = match &*cell_ref.get() {
+            Cell::Input(name, _width) => format!("<{}", name),
             _ => format!("%{}", cell_ref.debug_index()),
         };
         let name = format!("|{}{}|", self.prefix, name);
@@ -71,35 +71,35 @@ impl<'a, 'b> SmtEmitter<'a, 'b> {
     }
 
     fn cell_def(&mut self, cell_ref: CellRef) -> io::Result<()> {
-        let body_sexpr = match &*cell_ref.repr() {
-            CellRepr::Buf(arg) => self.value_ref(arg)?,
-            CellRepr::Not(arg) => {
+        let body_sexpr = match &*cell_ref.get() {
+            Cell::Buf(arg) => self.value_ref(arg)?,
+            Cell::Not(arg) => {
                 let arg_sexpr = self.value_ref(arg)?;
                 self.context.bvnot(arg_sexpr)
             }
-            CellRepr::And(arg1, arg2) => {
+            Cell::And(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvand(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::Or(arg1, arg2) => {
+            Cell::Or(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvor(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::Xor(arg1, arg2) => {
+            Cell::Xor(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvxor(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::Mux(arg1, arg2, arg3) => {
+            Cell::Mux(arg1, arg2, arg3) => {
                 let arg1_sexpr = self.net_ref(*arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 let arg3_sexpr = self.value_ref(arg3)?;
                 let eq1_sexpr = self.context.eq(arg1_sexpr, self.context.binary(1, 1));
                 self.context.ite(eq1_sexpr, arg2_sexpr, arg3_sexpr)
             }
-            CellRepr::Adc(arg1, arg2, arg3) => {
+            Cell::Adc(arg1, arg2, arg3) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 let arg3_sexpr = self.net_ref(*arg3)?;
@@ -111,86 +111,86 @@ impl<'a, 'b> SmtEmitter<'a, 'b> {
                     self.context.concat(self.context.binary(arg1.len(), 0), arg3_sexpr),
                 )
             }
-            CellRepr::Eq(arg1, arg2) => {
+            Cell::Eq(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.eq(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::ULt(arg1, arg2) => {
+            Cell::ULt(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvult(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::SLt(arg1, arg2) => {
+            Cell::SLt(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvslt(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::Shl(arg1, arg2, 1) => {
+            Cell::Shl(arg1, arg2, 1) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvshl(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::UShr(arg1, arg2, 1) => {
+            Cell::UShr(arg1, arg2, 1) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvlshr(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::SShr(arg1, arg2, 1) => {
+            Cell::SShr(arg1, arg2, 1) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvashr(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::XShr(_arg1, _arg2, 1) => unimplemented_undef(),
-            CellRepr::Shl(_, _, _) | CellRepr::UShr(_, _, _) | CellRepr::SShr(_, _, _) | CellRepr::XShr(_, _, _) => {
+            Cell::XShr(_arg1, _arg2, 1) => unimplemented_undef(),
+            Cell::Shl(_, _, _) | Cell::UShr(_, _, _) | Cell::SShr(_, _, _) | Cell::XShr(_, _, _) => {
                 unimplemented!("shifts with non-1 stride are not implemented yet")
             }
-            CellRepr::Mul(arg1, arg2) => {
+            Cell::Mul(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvmul(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::UDiv(arg1, arg2) => {
+            Cell::UDiv(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvudiv(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::UMod(arg1, arg2) => {
+            Cell::UMod(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvurem(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::SDivTrunc(_arg1, _arg2) => {
+            Cell::SDivTrunc(_arg1, _arg2) => {
                 unimplemented!("waiting on https://github.com/elliottt/easy-smt/pull/35");
                 // let arg1_sexpr = self.value_ref(arg1)?;
                 // let arg2_sexpr = self.value_ref(arg2)?;
                 // self.context.bvsdiv(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::SDivFloor(_arg1, _arg2) => todo!(),
-            CellRepr::SModTrunc(arg1, arg2) => {
+            Cell::SDivFloor(_arg1, _arg2) => todo!(),
+            Cell::SModTrunc(arg1, arg2) => {
                 let arg1_sexpr = self.value_ref(arg1)?;
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvsrem(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::SModFloor(_arg1, _arg2) => {
+            Cell::SModFloor(_arg1, _arg2) => {
                 unimplemented!("waiting on https://github.com/elliottt/easy-smt/pull/35");
                 // let arg1_sexpr = self.value_ref(arg1)?;
                 // let arg2_sexpr = self.value_ref(arg2)?;
                 // self.context.bvsmod(arg1_sexpr, arg2_sexpr)
             }
-            CellRepr::Match { .. } => unimplemented!("matches are not implemented yet"),
-            CellRepr::Assign { .. } => unimplemented!("assigns are not implemented yet"),
-            CellRepr::Dff(_flip_flop) => unimplemented!("flip-flops are not implemented yet"),
-            CellRepr::Memory(_memory) => unimplemented!("memories are not implemented yet"),
-            CellRepr::Iob(_io_buffer) => unimplemented!("IOs are not implemented yet"),
-            CellRepr::Other(_instance) => unimplemented!("instances are not implemented yet"),
-            CellRepr::Target(_target_cell) => unimplemented!("target cells are not implemented yet"),
-            CellRepr::Input(name, _width) => {
+            Cell::Match { .. } => unimplemented!("matches are not implemented yet"),
+            Cell::Assign { .. } => unimplemented!("assigns are not implemented yet"),
+            Cell::Dff(_flip_flop) => unimplemented!("flip-flops are not implemented yet"),
+            Cell::Memory(_memory) => unimplemented!("memories are not implemented yet"),
+            Cell::Iob(_io_buffer) => unimplemented!("IOs are not implemented yet"),
+            Cell::Other(_instance) => unimplemented!("instances are not implemented yet"),
+            Cell::Target(_target_cell) => unimplemented!("target cells are not implemented yet"),
+            Cell::Input(name, _width) => {
                 let mangled_name = self.cell_ref(cell_ref)?;
                 self.inputs.insert(name.to_owned(), mangled_name);
                 return Ok(());
             }
-            CellRepr::Output(name, value) => {
+            Cell::Output(name, value) => {
                 let value_sexpr = self.value_ref(value)?;
                 let mangled_name = format!("|{}>{}|", self.prefix, name);
                 let width_sexpr = self.context.numeral(value.len());
@@ -199,7 +199,7 @@ impl<'a, 'b> SmtEmitter<'a, 'b> {
                 self.outputs.insert(name.to_owned(), self.context.atom(mangled_name));
                 return Ok(());
             }
-            CellRepr::Name(_, _value) => {
+            Cell::Name(_, _value) => {
                 return Ok(());
             }
         };
@@ -245,16 +245,9 @@ pub fn verify_transformation(design: &mut Design, transform: impl FnOnce(&mut De
         Response::Unknown => panic!("SMT solver could not confirm or deny correctness"),
         Response::Unsat => Ok(()),
         Response::Sat => {
-            let environment: HashMap<SExpr, SExpr> = HashMap::from_iter(
-                context.get_value(
-                    inputs_before
-                        .values()
-                        .chain(outputs_before.values())
-                        .chain(outputs_after.values())
-                        .copied()
-                        .collect(),
-                )?,
-            );
+            let environment: HashMap<SExpr, SExpr> = HashMap::from_iter(context.get_value(
+                inputs_before.values().chain(outputs_before.values()).chain(outputs_after.values()).copied().collect(),
+            )?);
             let get_value = |mangled: SExpr| {
                 let value_sexpr = environment.get(&mangled).expect("solver should return a value");
                 match context.get(*value_sexpr) {

@@ -1,4 +1,4 @@
-use prjunnamed_netlist::{Design, CellRepr, Value, Net};
+use prjunnamed_netlist::{Design, Cell, Value, Net};
 
 fn add_horiz_or(design: &Design, value: Value) -> Net {
     let mut nets = Vec::from_iter(value.iter());
@@ -21,7 +21,7 @@ fn lower_shift(
     stride: u32,
     shift: impl Fn(&Value, usize) -> Value,
     overflow: Value,
-) -> CellRepr {
+) -> Cell {
     let mut stride = stride as usize;
     let mut value = value.clone();
     for (index, bit) in shcnt.iter().enumerate() {
@@ -38,48 +38,48 @@ fn lower_shift(
             break;
         }
     }
-    CellRepr::Buf(value)
+    Cell::Buf(value)
 }
 
 pub fn lower(design: &mut Design) {
-    for cell in design.iter_cells() {
-        let new_repr = match &*cell.repr() {
-            CellRepr::Eq(a, b) => {
+    for cell_ref in design.iter_cells() {
+        let new_cell = match &*cell_ref.get() {
+            Cell::Eq(a, b) => {
                 if a.is_empty() {
-                    CellRepr::Buf(Value::ones(1))
+                    Cell::Buf(Value::ones(1))
                 } else {
                     let xor = design.add_xor(a, b);
-                    CellRepr::Not(add_horiz_or(design, xor).into())
+                    Cell::Not(add_horiz_or(design, xor).into())
                 }
             }
-            CellRepr::ULt(a, b) => {
+            Cell::ULt(a, b) => {
                 let b_inv = design.add_not(b);
                 let sub = design.add_adc(a, b_inv, Net::ONE);
-                CellRepr::Not(sub.msb().into())
+                Cell::Not(sub.msb().into())
             }
-            CellRepr::SLt(a, b) => {
+            Cell::SLt(a, b) => {
                 let a_inv = a.slice(..a.len() - 1).concat(design.add_not(a.msb()));
                 let b_inv = design.add_not(b.slice(..b.len() - 1)).concat(b.msb());
                 let sub = design.add_adc(a_inv, b_inv, Net::ONE);
-                CellRepr::Not(sub.msb().into())
+                Cell::Not(sub.msb().into())
             }
-            CellRepr::Shl(a, b, stride) => {
+            Cell::Shl(a, b, stride) => {
                 let shift = |value: &Value, shcnt| Value::zero(shcnt).concat(value.slice(..value.len() - shcnt));
                 lower_shift(design, a, b, *stride, shift, Value::zero(a.len()))
             }
-            CellRepr::UShr(a, b, stride) => {
+            Cell::UShr(a, b, stride) => {
                 let shift = |value: &Value, shcnt| value.slice(shcnt..).zext(a.len());
                 lower_shift(design, a, b, *stride, shift, Value::zero(a.len()))
             }
-            CellRepr::SShr(a, b, stride) => {
+            Cell::SShr(a, b, stride) => {
                 let shift = |value: &Value, shcnt| value.slice(shcnt..).sext(a.len());
                 lower_shift(design, a, b, *stride, shift, Value::from(a.msb()).sext(a.len()))
             }
-            CellRepr::XShr(a, b, stride) => {
+            Cell::XShr(a, b, stride) => {
                 let shift = |value: &Value, shcnt| value.slice(shcnt..).concat(Value::undef(shcnt));
                 lower_shift(design, a, b, *stride, shift, Value::undef(a.len()))
             }
-            CellRepr::Mul(a, b) => {
+            Cell::Mul(a, b) => {
                 let mut value = Value::zero(a.len());
                 for (index, bit) in b.iter().enumerate() {
                     value = design.add_adc(
@@ -88,22 +88,22 @@ pub fn lower(design: &mut Design) {
                         Net::ZERO,
                     );
                 }
-                CellRepr::Buf(value.slice(..a.len()))
+                Cell::Buf(value.slice(..a.len()))
             }
-            CellRepr::UDiv(..)
-            | CellRepr::UMod(..)
-            | CellRepr::SDivTrunc(..)
-            | CellRepr::SModTrunc(..)
-            | CellRepr::SDivFloor(..)
-            | CellRepr::SModFloor(..) => {
+            Cell::UDiv(..)
+            | Cell::UMod(..)
+            | Cell::SDivTrunc(..)
+            | Cell::SModTrunc(..)
+            | Cell::SDivFloor(..)
+            | Cell::SModFloor(..) => {
                 todo!()
             }
             _ => continue,
         };
         if cfg!(feature = "trace") {
-            eprintln!(">lower {}", design.display_cell(cell));
+            eprintln!(">lower {}", design.display_cell(cell_ref));
         }
-        cell.replace(new_repr);
+        cell_ref.replace(new_cell);
     }
     design.compact();
 }

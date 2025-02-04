@@ -1,6 +1,6 @@
 use std::collections::BTreeSet;
 
-use prjunnamed_netlist::{CellRepr, Const, Design, FlipFlop, Net, Value};
+use prjunnamed_netlist::{Cell, Const, Design, FlipFlop, Net, Value};
 
 pub fn split(design: &mut Design) -> bool {
     let mut live_nets = BTreeSet::<Net>::new();
@@ -8,9 +8,9 @@ pub fn split(design: &mut Design) -> bool {
 
     // Find roots.
     for cell_ref in design.iter_cells() {
-        let cell_repr = cell_ref.repr();
-        if cell_ref.repr().has_effects(design) {
-            cell_repr.visit(|net| {
+        let cell = cell_ref.get();
+        if cell_ref.get().has_effects(design) {
+            cell.visit(|net| {
                 queue.insert(net);
             })
         }
@@ -23,20 +23,20 @@ pub fn split(design: &mut Design) -> bool {
         }
         live_nets.insert(net);
         if let Ok((cell_ref, offset)) = design.find_cell(net) {
-            match &*cell_ref.repr() {
-                CellRepr::Buf(arg) | CellRepr::Not(arg) => {
+            match &*cell_ref.get() {
+                Cell::Buf(arg) | Cell::Not(arg) => {
                     queue.insert(arg[offset]);
                 }
-                CellRepr::And(arg1, arg2) | CellRepr::Or(arg1, arg2) | CellRepr::Xor(arg1, arg2) => {
+                Cell::And(arg1, arg2) | Cell::Or(arg1, arg2) | Cell::Xor(arg1, arg2) => {
                     queue.insert(arg1[offset]);
                     queue.insert(arg2[offset]);
                 }
-                CellRepr::Mux(arg1, arg2, arg3) => {
+                Cell::Mux(arg1, arg2, arg3) => {
                     queue.insert(*arg1);
                     queue.insert(arg2[offset]);
                     queue.insert(arg3[offset]);
                 }
-                CellRepr::Adc(arg1, arg2, arg3) => {
+                Cell::Adc(arg1, arg2, arg3) => {
                     queue.insert(*arg3);
                     for index in 0..(offset + 1).min(arg1.len()) {
                         queue.insert(arg1[index]);
@@ -44,7 +44,7 @@ pub fn split(design: &mut Design) -> bool {
                     }
                 }
 
-                CellRepr::Shl(arg1, arg2, _) => {
+                Cell::Shl(arg1, arg2, _) => {
                     for index in 0..(offset + 1) {
                         queue.insert(arg1[index]);
                     }
@@ -52,7 +52,7 @@ pub fn split(design: &mut Design) -> bool {
                         queue.insert(net);
                     }
                 }
-                CellRepr::UShr(arg1, arg2, _) | CellRepr::SShr(arg1, arg2, _) | CellRepr::XShr(arg1, arg2, _) => {
+                Cell::UShr(arg1, arg2, _) | Cell::SShr(arg1, arg2, _) | Cell::XShr(arg1, arg2, _) => {
                     for index in offset..(arg1.len()) {
                         queue.insert(arg1[index]);
                     }
@@ -61,14 +61,14 @@ pub fn split(design: &mut Design) -> bool {
                     }
                 }
 
-                CellRepr::Mul(arg1, arg2) => {
+                Cell::Mul(arg1, arg2) => {
                     for index in 0..(offset + 1) {
                         queue.insert(arg1[index]);
                         queue.insert(arg2[index]);
                     }
                 }
 
-                CellRepr::Dff(ff) => {
+                Cell::Dff(ff) => {
                     queue.insert(ff.data[offset]);
                     queue.insert(ff.clock.net());
                     queue.insert(ff.reset.net());
@@ -76,7 +76,7 @@ pub fn split(design: &mut Design) -> bool {
                     queue.insert(ff.enable.net());
                 }
 
-                cell_repr => cell_repr.visit(|net| {
+                cell => cell.visit(|net| {
                     queue.insert(net);
                 }),
             }
@@ -85,10 +85,10 @@ pub fn split(design: &mut Design) -> bool {
 
     // Split partially live cells.
     for cell_ref in design.iter_cells() {
-        let cell_repr = cell_ref.repr();
+        let cell = cell_ref.get();
         let cell_output = cell_ref.output();
         let count_live = cell_output.iter().filter(|net| live_nets.contains(&net)).count();
-        if cell_repr.has_effects(design) {
+        if cell.has_effects(design) {
             continue; // root
         } else if count_live == cell_ref.output_len() {
             continue; // fully live
@@ -117,43 +117,43 @@ pub fn split(design: &mut Design) -> bool {
                     .map(|(offset, _out_net)| arg[offset]),
             )
         };
-        let (from_nets, to_nets) = match &*cell_repr {
-            CellRepr::Buf(arg) => (out_live_nets, design.add_buf(arg_live_nets(arg))),
-            CellRepr::Not(arg) => (out_live_nets, design.add_not(arg_live_nets(arg))),
-            CellRepr::And(arg1, arg2) => (out_live_nets, design.add_and(arg_live_nets(arg1), arg_live_nets(arg2))),
-            CellRepr::Or(arg1, arg2) => (out_live_nets, design.add_or(arg_live_nets(arg1), arg_live_nets(arg2))),
-            CellRepr::Xor(arg1, arg2) => (out_live_nets, design.add_xor(arg_live_nets(arg1), arg_live_nets(arg2))),
-            CellRepr::Mux(arg1, arg2, arg3) => {
+        let (from_nets, to_nets) = match &*cell {
+            Cell::Buf(arg) => (out_live_nets, design.add_buf(arg_live_nets(arg))),
+            Cell::Not(arg) => (out_live_nets, design.add_not(arg_live_nets(arg))),
+            Cell::And(arg1, arg2) => (out_live_nets, design.add_and(arg_live_nets(arg1), arg_live_nets(arg2))),
+            Cell::Or(arg1, arg2) => (out_live_nets, design.add_or(arg_live_nets(arg1), arg_live_nets(arg2))),
+            Cell::Xor(arg1, arg2) => (out_live_nets, design.add_xor(arg_live_nets(arg1), arg_live_nets(arg2))),
+            Cell::Mux(arg1, arg2, arg3) => {
                 (out_live_nets, design.add_mux(*arg1, arg_live_nets(arg2), arg_live_nets(arg3)))
             }
-            CellRepr::Adc(arg1, arg2, arg3) if out_high_dead_count > 1 => {
+            Cell::Adc(arg1, arg2, arg3) if out_high_dead_count > 1 => {
                 let new_width = arg1.len() - (out_high_dead_count - 1);
                 (
                     cell_output.slice(..new_width),
                     design.add_adc(arg1.slice(..new_width), arg2.slice(..new_width), *arg3).slice(..new_width),
                 )
             }
-            CellRepr::Shl(arg1, arg2, stride) if out_high_dead_count > 0 => {
+            Cell::Shl(arg1, arg2, stride) if out_high_dead_count > 0 => {
                 let new_width = arg1.len() - out_high_dead_count;
                 (cell_output.slice(..new_width), design.add_shl(arg1.slice(..new_width), arg2, *stride))
             }
-            CellRepr::UShr(arg1, arg2, stride) if out_low_dead_count > 0 => (
+            Cell::UShr(arg1, arg2, stride) if out_low_dead_count > 0 => (
                 cell_output.slice(out_low_dead_count..),
                 design.add_ushr(arg1.slice(out_low_dead_count..), arg2, *stride),
             ),
-            CellRepr::SShr(arg1, arg2, stride) if out_low_dead_count > 0 => (
+            Cell::SShr(arg1, arg2, stride) if out_low_dead_count > 0 => (
                 cell_output.slice(out_low_dead_count..),
                 design.add_sshr(arg1.slice(out_low_dead_count..), arg2, *stride),
             ),
-            CellRepr::XShr(arg1, arg2, stride) if out_low_dead_count > 0 => (
+            Cell::XShr(arg1, arg2, stride) if out_low_dead_count > 0 => (
                 cell_output.slice(out_low_dead_count..),
                 design.add_xshr(arg1.slice(out_low_dead_count..), arg2, *stride),
             ),
-            CellRepr::Mul(arg1, arg2) if out_high_dead_count > 0 => {
+            Cell::Mul(arg1, arg2) if out_high_dead_count > 0 => {
                 let new_width = arg1.len() - out_high_dead_count;
                 (cell_output.slice(..new_width), design.add_mul(arg1.slice(..new_width), arg2.slice(..new_width)))
             }
-            CellRepr::Dff(flip_flop) => (
+            Cell::Dff(flip_flop) => (
                 out_live_nets,
                 design.add_dff(FlipFlop {
                     data: arg_live_nets(&flip_flop.data),

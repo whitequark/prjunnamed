@@ -1,8 +1,6 @@
 use std::{borrow::Cow, fmt::Display};
 
-use crate::{
-    CellRef, CellRepr, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, ParamValue, Trit, Value,
-};
+use crate::{CellRef, Cell, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, ParamValue, Trit, Value};
 
 struct DisplayFn<'a, F: for<'b> Fn(&Design, &mut std::fmt::Formatter<'b>) -> std::fmt::Result>(&'a Design, F);
 
@@ -197,13 +195,13 @@ impl Design {
         };
 
         write!(f, "%{}:{} = ", cell_ref.debug_index(), cell_ref.output_len())?;
-        match &*cell_ref.repr() {
-            CellRepr::Buf(arg) => write_common(f, "buf", &[arg])?,
-            CellRepr::Not(arg) => write_common(f, "not", &[arg])?,
-            CellRepr::And(arg1, arg2) => write_common(f, "and", &[arg1, arg2])?,
-            CellRepr::Or(arg1, arg2) => write_common(f, "or", &[arg1, arg2])?,
-            CellRepr::Xor(arg1, arg2) => write_common(f, "xor", &[arg1, arg2])?,
-            CellRepr::Mux(arg1, arg2, arg3) => {
+        match &*cell_ref.get() {
+            Cell::Buf(arg) => write_common(f, "buf", &[arg])?,
+            Cell::Not(arg) => write_common(f, "not", &[arg])?,
+            Cell::And(arg1, arg2) => write_common(f, "and", &[arg1, arg2])?,
+            Cell::Or(arg1, arg2) => write_common(f, "or", &[arg1, arg2])?,
+            Cell::Xor(arg1, arg2) => write_common(f, "xor", &[arg1, arg2])?,
+            Cell::Mux(arg1, arg2, arg3) => {
                 write!(f, "mux ")?;
                 self.write_net(f, *arg1)?;
                 write!(f, " ")?;
@@ -211,7 +209,7 @@ impl Design {
                 write!(f, " ")?;
                 self.write_value(f, arg3)?;
             }
-            CellRepr::Adc(arg1, arg2, arg3) => {
+            Cell::Adc(arg1, arg2, arg3) => {
                 write!(f, "adc ")?;
                 self.write_value(f, arg1)?;
                 write!(f, " ")?;
@@ -220,24 +218,24 @@ impl Design {
                 self.write_net(f, *arg3)?;
             }
 
-            CellRepr::Eq(arg1, arg2) => write_common(f, "eq", &[arg1, arg2])?,
-            CellRepr::ULt(arg1, arg2) => write_common(f, "ult", &[arg1, arg2])?,
-            CellRepr::SLt(arg1, arg2) => write_common(f, "slt", &[arg1, arg2])?,
+            Cell::Eq(arg1, arg2) => write_common(f, "eq", &[arg1, arg2])?,
+            Cell::ULt(arg1, arg2) => write_common(f, "ult", &[arg1, arg2])?,
+            Cell::SLt(arg1, arg2) => write_common(f, "slt", &[arg1, arg2])?,
 
-            CellRepr::Shl(arg1, arg2, stride) => write_shift(f, "shl", arg1, arg2, *stride)?,
-            CellRepr::UShr(arg1, arg2, stride) => write_shift(f, "ushr", arg1, arg2, *stride)?,
-            CellRepr::SShr(arg1, arg2, stride) => write_shift(f, "sshr", arg1, arg2, *stride)?,
-            CellRepr::XShr(arg1, arg2, stride) => write_shift(f, "xshr", arg1, arg2, *stride)?,
+            Cell::Shl(arg1, arg2, stride) => write_shift(f, "shl", arg1, arg2, *stride)?,
+            Cell::UShr(arg1, arg2, stride) => write_shift(f, "ushr", arg1, arg2, *stride)?,
+            Cell::SShr(arg1, arg2, stride) => write_shift(f, "sshr", arg1, arg2, *stride)?,
+            Cell::XShr(arg1, arg2, stride) => write_shift(f, "xshr", arg1, arg2, *stride)?,
 
-            CellRepr::Mul(arg1, arg2) => write_common(f, "mul", &[arg1, arg2])?,
-            CellRepr::UDiv(arg1, arg2) => write_common(f, "udiv", &[arg1, arg2])?,
-            CellRepr::UMod(arg1, arg2) => write_common(f, "umod", &[arg1, arg2])?,
-            CellRepr::SDivTrunc(arg1, arg2) => write_common(f, "sdiv_trunc", &[arg1, arg2])?,
-            CellRepr::SDivFloor(arg1, arg2) => write_common(f, "sdiv_floor", &[arg1, arg2])?,
-            CellRepr::SModTrunc(arg1, arg2) => write_common(f, "smod_trunc", &[arg1, arg2])?,
-            CellRepr::SModFloor(arg1, arg2) => write_common(f, "smod_floor", &[arg1, arg2])?,
+            Cell::Mul(arg1, arg2) => write_common(f, "mul", &[arg1, arg2])?,
+            Cell::UDiv(arg1, arg2) => write_common(f, "udiv", &[arg1, arg2])?,
+            Cell::UMod(arg1, arg2) => write_common(f, "umod", &[arg1, arg2])?,
+            Cell::SDivTrunc(arg1, arg2) => write_common(f, "sdiv_trunc", &[arg1, arg2])?,
+            Cell::SDivFloor(arg1, arg2) => write_common(f, "sdiv_floor", &[arg1, arg2])?,
+            Cell::SModTrunc(arg1, arg2) => write_common(f, "smod_trunc", &[arg1, arg2])?,
+            Cell::SModFloor(arg1, arg2) => write_common(f, "smod_floor", &[arg1, arg2])?,
 
-            CellRepr::Match(match_cell) => {
+            Cell::Match(match_cell) => {
                 write!(f, "match")?;
                 if match_cell.enable != Net::ONE {
                     write!(f, " en=")?;
@@ -283,7 +281,7 @@ impl Design {
                 }
                 write!(f, "}}")?;
             }
-            CellRepr::Assign(assign_cell) => {
+            Cell::Assign(assign_cell) => {
                 write!(f, "assign")?;
                 if assign_cell.enable != Net::ONE {
                     write!(f, " en=")?;
@@ -298,7 +296,7 @@ impl Design {
                 }
             }
 
-            CellRepr::Dff(flip_flop) => {
+            Cell::Dff(flip_flop) => {
                 write_common(f, "dff", &[&flip_flop.data])?;
                 write_control(f, " clk", flip_flop.clock)?;
                 if flip_flop.has_clear() {
@@ -327,7 +325,7 @@ impl Design {
                     write!(f, " init={}", flip_flop.init_value)?;
                 }
             }
-            CellRepr::Memory(memory) => {
+            Cell::Memory(memory) => {
                 writeln!(f, "memory depth=#{} width=#{} {{", memory.depth, memory.width)?;
                 for write_port in &memory.write_ports {
                     write!(f, "  write addr=")?;
@@ -405,14 +403,14 @@ impl Design {
                 }
                 write!(f, "}}")?;
             }
-            CellRepr::Iob(io_buffer) => {
+            Cell::Iob(io_buffer) => {
                 write!(f, "iob ")?;
                 self.write_io_value(f, &io_buffer.io)?;
                 write!(f, " o=")?;
                 self.write_value(f, &io_buffer.output)?;
                 write_control(f, " en", io_buffer.enable)?;
             }
-            CellRepr::Other(instance) => {
+            Cell::Other(instance) => {
                 self.write_string(f, instance.kind.as_str())?;
                 writeln!(f, " {{")?;
                 for (name, value) in instance.params.iter() {
@@ -436,7 +434,7 @@ impl Design {
                 }
                 write!(f, "}}")?;
             }
-            CellRepr::Target(target_cell) => {
+            Cell::Target(target_cell) => {
                 write!(f, "target ")?;
                 let prototype = self.target_prototype(target_cell);
                 self.write_string(f, &target_cell.kind)?;
@@ -459,17 +457,17 @@ impl Design {
                 write!(f, "}}")?;
             }
 
-            CellRepr::Input(name, _size) => {
+            Cell::Input(name, _size) => {
                 write!(f, "input ")?;
                 self.write_string(f, name)?;
             }
-            CellRepr::Output(name, value) => {
+            Cell::Output(name, value) => {
                 write!(f, "output ")?;
                 self.write_string(f, name)?;
                 write!(f, " ")?;
                 self.write_value(f, value)?;
             }
-            CellRepr::Name(name, value) => {
+            Cell::Name(name, value) => {
                 write!(f, "name ")?;
                 self.write_string(f, name)?;
                 write!(f, " ")?;

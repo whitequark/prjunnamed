@@ -2,9 +2,7 @@ use json::JsonValue;
 use std::{cell::RefCell, collections::BTreeMap, io::BufWriter};
 
 use crate::yosys::{self, CellDetails, NetDetails, PortDetails};
-use prjunnamed_netlist::{
-    CellRepr, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, Trit, Value,
-};
+use prjunnamed_netlist::{Cell, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, Trit, Value};
 
 struct Counter(usize);
 
@@ -77,11 +75,11 @@ fn export_module(mut design: Design) -> yosys::Module {
 
     // Yosys IR cannot express DFFs with both asynchronous and synchronous reset.
     for cell_ref in design.iter_cells() {
-        if let CellRepr::Dff(flip_flop) = &*cell_ref.repr() {
+        if let Cell::Dff(flip_flop) = &*cell_ref.get() {
             if flip_flop.has_clear() && flip_flop.has_reset() {
                 let mut flip_flop = flip_flop.clone();
                 flip_flop.unmap_reset(&design);
-                cell_ref.replace(CellRepr::Dff(flip_flop));
+                cell_ref.replace(Cell::Dff(flip_flop));
             }
         }
     }
@@ -174,20 +172,20 @@ fn export_module(mut design: Design) -> yosys::Module {
             }
         };
 
-        match cell_ref.repr().as_ref() {
-            CellRepr::Buf(arg) => ys_cell_unary(&mut ys_module, "$pos", arg),
-            CellRepr::Not(arg) => ys_cell_unary(&mut ys_module, "$not", arg),
-            CellRepr::And(arg1, arg2) => ys_cell_binary(&mut ys_module, "$and", arg1, arg2, false),
-            CellRepr::Or(arg1, arg2) => ys_cell_binary(&mut ys_module, "$or", arg1, arg2, false),
-            CellRepr::Xor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$xor", arg1, arg2, false),
-            CellRepr::Mux(arg1, arg2, arg3) => CellDetails::new("$mux")
+        match cell_ref.get().as_ref() {
+            Cell::Buf(arg) => ys_cell_unary(&mut ys_module, "$pos", arg),
+            Cell::Not(arg) => ys_cell_unary(&mut ys_module, "$not", arg),
+            Cell::And(arg1, arg2) => ys_cell_binary(&mut ys_module, "$and", arg1, arg2, false),
+            Cell::Or(arg1, arg2) => ys_cell_binary(&mut ys_module, "$or", arg1, arg2, false),
+            Cell::Xor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$xor", arg1, arg2, false),
+            Cell::Mux(arg1, arg2, arg3) => CellDetails::new("$mux")
                 .param("WIDTH", output.len())
                 .input("A", indexer.value(arg3))
                 .input("B", indexer.value(arg2))
                 .input("S", indexer.net(*arg1))
                 .output("Y", indexer.value(&output))
                 .add_to(&format!("${}", cell_index), &mut ys_module),
-            CellRepr::Adc(arg1, arg2, arg3) => {
+            Cell::Adc(arg1, arg2, arg3) => {
                 // The $alu cell isn't supported by `write_verilog`, so we have to pattern-match here.
                 match arg3.as_const() {
                     Some(Trit::Zero) => {
@@ -222,27 +220,27 @@ fn export_module(mut design: Design) -> yosys::Module {
                 }
             }
 
-            CellRepr::Eq(arg1, arg2) => ys_cell_binary(&mut ys_module, "$eq", arg1, arg2, false),
-            CellRepr::ULt(arg1, arg2) => ys_cell_binary(&mut ys_module, "$lt", arg1, arg2, false),
-            CellRepr::SLt(arg1, arg2) => ys_cell_binary(&mut ys_module, "$lt", arg1, arg2, true),
+            Cell::Eq(arg1, arg2) => ys_cell_binary(&mut ys_module, "$eq", arg1, arg2, false),
+            Cell::ULt(arg1, arg2) => ys_cell_binary(&mut ys_module, "$lt", arg1, arg2, false),
+            Cell::SLt(arg1, arg2) => ys_cell_binary(&mut ys_module, "$lt", arg1, arg2, true),
 
-            CellRepr::Shl(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$shl", arg1, arg2, *stride, false),
-            CellRepr::UShr(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$shr", arg1, arg2, *stride, false),
-            CellRepr::SShr(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$sshr", arg1, arg2, *stride, true),
-            CellRepr::XShr(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$shiftx", arg1, arg2, *stride, false),
+            Cell::Shl(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$shl", arg1, arg2, *stride, false),
+            Cell::UShr(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$shr", arg1, arg2, *stride, false),
+            Cell::SShr(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$sshr", arg1, arg2, *stride, true),
+            Cell::XShr(arg1, arg2, stride) => ys_cell_shift(&mut ys_module, "$shiftx", arg1, arg2, *stride, false),
 
-            CellRepr::Mul(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mul", arg1, arg2, false),
-            CellRepr::UDiv(arg1, arg2) => ys_cell_binary(&mut ys_module, "$div", arg1, arg2, false),
-            CellRepr::UMod(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mod", arg1, arg2, false),
-            CellRepr::SDivTrunc(arg1, arg2) => ys_cell_binary(&mut ys_module, "$div", arg1, arg2, true),
-            CellRepr::SDivFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$divfloor", arg1, arg2, true),
-            CellRepr::SModTrunc(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mod", arg1, arg2, true),
-            CellRepr::SModFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$modfloor", arg1, arg2, true),
+            Cell::Mul(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mul", arg1, arg2, false),
+            Cell::UDiv(arg1, arg2) => ys_cell_binary(&mut ys_module, "$div", arg1, arg2, false),
+            Cell::UMod(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mod", arg1, arg2, false),
+            Cell::SDivTrunc(arg1, arg2) => ys_cell_binary(&mut ys_module, "$div", arg1, arg2, true),
+            Cell::SDivFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$divfloor", arg1, arg2, true),
+            Cell::SModTrunc(arg1, arg2) => ys_cell_binary(&mut ys_module, "$mod", arg1, arg2, true),
+            Cell::SModFloor(arg1, arg2) => ys_cell_binary(&mut ys_module, "$modfloor", arg1, arg2, true),
 
-            CellRepr::Match { .. } => unimplemented!("match cells must be lowered first for Yosys JSON export"),
-            CellRepr::Assign { .. } => unimplemented!("assign cells must be lowered first for Yosys JSON export"),
+            Cell::Match { .. } => unimplemented!("match cells must be lowered first for Yosys JSON export"),
+            Cell::Assign { .. } => unimplemented!("assign cells must be lowered first for Yosys JSON export"),
 
-            CellRepr::Dff(flip_flop) => {
+            Cell::Dff(flip_flop) => {
                 let ys_cell_type = match (
                     flip_flop.has_clear(),
                     flip_flop.has_reset(),
@@ -289,7 +287,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                 continue; // skip default $out wire (init-less) creation
             }
 
-            CellRepr::Memory(memory) => {
+            Cell::Memory(memory) => {
                 let abits = memory
                     .write_ports
                     .iter()
@@ -461,7 +459,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                     .add_to(&format!("${}", cell_index), &mut ys_module);
             }
 
-            CellRepr::Iob(io_buffer) => {
+            Cell::Iob(io_buffer) => {
                 let ys_enable =
                     ys_control_net_pos(&mut ys_module, &format!("${}$en$not", cell_index), io_buffer.enable);
                 CellDetails::new("$tribuf")
@@ -479,7 +477,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                     .add_to(&format!("${}$pos", cell_index), &mut ys_module);
             }
 
-            CellRepr::Other(instance) => {
+            Cell::Other(instance) => {
                 let mut ys_cell = CellDetails::new(&instance.kind);
                 for (name, value) in instance.params.iter() {
                     ys_cell = ys_cell.param(name, value);
@@ -495,22 +493,19 @@ fn export_module(mut design: Design) -> yosys::Module {
                 }
                 ys_cell.add_to(&ys_cell_name, &mut ys_module);
             }
-            CellRepr::Target(_target_cell) => {
+            Cell::Target(_target_cell) => {
                 unimplemented!("target cells must be converted to instances first for Yosys JSON export")
             }
 
-            CellRepr::Input(port_name, _size) => {
+            Cell::Input(port_name, _size) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Input, indexer.value(&output)))
             }
-            CellRepr::Output(port_name, value) => {
+            Cell::Output(port_name, value) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Output, indexer.value(value)))
             }
-            CellRepr::Name(name, value) => {
-                ys_module.netnames.add(&name.replace(" ", "."),
-                    NetDetails::new(indexer.value(value))
-                    .attr("hdlname", name)
-                )
-            }
+            Cell::Name(name, value) => ys_module
+                .netnames
+                .add(&name.replace(" ", "."), NetDetails::new(indexer.value(value)).attr("hdlname", name)),
         };
 
         NetDetails::new(indexer.value(&output)).add_to(&format!("{}$out", ys_cell_name), &mut ys_module);

@@ -1,11 +1,11 @@
-use prjunnamed_netlist::{CellRepr, Const, Design, FlipFlop, Net, Value};
+use prjunnamed_netlist::{Cell, Const, Design, FlipFlop, Net, Value};
 
 use crate::{NetOrValue, Pattern};
 
 macro_rules! bitwise_patterns {
     {} => {};
 
-    { $name:ident(_) => $repr:ident; $($rest:tt)* } => {
+    { $name:ident(_) => $cstr:ident; $($rest:tt)* } => {
         pub struct $name<P>(P);
 
         impl<P> $name<P> {
@@ -21,7 +21,7 @@ macro_rules! bitwise_patterns {
                 let mut cap = None;
                 for net in target.iter() {
                     if let Ok((cell_ref, offset)) = design.find_cell(net) {
-                        if let CellRepr::$repr(arg) = &*cell_ref.repr() {
+                        if let Cell::$cstr(arg) = &*cell_ref.get() {
                             assert!(T::accumulate(&mut cap, arg[offset]));
                         } else {
                             return None
@@ -38,7 +38,7 @@ macro_rules! bitwise_patterns {
         bitwise_patterns!{ $($rest)* }
     };
 
-    { $name:ident(_,_) => $repr:ident; $($rest:tt)* } => {
+    { $name:ident(_,_) => $cstr:ident; $($rest:tt)* } => {
         pub struct $name<P1, P2>(P1, P2);
 
         impl<P1, P2> $name<P1, P2> {
@@ -55,7 +55,7 @@ macro_rules! bitwise_patterns {
                 let mut cap2 = None;
                 for net in target.iter() {
                     if let Ok((cell_ref, offset)) = design.find_cell(net) {
-                        if let CellRepr::$repr(arg1, arg2) = &*cell_ref.repr() {
+                        if let Cell::$cstr(arg1, arg2) = &*cell_ref.get() {
                             assert!(T::accumulate(&mut cap1, arg1[offset]));
                             assert!(T::accumulate(&mut cap2, arg2[offset]));
                         } else {
@@ -101,7 +101,7 @@ impl<T: NetOrValue, P1: Pattern<Net>, P2: Pattern<T>, P3: Pattern<T>> Pattern<T>
         let mut cap3 = None;
         for net in target.iter() {
             if let Ok((cell_ref, offset)) = design.find_cell(net) {
-                if let CellRepr::Mux(arg1, arg2, arg3) = &*cell_ref.repr() {
+                if let Cell::Mux(arg1, arg2, arg3) = &*cell_ref.get() {
                     if !NetOrValue::accumulate(&mut cap1, *arg1) {
                         return None;
                     }
@@ -135,7 +135,7 @@ impl<P: Pattern<Net>> Pattern<Net> for PDff<P> {
 
     fn execute(&self, design: &Design, target: &Net) -> Option<Self::Capture> {
         if let Ok((cell_ref, offset)) = design.find_cell(*target) {
-            if let CellRepr::Dff(flip_flop) = &*cell_ref.repr() {
+            if let Cell::Dff(flip_flop) = &*cell_ref.get() {
                 let flip_flop = FlipFlop {
                     data: flip_flop.data[offset].into(),
                     clear_value: flip_flop.clear_value[offset].into(),
@@ -157,7 +157,7 @@ impl<P: Pattern<Value>> Pattern<Value> for PDff<P> {
         let mut target_flip_flop = None::<FlipFlop>;
         for target_net in target.iter() {
             if let Ok((cell_ref, offset)) = design.find_cell(target_net) {
-                if let CellRepr::Dff(flip_flop) = &*cell_ref.repr() {
+                if let Cell::Dff(flip_flop) = &*cell_ref.get() {
                     if let Some(ref mut capture) = target_flip_flop {
                         if capture.clock.canonicalize() == flip_flop.clock.canonicalize()
                             && capture.clear.canonicalize() == flip_flop.clear.canonicalize()

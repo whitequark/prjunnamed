@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, fs::File, io::Write};
 
 use prjunnamed_generic::{canonicalize, decision, lower};
-use prjunnamed_netlist::{CellRepr, Design};
+use prjunnamed_netlist::{Cell, Design};
 
 fn process(name: &str, design: &mut Design) {
     print!("; {} (initial)\n{:#}\n", name, design);
@@ -15,7 +15,7 @@ fn process(name: &str, design: &mut Design) {
         }
         Some(ref target) => {
             for cell_ref in design.iter_cells() {
-                if let CellRepr::Name(_, _) = &*cell_ref.repr() {
+                if let Cell::Name(_, _) = &*cell_ref.get() {
                     cell_ref.unalive();
                 }
             }

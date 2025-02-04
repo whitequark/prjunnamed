@@ -120,7 +120,7 @@ macro_rules! assert_netlist {
         {
             $design.apply();
             let mut matches = $design.iter_cells().all(|cell_ref| {
-                if let prjunnamed_netlist::CellRepr::Output(_name, value) = &*cell_ref.repr() {
+                if let prjunnamed_netlist::Cell::Output(_name, value) = &*cell_ref.get() {
                     $check(&$design, value).unwrap_or(false)
                 } else {
                     true

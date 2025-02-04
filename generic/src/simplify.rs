@@ -1,4 +1,4 @@
-use prjunnamed_netlist::{CellRef, CellRepr, ControlNet, Design, FlipFlop, IoBuffer, Net, ParamValue, Trit, Value};
+use prjunnamed_netlist::{CellRef, Cell, ControlNet, Design, FlipFlop, IoBuffer, Net, ParamValue, Trit, Value};
 use prjunnamed_pattern::{netlist_replace, patterns::*};
 
 pub fn simplify(design: &mut Design) -> bool {
@@ -146,7 +146,7 @@ pub fn simplify(design: &mut Design) -> bool {
     };
 
     for cell_ref in design.iter_cells() {
-        // Fold inverters into controls first. This only ever replaces the cell reprs.
+        // Fold inverters into controls first. This only ever replaces the cells themselves.
         fold_controls(design, cell_ref);
         // Fine rules are more powerful, but some rules are coarse-only.
         let value = cell_ref.output();
@@ -320,7 +320,7 @@ fn adc_unsext(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
 fn fold_controls(design: &Design, cell_ref: CellRef) {
     let uninvert = |net: Net| -> Option<Net> {
         if let Ok((cell_ref, offset)) = design.find_cell(net) {
-            if let CellRepr::Not(value) = &*cell_ref.repr() {
+            if let Cell::Not(value) = &*cell_ref.get() {
                 return Some(value[offset]);
             }
         }
@@ -339,8 +339,8 @@ fn fold_controls(design: &Design, cell_ref: CellRef) {
         }
     };
 
-    match &*cell_ref.repr() {
-        CellRepr::Dff(flip_flop) => {
+    match &*cell_ref.get() {
+        Cell::Dff(flip_flop) => {
             let mut flip_flop = FlipFlop {
                 clock: fold_control_net(flip_flop.clock),
                 clear: fold_control_net(flip_flop.clear),
@@ -373,16 +373,16 @@ fn fold_controls(design: &Design, cell_ref: CellRef) {
                     flip_flop.enable = ControlNet::ZERO;
                 }
             }
-            cell_ref.replace(CellRepr::Dff(flip_flop));
+            cell_ref.replace(Cell::Dff(flip_flop));
         }
-        CellRepr::Iob(io_buffer) => {
-            cell_ref.replace(CellRepr::Iob(IoBuffer {
+        Cell::Iob(io_buffer) => {
+            cell_ref.replace(Cell::Iob(IoBuffer {
                 io: io_buffer.io.clone(),
                 output: io_buffer.output.clone(),
                 enable: fold_control_net(io_buffer.enable),
             }));
         }
-        CellRepr::Target(target_cell) => {
+        Cell::Target(target_cell) => {
             let mut target_cell = target_cell.clone();
             let prototype = design.target_prototype(&target_cell);
             for input in prototype.inputs.iter() {
@@ -399,7 +399,7 @@ fn fold_controls(design: &Design, cell_ref: CellRef) {
                     }
                 }
             }
-            cell_ref.replace(CellRepr::Target(target_cell));
+            cell_ref.replace(Cell::Target(target_cell));
         }
         _ => (),
     }

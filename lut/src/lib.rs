@@ -3,7 +3,7 @@ use std::{
     collections::{hash_map, HashMap},
 };
 
-use prjunnamed_netlist::{CellRepr, Const, Net, Trit, Value};
+use prjunnamed_netlist::{Cell, Const, Net, Trit, Value};
 
 #[derive(Debug, Clone)]
 enum SwizzleInput {
@@ -95,16 +95,16 @@ impl Lut {
         &self.table
     }
 
-    pub fn from_cell<'a>(cell_repr: impl Into<Cow<'a, CellRepr>>) -> Option<Lut> {
-        let cell_repr = cell_repr.into();
-        assert_eq!(cell_repr.output_len(), 1);
-        Some(match &*cell_repr {
-            CellRepr::Buf(arg) => Self::lut1(arg[0], Const::lit("10")),
-            CellRepr::Not(arg) => Self::lut1(arg[0], Const::lit("01")),
-            CellRepr::And(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::lit("1000")),
-            CellRepr::Or(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::lit("1110")),
-            CellRepr::Xor(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::lit("0110")),
-            CellRepr::Mux(arg1, arg2, arg3) => Self::lut3(arg3[0], arg2[0], *arg1, Const::lit("11001010")),
+    pub fn from_cell<'a>(cell: impl Into<Cow<'a, Cell>>) -> Option<Lut> {
+        let cell = cell.into();
+        assert_eq!(cell.output_len(), 1);
+        Some(match &*cell {
+            Cell::Buf(arg) => Self::lut1(arg[0], Const::lit("10")),
+            Cell::Not(arg) => Self::lut1(arg[0], Const::lit("01")),
+            Cell::And(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::lit("1000")),
+            Cell::Or(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::lit("1110")),
+            Cell::Xor(arg1, arg2) => Self::lut2(arg1[0], arg2[0], Const::lit("0110")),
+            Cell::Mux(arg1, arg2, arg3) => Self::lut3(arg3[0], arg2[0], *arg1, Const::lit("11001010")),
             _ => return None,
         })
     }

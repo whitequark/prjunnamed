@@ -1,4 +1,4 @@
-use prjunnamed_netlist::{CellRepr, Const, Design, Net, Trit, Value};
+use prjunnamed_netlist::{Cell, Const, Design, Net, Trit, Value};
 
 use crate::{NetOrValue, Pattern};
 
@@ -180,7 +180,7 @@ impl<T: NetOrValue> Pattern<T> for PInput {
     fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
         if let Some(net) = target.iter().next() {
             if let Ok((cell_ref, 0)) = design.find_cell(net) {
-                if let CellRepr::Input(name, _size) = &*cell_ref.repr() {
+                if let Cell::Input(name, _size) = &*cell_ref.get() {
                     if target.as_value() == cell_ref.output() && name == self.0 {
                         return Some((target.clone(),));
                     }

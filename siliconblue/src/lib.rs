@@ -5,8 +5,7 @@ use std::{
 };
 
 use prjunnamed_netlist::{
-    CellRepr, Const, Design, Instance, Net, ParamValue, Target, TargetCell, TargetImportError, TargetPrototype, Trit,
-    Value,
+    Cell, Const, Design, Instance, Net, ParamValue, Target, TargetCell, TargetImportError, TargetPrototype, Trit, Value,
 };
 
 use prjunnamed_lut::Lut;
@@ -305,7 +304,7 @@ impl Target for SiliconBlueTarget {
 
     fn import(&self, design: &mut Design) -> Result<(), TargetImportError> {
         for cell_ref in design.iter_cells() {
-            let CellRepr::Other(instance) = &*cell_ref.repr() else { continue };
+            let Cell::Other(instance) = &*cell_ref.get() else { continue };
             let orig_kind = &instance.kind[..];
             let mut instance = instance.clone();
             match orig_kind {
@@ -500,7 +499,7 @@ impl Target for SiliconBlueTarget {
         }
 
         for cell_ref in design.iter_cells() {
-            let CellRepr::Target(target_cell) = &*cell_ref.repr() else { continue };
+            let Cell::Target(target_cell) = &*cell_ref.get() else { continue };
             let prototype = design.target_prototype(target_cell);
             let mut instance = prototype.target_cell_to_instance(target_cell);
             let mut removed_outputs = BTreeSet::new();
@@ -683,7 +682,7 @@ impl SiliconBlueTarget {
     pub fn lower_iobs(&self, design: &mut Design) {
         let prototype = self.prototype(SB_IO).unwrap();
         for cell_ref in design.iter_cells() {
-            if let CellRepr::Iob(io_buffer) = &*cell_ref.repr() {
+            if let Cell::Iob(io_buffer) = &*cell_ref.get() {
                 let enable = io_buffer.enable.into_pos(design);
                 let mut output_value = Value::EMPTY;
                 for bit_index in 0..io_buffer.output.len() {
@@ -715,7 +714,7 @@ impl SiliconBlueTarget {
     pub fn lower_ffs(&self, design: &mut Design) {
         let prototype = self.prototype(SB_DFF).unwrap();
         for cell_ref in design.iter_cells() {
-            if let CellRepr::Dff(flip_flop) = &*cell_ref.repr() {
+            if let Cell::Dff(flip_flop) = &*cell_ref.get() {
                 let mut flip_flop = flip_flop.clone();
                 if !flip_flop.reset.is_always(false) && !flip_flop.clear.is_always(false) {
                     flip_flop.unmap_reset(design);
@@ -770,7 +769,7 @@ impl SiliconBlueTarget {
 
         let mut adc_carries = HashMap::new();
         for cell in design.iter_cells() {
-            if let CellRepr::Adc(_, _, ci) = &*cell.repr() {
+            if let Cell::Adc(_, _, ci) = &*cell.get() {
                 let output = cell.output();
                 let mut carry = Value::from(ci);
                 if output.len() > 1 {
@@ -802,16 +801,11 @@ impl SiliconBlueTarget {
 
         let mut net_dispositions: BTreeMap<Net, NetDisposition> = BTreeMap::new();
         for cell in design.iter_cells_topo() {
-            match &*cell.repr() {
-                CellRepr::Buf(..)
-                | CellRepr::Not(..)
-                | CellRepr::And(..)
-                | CellRepr::Or(..)
-                | CellRepr::Xor(..)
-                | CellRepr::Mux(..) => {
+            match &*cell.get() {
+                Cell::Buf(..) | Cell::Not(..) | Cell::And(..) | Cell::Or(..) | Cell::Xor(..) | Cell::Mux(..) => {
                     let output = cell.output();
                     'cell_bits: for index in 0..output.len() {
-                        let slice = cell.repr().slice(index..index + 1).unwrap();
+                        let slice = cell.get().slice(index..index + 1).unwrap();
                         let mut lut = Lut::from_cell(slice).unwrap();
                         let mut inputs_by_depth = Vec::from_iter(
                             lut.inputs()
@@ -879,7 +873,7 @@ impl SiliconBlueTarget {
                     }
                     cell.unalive();
                 }
-                CellRepr::Adc(arg1, arg2, ci) => {
+                Cell::Adc(arg1, arg2, ci) => {
                     // TODO: check if doable in one step
                     let output = cell.output();
                     let carry = &adc_carries[&cell];

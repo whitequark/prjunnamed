@@ -1,7 +1,7 @@
 use std::fmt::Display;
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::{CellRepr, Design, IoNet, Net, Value};
+use crate::{Cell, Design, IoNet, Net, Value};
 
 #[derive(Debug)]
 pub enum NotIsomorphic {
@@ -54,11 +54,11 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
     let mut outputs_l = BTreeMap::new();
     let mut names_l = BTreeMap::new();
     for cell in lft.iter_cells() {
-        match &*cell.repr() {
-            CellRepr::Output(name, value) => {
+        match &*cell.get() {
+            Cell::Output(name, value) => {
                 outputs_l.insert(name.clone(), value.clone());
             }
-            CellRepr::Name(name, value) => {
+            Cell::Name(name, value) => {
                 names_l.insert(name.clone(), value.clone());
             }
             _ => (),
@@ -67,11 +67,11 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
     let mut outputs_r = BTreeMap::new();
     let mut names_r = BTreeMap::new();
     for cell in rgt.iter_cells() {
-        match &*cell.repr() {
-            CellRepr::Output(name, value) => {
+        match &*cell.get() {
+            Cell::Output(name, value) => {
                 outputs_r.insert(name.clone(), value.clone());
             }
-            CellRepr::Name(name, value) => {
+            Cell::Name(name, value) => {
                 names_r.insert(name.clone(), value.clone());
             }
             _ => (),
@@ -134,47 +134,47 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
         for (net_l, net_r) in out_l.iter().zip(out_r) {
             visited.insert((net_l, net_r));
         }
-        match (&*cell_l.repr(), &*cell_r.repr()) {
-            (CellRepr::Buf(val_l), CellRepr::Buf(val_r)) | (CellRepr::Not(val_l), CellRepr::Not(val_r)) => {
+        match (&*cell_l.get(), &*cell_r.get()) {
+            (Cell::Buf(val_l), Cell::Buf(val_r)) | (Cell::Not(val_l), Cell::Not(val_r)) => {
                 queue_vals(&mut queue, val_l, val_r)?
             }
-            (CellRepr::And(arg1_l, arg2_l), CellRepr::And(arg1_r, arg2_r))
-            | (CellRepr::Or(arg1_l, arg2_l), CellRepr::Or(arg1_r, arg2_r))
-            | (CellRepr::Xor(arg1_l, arg2_l), CellRepr::Xor(arg1_r, arg2_r))
-            | (CellRepr::Eq(arg1_l, arg2_l), CellRepr::Eq(arg1_r, arg2_r))
-            | (CellRepr::ULt(arg1_l, arg2_l), CellRepr::ULt(arg1_r, arg2_r))
-            | (CellRepr::SLt(arg1_l, arg2_l), CellRepr::SLt(arg1_r, arg2_r))
-            | (CellRepr::Mul(arg1_l, arg2_l), CellRepr::Mul(arg1_r, arg2_r))
-            | (CellRepr::UDiv(arg1_l, arg2_l), CellRepr::UDiv(arg1_r, arg2_r))
-            | (CellRepr::UMod(arg1_l, arg2_l), CellRepr::UMod(arg1_r, arg2_r))
-            | (CellRepr::SDivTrunc(arg1_l, arg2_l), CellRepr::SDivTrunc(arg1_r, arg2_r))
-            | (CellRepr::SDivFloor(arg1_l, arg2_l), CellRepr::SDivFloor(arg1_r, arg2_r))
-            | (CellRepr::SModTrunc(arg1_l, arg2_l), CellRepr::SModTrunc(arg1_r, arg2_r))
-            | (CellRepr::SModFloor(arg1_l, arg2_l), CellRepr::SModFloor(arg1_r, arg2_r)) => {
+            (Cell::And(arg1_l, arg2_l), Cell::And(arg1_r, arg2_r))
+            | (Cell::Or(arg1_l, arg2_l), Cell::Or(arg1_r, arg2_r))
+            | (Cell::Xor(arg1_l, arg2_l), Cell::Xor(arg1_r, arg2_r))
+            | (Cell::Eq(arg1_l, arg2_l), Cell::Eq(arg1_r, arg2_r))
+            | (Cell::ULt(arg1_l, arg2_l), Cell::ULt(arg1_r, arg2_r))
+            | (Cell::SLt(arg1_l, arg2_l), Cell::SLt(arg1_r, arg2_r))
+            | (Cell::Mul(arg1_l, arg2_l), Cell::Mul(arg1_r, arg2_r))
+            | (Cell::UDiv(arg1_l, arg2_l), Cell::UDiv(arg1_r, arg2_r))
+            | (Cell::UMod(arg1_l, arg2_l), Cell::UMod(arg1_r, arg2_r))
+            | (Cell::SDivTrunc(arg1_l, arg2_l), Cell::SDivTrunc(arg1_r, arg2_r))
+            | (Cell::SDivFloor(arg1_l, arg2_l), Cell::SDivFloor(arg1_r, arg2_r))
+            | (Cell::SModTrunc(arg1_l, arg2_l), Cell::SModTrunc(arg1_r, arg2_r))
+            | (Cell::SModFloor(arg1_l, arg2_l), Cell::SModFloor(arg1_r, arg2_r)) => {
                 queue_vals(&mut queue, arg1_l, arg1_r)?;
                 queue_vals(&mut queue, arg2_l, arg2_r)?;
             }
-            (CellRepr::Mux(arg1_l, arg2_l, arg3_l), CellRepr::Mux(sel_r, arg2_r, arg3_r)) => {
+            (Cell::Mux(arg1_l, arg2_l, arg3_l), Cell::Mux(sel_r, arg2_r, arg3_r)) => {
                 queue.insert((*arg1_l, *sel_r));
                 queue_vals(&mut queue, arg2_l, arg2_r)?;
                 queue_vals(&mut queue, arg3_l, arg3_r)?;
             }
-            (CellRepr::Adc(arg1_l, arg2_l, arg3_l), CellRepr::Adc(arg1_r, arg2_r, arg3_r)) => {
+            (Cell::Adc(arg1_l, arg2_l, arg3_l), Cell::Adc(arg1_r, arg2_r, arg3_r)) => {
                 queue_vals(&mut queue, arg1_l, arg1_r)?;
                 queue_vals(&mut queue, arg2_l, arg2_r)?;
                 queue.insert((*arg3_l, *arg3_r));
             }
-            (CellRepr::Shl(arg1_l, arg2_l, stride_l), CellRepr::Shl(arg1_r, arg2_r, stride_r))
-            | (CellRepr::UShr(arg1_l, arg2_l, stride_l), CellRepr::UShr(arg1_r, arg2_r, stride_r))
-            | (CellRepr::SShr(arg1_l, arg2_l, stride_l), CellRepr::SShr(arg1_r, arg2_r, stride_r))
-            | (CellRepr::XShr(arg1_l, arg2_l, stride_l), CellRepr::XShr(arg1_r, arg2_r, stride_r)) => {
+            (Cell::Shl(arg1_l, arg2_l, stride_l), Cell::Shl(arg1_r, arg2_r, stride_r))
+            | (Cell::UShr(arg1_l, arg2_l, stride_l), Cell::UShr(arg1_r, arg2_r, stride_r))
+            | (Cell::SShr(arg1_l, arg2_l, stride_l), Cell::SShr(arg1_r, arg2_r, stride_r))
+            | (Cell::XShr(arg1_l, arg2_l, stride_l), Cell::XShr(arg1_r, arg2_r, stride_r)) => {
                 queue_vals(&mut queue, arg1_l, arg1_r)?;
                 queue_vals(&mut queue, arg2_l, arg2_r)?;
                 if stride_l != stride_r {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }
             }
-            (CellRepr::Dff(ff_l), CellRepr::Dff(ff_r)) => {
+            (Cell::Dff(ff_l), Cell::Dff(ff_r)) => {
                 queue_vals(&mut queue, &ff_l.data, &ff_r.data)?;
                 queue.insert((ff_l.clock.net(), ff_r.clock.net()));
                 queue.insert((ff_l.clear.net(), ff_r.clear.net()));
@@ -194,7 +194,7 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }
             }
-            (CellRepr::Iob(iob_l), CellRepr::Iob(iob_r)) => {
+            (Cell::Iob(iob_l), Cell::Iob(iob_r)) => {
                 for (io_net_l, io_net_r) in iob_l.io.iter().zip(iob_r.io.iter()) {
                     if !ios.contains(&(io_net_l, io_net_r)) {
                         return Err(NotIsomorphic::IoNetMismatch(io_net_l, io_net_r));
@@ -206,7 +206,7 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }
             }
-            (CellRepr::Target(target_cell_l), CellRepr::Target(target_cell_r)) => {
+            (Cell::Target(target_cell_l), Cell::Target(target_cell_r)) => {
                 for (io_net_l, io_net_r) in target_cell_l.ios.iter().zip(target_cell_r.ios.iter()) {
                     if !ios.contains(&(io_net_l, io_net_r)) {
                         return Err(NotIsomorphic::IoNetMismatch(io_net_l, io_net_r));
@@ -217,7 +217,7 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
                 }
                 queue_vals(&mut queue, &target_cell_l.inputs, &target_cell_r.inputs)?;
             }
-            (CellRepr::Other(inst_l), CellRepr::Other(inst_r)) => {
+            (Cell::Other(inst_l), Cell::Other(inst_r)) => {
                 if inst_l.kind != inst_r.kind || inst_l.params != inst_r.params || inst_l.outputs != inst_r.outputs {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }
@@ -248,7 +248,7 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
                     }
                 }
             }
-            (CellRepr::Input(name_l, _), CellRepr::Input(name_r, _)) => {
+            (Cell::Input(name_l, _), Cell::Input(name_r, _)) => {
                 if name_l != name_r {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }

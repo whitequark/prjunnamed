@@ -16,7 +16,7 @@
 use std::fmt::Display;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use prjunnamed_netlist::{CellRef, CellRepr, Const, Design, MatchCell, Net, Trit, Value};
+use prjunnamed_netlist::{CellRef, Cell, Const, Design, MatchCell, Net, Trit, Value};
 
 /// Maps `pattern` (a constant where 0 and 1 match the respective states, and X matches any state)
 /// to a set of `rules` (the nets that are asserted if the `pattern` matches the value being tested).
@@ -241,7 +241,7 @@ impl MatchMatrix {
 }
 
 impl Decision {
-    fn emit(&self, design: &Design, cache: &mut HashMap<CellRepr, Net>) -> BTreeSet<Net> {
+    fn emit(&self, design: &Design, cache: &mut HashMap<Cell, Net>) -> BTreeSet<Net> {
         fn subtree(
             design: &Design,
             decision: &Decision,
@@ -249,18 +249,18 @@ impl Decision {
             sop: &mut BTreeMap<Net, Vec<Net>>,
             nets: &mut Vec<Net>,
             bits: &mut Vec<Trit>,
-            cache: &mut HashMap<CellRepr, Net>,
+            cache: &mut HashMap<Cell, Net>,
         ) {
             match decision {
                 Decision::Result { rules } => {
-                    let cond_repr = match &bits[..] {
-                        [] => CellRepr::Buf(Trit::One.into()),
-                        [Trit::One] => CellRepr::Buf(nets[0].into()),
-                        [Trit::Zero] => CellRepr::Not(nets[0].into()),
-                        _ => CellRepr::Eq(nets.clone().into(), Const::from(bits.clone()).into()),
+                    let cond_cell = match &bits[..] {
+                        [] => Cell::Buf(Trit::One.into()),
+                        [Trit::One] => Cell::Buf(nets[0].into()),
+                        [Trit::Zero] => Cell::Not(nets[0].into()),
+                        _ => Cell::Eq(nets.clone().into(), Const::from(bits.clone()).into()),
                     };
                     let cond =
-                        *cache.entry(cond_repr).or_insert_with_key(|repr| design.add_cell(repr.clone()).unwrap_net());
+                        *cache.entry(cond_cell).or_insert_with_key(|cell| design.add_cell(cell.clone()).unwrap_net());
                     for &rule in rules {
                         all_rules.insert(rule);
                         sop.entry(rule).or_default().push(cond);
@@ -291,8 +291,8 @@ impl Decision {
             let mut sum = None::<Net>;
             for product in products {
                 if let Some(ref mut sum) = sum {
-                    let sum_repr = CellRepr::Or((*sum).into(), product.into());
-                    *sum = *cache.entry(sum_repr).or_insert_with_key(|repr| design.add_cell(repr.clone()).unwrap_net());
+                    let sum_cell = Cell::Or((*sum).into(), product.into());
+                    *sum = *cache.entry(sum_cell).or_insert_with_key(|cell| design.add_cell(cell.clone()).unwrap_net());
                 } else {
                     sum = Some(product);
                 }
@@ -314,7 +314,7 @@ fn match_tree_into_matrix(
     cell_ref: CellRef,
     enable: Net,
 ) -> MatchMatrix {
-    let CellRepr::Match(match_cell) = &*cell_ref.repr() else { unreachable!() };
+    let Cell::Match(match_cell) = &*cell_ref.get() else { unreachable!() };
     let output = design.add_void(match_cell.output_len());
     if enable == Net::ONE {
         design.replace_value(cell_ref.output(), &output);
@@ -350,11 +350,11 @@ pub fn decision(design: &mut Design) {
     let mut roots: BTreeSet<CellRef> = BTreeSet::new();
     let mut subtrees: BTreeMap<(CellRef, usize), BTreeSet<CellRef>> = BTreeMap::new();
     for cell_ref in design.iter_cells() {
-        if let CellRepr::Match(MatchCell { enable, .. }) = &*cell_ref.repr() {
+        if let Cell::Match(MatchCell { enable, .. }) = &*cell_ref.get() {
             match design.find_cell(*enable) {
                 Err(Trit::Undef) | Err(Trit::Zero) => {
                     // Never enabled.
-                    cell_ref.replace(CellRepr::Buf(Const::zero(cell_ref.output_len()).into()));
+                    cell_ref.replace(Cell::Buf(Const::zero(cell_ref.output_len()).into()));
                 }
                 Err(Trit::One) => {
                     // Always enabled; is a root of a match tree.
@@ -363,7 +363,7 @@ pub fn decision(design: &mut Design) {
                 Ok((enable_cell_ref, offset)) => {
                     // Conditionally enabled; may be a node in a match tree or a root, depending on
                     // what the enable signal is connected to.
-                    if let CellRepr::Match(_) = &*cell_ref.repr() {
+                    if let Cell::Match(_) = &*cell_ref.get() {
                         // Node in a match tree.
                         subtrees.entry((enable_cell_ref, offset)).or_default().insert(cell_ref);
                     } else {
@@ -388,7 +388,7 @@ pub fn decision(design: &mut Design) {
     // Combine each tree of `match` cells into a single match matrix.
     let mut root_matrices = Vec::new();
     for root_cell_ref in roots {
-        let CellRepr::Match(MatchCell { enable, .. }) = &*root_cell_ref.repr() else { unreachable!() };
+        let Cell::Match(MatchCell { enable, .. }) = &*root_cell_ref.get() else { unreachable!() };
         root_matrices.push(match_tree_into_matrix(design, &subtrees, root_cell_ref, *enable));
     }
 
@@ -431,7 +431,7 @@ pub fn decision(design: &mut Design) {
 
     // Lower `assign` cells.
     for cell_ref in design.iter_cells() {
-        if let CellRepr::Assign(assign_cell) = &*cell_ref.repr() {
+        if let Cell::Assign(assign_cell) = &*cell_ref.get() {
             let mut nets = Vec::from_iter(assign_cell.value.iter());
             let slice = assign_cell.offset..(assign_cell.offset + assign_cell.update.len());
             nets[slice.clone()].copy_from_slice(
@@ -489,7 +489,7 @@ impl Decision {
         let format_decision = |f: &mut std::fmt::Formatter, net: Net, value: usize, decision: &Decision| {
             if let Decision::Result { rules } = decision {
                 if rules.is_empty() {
-                    return Ok(())
+                    return Ok(());
                 }
             }
             for _ in 0..level {
@@ -536,7 +536,7 @@ mod test {
 
     use std::collections::{BTreeMap, BTreeSet};
 
-    use prjunnamed_netlist::{CellRepr, Const, Design, MatchCell, Net, Trit, Value};
+    use prjunnamed_netlist::{Cell, Const, Design, MatchCell, Net, Trit, Value};
 
     use super::{Decision, MatchMatrix, MatchRow, match_tree_into_matrix};
 
@@ -879,17 +879,14 @@ mod test {
         let m = match_tree_into_matrix(&design, &BTreeMap::new(), design.find_cell(y[0]).unwrap().0, Net::ONE);
         design.apply();
 
-        let CellRepr::Buf(y) = &*design.find_cell(yy[0]).unwrap().0.repr() else { unreachable!() };
+        let Cell::Buf(y) = &*design.find_cell(yy[0]).unwrap().0.get() else { unreachable!() };
         assert_eq!(m.value, a);
-        assert_eq!(
-            m.rows,
-            vec![
-                MatchRow::new(Const::lit("000"), [y[0]]),
-                MatchRow::new(Const::lit("111"), [y[0]]),
-                MatchRow::new(Const::lit("010"), [y[1]]),
-                MatchRow::new(Const::lit("XXX"), []),
-            ]
-        );
+        assert_eq!(m.rows, vec![
+            MatchRow::new(Const::lit("000"), [y[0]]),
+            MatchRow::new(Const::lit("111"), [y[0]]),
+            MatchRow::new(Const::lit("010"), [y[1]]),
+            MatchRow::new(Const::lit("XXX"), []),
+        ]);
     }
 
     #[test]
@@ -919,8 +916,8 @@ mod test {
         let ml = match_tree_into_matrix(&design, &subtrees, design.find_cell(ya[0]).unwrap().0, Net::ONE);
         design.apply();
 
-        let CellRepr::Buf(ya) = &*design.find_cell(yya[0]).unwrap().0.repr() else { unreachable!() };
-        let CellRepr::Buf(yb) = &*design.find_cell(yyb[0]).unwrap().0.repr() else { unreachable!() };
+        let Cell::Buf(ya) = &*design.find_cell(yya[0]).unwrap().0.get() else { unreachable!() };
+        let Cell::Buf(yb) = &*design.find_cell(yyb[0]).unwrap().0.get() else { unreachable!() };
         let mut mr = MatchMatrix::new(a.concat(b));
         mr.add(MatchRow::new(Const::lit("XX000"), [ya[0]]));
         mr.add(MatchRow::new(Const::lit("XX111"), [ya[0]]));

@@ -1,4 +1,4 @@
-use prjunnamed_netlist::{CellRepr, Design, Net, Value};
+use prjunnamed_netlist::{Cell, Design, Net, Value};
 
 use crate::{NetOrValue, Pattern};
 
@@ -19,7 +19,7 @@ impl<P1: Pattern<Value>, P2: Pattern<Value>, P3: Pattern<Net>> Pattern<Value> fo
         }
         let (cap1, cap2, cap3);
         if let Ok((cell_ref, _offset)) = design.find_cell(target.iter().next().unwrap()) {
-            if let CellRepr::Adc(arg1, arg2, arg3) = &*cell_ref.repr() {
+            if let Cell::Adc(arg1, arg2, arg3) = &*cell_ref.get() {
                 if *target == cell_ref.output() {
                     cap1 = arg1.clone();
                     cap2 = arg2.clone();
@@ -44,7 +44,7 @@ impl<P1: Pattern<Value>, P2: Pattern<Value>, P3: Pattern<Net>> Pattern<Value> fo
 macro_rules! compare_patterns {
     {} => {};
 
-    { $name:ident(_,_) => $repr:ident; $($rest:tt)* } => {
+    { $name:ident(_,_) => $cstr:ident; $($rest:tt)* } => {
         pub struct $name<P1, P2>(P1, P2);
 
         impl<P1, P2> $name<P1, P2> {
@@ -61,7 +61,7 @@ macro_rules! compare_patterns {
                 let target = target.iter().next().unwrap();
                 let (cap1, cap2);
                 if let Ok((cell_ref, 0)) = design.find_cell(target) {
-                    if let CellRepr::$repr(arg1, arg2) = &*cell_ref.repr() {
+                    if let Cell::$cstr(arg1, arg2) = &*cell_ref.get() {
                         cap1 = arg1.clone();
                         cap2 = arg2.clone();
                     } else {
@@ -83,7 +83,7 @@ macro_rules! compare_patterns {
 macro_rules! arithmetic_patterns {
     {} => {};
 
-    { $name:ident(_,_) => $repr:ident; $($rest:tt)* } => {
+    { $name:ident(_,_) => $cstr:ident; $($rest:tt)* } => {
         pub struct $name<P1, P2>(P1, P2);
 
         impl<P1, P2> $name<P1, P2> {
@@ -99,7 +99,7 @@ macro_rules! arithmetic_patterns {
                 if target.len() == 0 { return None }
                 let (cap1, cap2);
                 if let Ok((cell_ref, 0)) = design.find_cell(target.iter().next().unwrap()) {
-                    if let CellRepr::$repr(arg1, arg2) = &*cell_ref.repr() {
+                    if let Cell::$cstr(arg1, arg2) = &*cell_ref.get() {
                         if *target == cell_ref.output() {
                             cap1 = arg1.clone();
                             cap2 = arg2.clone();

@@ -5,7 +5,7 @@ use std::hash::Hash;
 use std::collections::{btree_map, BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use crate::cell::{Cell, CellRepr};
+use crate::cell::{CellRepr, Cell};
 use crate::{
     AssignCell, ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, MatchCell, Memory, Net, Target, TargetCell,
     TargetCellPurity, TargetPrototype, Trit, Value,
@@ -14,7 +14,7 @@ use crate::{
 #[derive(Debug, Clone)]
 pub struct Design {
     ios: BTreeMap<String, Range<u32>>,
-    cells: Vec<Cell>,
+    cells: Vec<CellRepr>,
     changes: RefCell<ChangeQueue>,
     target: Option<Arc<dyn Target>>,
 }
@@ -23,8 +23,8 @@ pub struct Design {
 struct ChangeQueue {
     next_io: u32,
     added_ios: BTreeMap<String, Range<u32>>,
-    added_cells: Vec<Cell>,
-    replaced_cells: BTreeMap<usize, CellRepr>,
+    added_cells: Vec<CellRepr>,
+    replaced_cells: BTreeMap<usize, Cell>,
     unalived_cells: BTreeSet<usize>,
     replaced_nets: BTreeMap<Net, Net>,
 }
@@ -87,7 +87,7 @@ impl Design {
         self.ios.iter().map(|(name, range)| (name.as_str(), IoValue::from_range(range.clone())))
     }
 
-    pub fn add_cell(&self, cell: CellRepr) -> Value {
+    pub fn add_cell(&self, cell: Cell) -> Value {
         cell.validate(self);
         let mut changes = self.changes.borrow_mut();
         let index = self.cells.len() + changes.added_cells.len();
@@ -95,7 +95,7 @@ impl Design {
         changes.added_cells.push(cell.into());
         if output_len > 1 {
             for _ in 0..(output_len - 1) {
-                changes.added_cells.push(Cell::Skip(index.try_into().expect("cell index too large")))
+                changes.added_cells.push(CellRepr::Skip(index.try_into().expect("cell index too large")))
             }
         }
         Value::cell(index, output_len)
@@ -105,7 +105,7 @@ impl Design {
         let mut changes = self.changes.borrow_mut();
         let index = self.cells.len() + changes.added_cells.len();
         for _ in 0..width {
-            changes.added_cells.push(Cell::Void);
+            changes.added_cells.push(CellRepr::Void);
         }
         Value::cell(index, width)
     }
@@ -116,8 +116,8 @@ impl Design {
         }
         let index = net.as_cell().unwrap();
         let (cell_index, bit_index) = match self.cells[index] {
-            Cell::Void => panic!("located a void cell %{index} in design"),
-            Cell::Skip(start) => (start as usize, index - start as usize),
+            CellRepr::Void => panic!("located a void cell %{index} in design"),
+            CellRepr::Skip(start) => (start as usize, index - start as usize),
             _ => (index, 0),
         };
         Ok((cell_index, bit_index))
@@ -172,20 +172,20 @@ impl Design {
         for cell_index in std::mem::take(&mut changes.unalived_cells) {
             let output_len = self.cells[cell_index].output_len().max(1);
             for index in cell_index..cell_index + output_len {
-                self.cells[index] = Cell::Void;
+                self.cells[index] = CellRepr::Void;
             }
             did_change = true;
         }
         for (index, new_cell) in std::mem::take(&mut changes.replaced_cells) {
             assert_eq!(self.cells[index].output_len(), new_cell.output_len());
-            // CellRef::replace() ensures the new repr is different.
+            // CellRef::replace() ensures the new cell is different.
             self.cells[index] = new_cell.into();
             did_change = true;
         }
         self.ios.extend(std::mem::take(&mut changes.added_ios));
         self.cells.extend(std::mem::take(&mut changes.added_cells));
         if !changes.replaced_nets.is_empty() {
-            for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, Cell::Skip(_) | Cell::Void)) {
+            for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, CellRepr::Skip(_) | CellRepr::Void)) {
                 cell.visit_mut(|net| {
                     while let Some(new_net) = changes.replaced_nets.get(net) {
                         if *net != *new_net {
@@ -245,8 +245,8 @@ impl Hash for CellRef<'_> {
 }
 
 impl<'a> CellRef<'a> {
-    pub fn repr(&self) -> Cow<'a, CellRepr> {
-        self.design.cells[self.index].repr()
+    pub fn get(&self) -> Cow<'a, Cell> {
+        self.design.cells[self.index].get()
     }
 
     pub fn output_len(&self) -> usize {
@@ -261,8 +261,8 @@ impl<'a> CellRef<'a> {
         self.design.cells[self.index].visit(f)
     }
 
-    pub fn replace(&self, to_cell: CellRepr) {
-        if *self.design.cells[self.index].repr() != to_cell {
+    pub fn replace(&self, to_cell: Cell) {
+        if *self.design.cells[self.index].get() != to_cell {
             to_cell.validate(self.design);
             let mut changes = self.design.changes.borrow_mut();
             assert!(changes.replaced_cells.insert(self.index, to_cell).is_none());
@@ -289,7 +289,7 @@ impl<'a> Iterator for CellIter<'a> {
     type Item = CellRef<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while matches!(self.design.cells.get(self.index), Some(Cell::Void)) {
+        while matches!(self.design.cells.get(self.index), Some(CellRepr::Void)) {
             self.index += 1;
         }
         if self.index < self.design.cells.len() {
@@ -305,18 +305,18 @@ impl<'a> Iterator for CellIter<'a> {
 macro_rules! builder_fn {
     () => {};
 
-    ($func:ident( $($arg:ident : $argty:ty),+ ) -> $retty:ty : $repr:ident $body:tt; $($rest:tt)*) => {
+    ($func:ident( $($arg:ident : $argty:ty),+ ) -> $retty:ty : $cstr:ident $body:tt; $($rest:tt)*) => {
         pub fn $func(&self, $( $arg: $argty ),+) -> $retty {
-            self.add_cell(CellRepr::$repr $body).try_into().unwrap()
+            self.add_cell(Cell::$cstr $body).try_into().unwrap()
         }
 
         builder_fn!{ $($rest)* }
     };
 
     // For cells with no output value.
-    ($func:ident( $($arg:ident : $argty:ty),+ ) : $repr:ident $body:tt; $($rest:tt)*) => {
+    ($func:ident( $($arg:ident : $argty:ty),+ ) : $cstr:ident $body:tt; $($rest:tt)*) => {
         pub fn $func(&self, $( $arg: $argty ),+) {
-            self.add_cell(CellRepr::$repr $body);
+            self.add_cell(Cell::$cstr $body);
         }
 
         builder_fn!{ $($rest)* }
@@ -406,19 +406,15 @@ impl Design {
 
     pub fn add_mux(&self, arg1: impl Into<ControlNet>, arg2: impl Into<Value>, arg3: impl Into<Value>) -> Value {
         match arg1.into() {
-            ControlNet::Pos(net) => self.add_cell(CellRepr::Mux(net, arg2.into(), arg3.into())),
-            ControlNet::Neg(net) => self.add_cell(CellRepr::Mux(net, arg3.into(), arg2.into())),
+            ControlNet::Pos(net) => self.add_cell(Cell::Mux(net, arg2.into(), arg3.into())),
+            ControlNet::Neg(net) => self.add_cell(Cell::Mux(net, arg3.into(), arg2.into())),
         }
     }
 
     pub fn add_mux1(&self, arg1: impl Into<ControlNet>, arg2: impl Into<Net>, arg3: impl Into<Net>) -> Net {
         match arg1.into() {
-            ControlNet::Pos(net) => {
-                self.add_cell(CellRepr::Mux(net, arg2.into().into(), arg3.into().into())).unwrap_net()
-            }
-            ControlNet::Neg(net) => {
-                self.add_cell(CellRepr::Mux(net, arg3.into().into(), arg2.into().into())).unwrap_net()
-            }
+            ControlNet::Pos(net) => self.add_cell(Cell::Mux(net, arg2.into().into(), arg3.into().into())).unwrap_net(),
+            ControlNet::Neg(net) => self.add_cell(Cell::Mux(net, arg3.into().into(), arg2.into().into())).unwrap_net(),
         }
     }
 
@@ -444,12 +440,12 @@ impl Design {
         let mut visited = BTreeSet::new();
         // emit inputs, iobs and stateful cells first, in netlist order
         for cell in self.iter_cells() {
-            match &*cell.repr() {
-                CellRepr::Input(..) | CellRepr::Iob(..) | CellRepr::Dff(..) | CellRepr::Other(..) => {
+            match &*cell.get() {
+                Cell::Input(..) | Cell::Iob(..) | Cell::Dff(..) | Cell::Other(..) => {
                     visited.insert(cell.index);
                     result.push(cell);
                 }
-                CellRepr::Target(target_cell) => {
+                Cell::Target(target_cell) => {
                     if self.target_prototype(target_cell).purity != TargetCellPurity::Pure {
                         visited.insert(cell.index);
                         result.push(cell);
@@ -465,7 +461,7 @@ impl Design {
         // as soon as we start processing it, so cycles will be automatically broken
         // by considering inputs already on the processing stack as "already emitted".
         for cell in self.iter_cells() {
-            if matches!(&*cell.repr(), CellRepr::Output(..) | CellRepr::Name(..)) {
+            if matches!(&*cell.get(), Cell::Output(..) | Cell::Name(..)) {
                 continue;
             }
             if visited.contains(&cell.index) {
@@ -501,10 +497,10 @@ impl Design {
 
         let mut queue = BTreeSet::new();
         for (index, cell) in self.cells.iter().enumerate() {
-            if matches!(cell, Cell::Skip(_) | Cell::Void) {
+            if matches!(cell, CellRepr::Skip(_) | CellRepr::Void) {
                 continue;
             }
-            if cell.repr().has_effects(self) {
+            if cell.get().has_effects(self) {
                 queue.insert(index);
             }
         }
@@ -532,12 +528,12 @@ impl Design {
                 let skip_count = cell.output_len().checked_sub(1).unwrap_or(0);
                 self.cells.push(cell);
                 for _ in 0..skip_count {
-                    self.cells.push(Cell::Skip(new_index as u32));
+                    self.cells.push(CellRepr::Skip(new_index as u32));
                 }
             }
         }
 
-        for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, Cell::Skip(_))) {
+        for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, CellRepr::Skip(_))) {
             cell.visit_mut(|net| {
                 if ![Net::UNDEF, Net::ZERO, Net::ONE].contains(net) {
                     *net = net_map[net];

@@ -3,7 +3,7 @@ use std::{collections::BTreeMap, fmt::Display, ops::Range, str::FromStr, sync::A
 use yap::{one_of, types::WithContext, IntoTokens, TokenLocation, Tokens};
 
 use crate::{
-    AssignCell, MatchCell, create_target, CellRepr, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet,
+    AssignCell, MatchCell, create_target, Cell, Const, ControlNet, Design, FlipFlop, Instance, IoBuffer, IoNet,
     IoValue, Memory, MemoryPortRelation, MemoryReadFlipFlop, MemoryReadPort, MemoryWritePort, Net, ParamValue, Target,
     TargetCell, Value,
 };
@@ -43,9 +43,9 @@ impl Context {
         value
     }
 
-    fn add_cell(&mut self, index: usize, width: usize, repr: CellRepr) -> Value {
+    fn add_cell(&mut self, index: usize, width: usize, cell: Cell) -> Value {
         self.is_empty = false;
-        let value = self.design.add_cell(repr);
+        let value = self.design.add_cell(cell);
         assert_eq!(value.len(), width, "cell width should match declaration width");
         assert!(index >= self.next_cell, "cell index should monotonically grow");
         self.next_cell += value.len().max(1);
@@ -71,7 +71,7 @@ impl Context {
             if let Some(output) = self.cell_map.get(&index) {
                 if offset < output.len() {
                     let (cell_ref, _offset) = self.design.find_cell(net).unwrap();
-                    cell_ref.replace(CellRepr::Buf(output[offset].into()));
+                    cell_ref.replace(Cell::Buf(output[offset].into()));
                 } else {
                     panic!("late cell reference %{}+{} out of bounds for %{}:{}", index, offset, index, output.len());
                 }
@@ -389,30 +389,30 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
         parse_const(t)
     }
 
-    fn parse_builtin(t: &mut WithContext<impl Tokens<Item = char>, Context>, size: usize) -> Option<CellRepr> {
+    fn parse_builtin(t: &mut WithContext<impl Tokens<Item = char>, Context>, size: usize) -> Option<Cell> {
         let name = parse_keyword(t)?;
         Some(match name.as_ref() {
-            "buf" => CellRepr::Buf(parse_value_arg(t)?),
-            "not" => CellRepr::Not(parse_value_arg(t)?),
-            "and" => CellRepr::And(parse_value_arg(t)?, parse_value_arg(t)?),
-            "or" => CellRepr::Or(parse_value_arg(t)?, parse_value_arg(t)?),
-            "xor" => CellRepr::Xor(parse_value_arg(t)?, parse_value_arg(t)?),
-            "mux" => CellRepr::Mux(parse_net_arg(t)?, parse_value_arg(t)?, parse_value_arg(t)?),
-            "adc" => CellRepr::Adc(parse_value_arg(t)?, parse_value_arg(t)?, parse_net_arg(t)?),
-            "eq" => CellRepr::Eq(parse_value_arg(t)?, parse_value_arg(t)?),
-            "ult" => CellRepr::ULt(parse_value_arg(t)?, parse_value_arg(t)?),
-            "slt" => CellRepr::SLt(parse_value_arg(t)?, parse_value_arg(t)?),
-            "shl" => CellRepr::Shl(parse_value_arg(t)?, parse_value_arg(t)?, parse_int_arg(t)? as u32),
-            "ushr" => CellRepr::UShr(parse_value_arg(t)?, parse_value_arg(t)?, parse_int_arg(t)? as u32),
-            "sshr" => CellRepr::SShr(parse_value_arg(t)?, parse_value_arg(t)?, parse_int_arg(t)? as u32),
-            "xshr" => CellRepr::XShr(parse_value_arg(t)?, parse_value_arg(t)?, parse_int_arg(t)? as u32),
-            "mul" => CellRepr::Mul(parse_value_arg(t)?, parse_value_arg(t)?),
-            "udiv" => CellRepr::UDiv(parse_value_arg(t)?, parse_value_arg(t)?),
-            "umod" => CellRepr::UMod(parse_value_arg(t)?, parse_value_arg(t)?),
-            "sdiv_trunc" => CellRepr::SDivTrunc(parse_value_arg(t)?, parse_value_arg(t)?),
-            "sdiv_floor" => CellRepr::SDivFloor(parse_value_arg(t)?, parse_value_arg(t)?),
-            "smod_trunc" => CellRepr::SModTrunc(parse_value_arg(t)?, parse_value_arg(t)?),
-            "smod_floor" => CellRepr::SModFloor(parse_value_arg(t)?, parse_value_arg(t)?),
+            "buf" => Cell::Buf(parse_value_arg(t)?),
+            "not" => Cell::Not(parse_value_arg(t)?),
+            "and" => Cell::And(parse_value_arg(t)?, parse_value_arg(t)?),
+            "or" => Cell::Or(parse_value_arg(t)?, parse_value_arg(t)?),
+            "xor" => Cell::Xor(parse_value_arg(t)?, parse_value_arg(t)?),
+            "mux" => Cell::Mux(parse_net_arg(t)?, parse_value_arg(t)?, parse_value_arg(t)?),
+            "adc" => Cell::Adc(parse_value_arg(t)?, parse_value_arg(t)?, parse_net_arg(t)?),
+            "eq" => Cell::Eq(parse_value_arg(t)?, parse_value_arg(t)?),
+            "ult" => Cell::ULt(parse_value_arg(t)?, parse_value_arg(t)?),
+            "slt" => Cell::SLt(parse_value_arg(t)?, parse_value_arg(t)?),
+            "shl" => Cell::Shl(parse_value_arg(t)?, parse_value_arg(t)?, parse_int_arg(t)? as u32),
+            "ushr" => Cell::UShr(parse_value_arg(t)?, parse_value_arg(t)?, parse_int_arg(t)? as u32),
+            "sshr" => Cell::SShr(parse_value_arg(t)?, parse_value_arg(t)?, parse_int_arg(t)? as u32),
+            "xshr" => Cell::XShr(parse_value_arg(t)?, parse_value_arg(t)?, parse_int_arg(t)? as u32),
+            "mul" => Cell::Mul(parse_value_arg(t)?, parse_value_arg(t)?),
+            "udiv" => Cell::UDiv(parse_value_arg(t)?, parse_value_arg(t)?),
+            "umod" => Cell::UMod(parse_value_arg(t)?, parse_value_arg(t)?),
+            "sdiv_trunc" => Cell::SDivTrunc(parse_value_arg(t)?, parse_value_arg(t)?),
+            "sdiv_floor" => Cell::SDivFloor(parse_value_arg(t)?, parse_value_arg(t)?),
+            "smod_trunc" => Cell::SModTrunc(parse_value_arg(t)?, parse_value_arg(t)?),
+            "smod_floor" => Cell::SModFloor(parse_value_arg(t)?, parse_value_arg(t)?),
             "match" => {
                 let enable = t
                     .optional(|t| {
@@ -448,7 +448,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 }) {}
                 parse_space(t);
                 parse_symbol(t, '}');
-                CellRepr::Match(MatchCell { value, enable, patterns })
+                Cell::Match(MatchCell { value, enable, patterns })
             }
             "assign" => {
                 let enable = t
@@ -468,7 +468,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         parse_decimal(t)
                     })
                     .unwrap_or(0);
-                CellRepr::Assign(AssignCell { value, enable, update, offset })
+                Cell::Assign(AssignCell { value, enable, update, offset })
             }
             "dff" => {
                 let data = parse_value_arg(t)?;
@@ -483,7 +483,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 let reset_over_enable = t.optional(|t| parse_reset_over_enable_arg(t)).unwrap_or(false);
                 let init_value =
                     t.optional(|t| parse_dff_init_value_arg(t)).unwrap_or_else(|| Const::undef(data.len()));
-                CellRepr::Dff(FlipFlop {
+                Cell::Dff(FlipFlop {
                     data,
                     clock,
                     clear,
@@ -593,7 +593,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 }) {}
                 parse_space(t);
                 parse_symbol(t, '}')?;
-                CellRepr::Memory(Memory {
+                Cell::Memory(Memory {
                     depth,
                     width,
                     init_value: init_value.concat(Const::undef((depth * width).checked_sub(init_value.len()).unwrap())),
@@ -608,7 +608,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 parse_keyword_eq_expect(t, "o")?;
                 let output = parse_value_arg(t)?;
                 let enable = parse_control_arg(t, "en")?;
-                CellRepr::Iob(IoBuffer { io, output, enable })
+                Cell::Iob(IoBuffer { io, output, enable })
             }
             "target" => {
                 parse_space(t);
@@ -640,11 +640,11 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 if !instance.outputs.is_empty() {
                     panic!("target instance should not have explicit outputs");
                 }
-                CellRepr::Target(target_cell)
+                Cell::Target(target_cell)
             }
-            "input" => CellRepr::Input(parse_string_arg(t)?, size),
-            "output" => CellRepr::Output(parse_string_arg(t)?, parse_value_arg(t)?),
-            "name" => CellRepr::Name(parse_string_arg(t)?, parse_value_arg(t)?),
+            "input" => Cell::Input(parse_string_arg(t)?, size),
+            "output" => Cell::Output(parse_string_arg(t)?, parse_value_arg(t)?),
+            "name" => Cell::Name(parse_string_arg(t)?, parse_value_arg(t)?),
             _ => return None,
         })
     }
@@ -718,13 +718,13 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
     parse_space(t);
     parse_symbol(t, '=')?;
     parse_space(t);
-    let repr = one_of!(t;
+    let cell = one_of!(t;
         parse_builtin(t, size),
-        parse_instance(t).map(CellRepr::Other),
+        parse_instance(t).map(Cell::Other),
     )?;
     parse_space(t);
     parse_symbol(t, '\n')?;
-    Some(t.context_mut().add_cell(index, size, repr))
+    Some(t.context_mut().add_cell(index, size, cell))
 }
 
 fn parse_line(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
@@ -775,8 +775,8 @@ pub fn parse(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, Pa
     _parse_without_compacting(target, source).map(|mut design| {
         design.apply();
         for cell_ref in design.iter_cells() {
-            match &*cell_ref.repr() {
-                CellRepr::Buf(arg) => design.replace_value(cell_ref.output(), arg),
+            match &*cell_ref.get() {
+                Cell::Buf(arg) => design.replace_value(cell_ref.output(), arg),
                 _ => (),
             }
         }

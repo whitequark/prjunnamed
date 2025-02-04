@@ -1,11 +1,11 @@
-use prjunnamed_netlist::{CellRepr, Design, Value};
+use prjunnamed_netlist::{Cell, Design, Value};
 
 use crate::Pattern;
 
 macro_rules! shift_patterns {
     {} => {};
 
-    { $name:ident(_,_,_) => $repr:ident; $($rest:tt)* } => {
+    { $name:ident(_,_,_) => $cstr:ident; $($rest:tt)* } => {
         pub struct $name<P1, P2, P3>(P1, P2, P3);
 
         impl<P1, P2, P3> $name<P1, P2, P3> {
@@ -23,7 +23,7 @@ macro_rules! shift_patterns {
                 }
                 let (cap1, cap2, cap3);
                 if let Ok((cell_ref, _offset)) = design.find_cell(target.iter().next().unwrap()) {
-                    if let CellRepr::$repr(arg1, arg2, arg3) = &*cell_ref.repr() {
+                    if let Cell::$cstr(arg1, arg2, arg3) = &*cell_ref.get() {
                         if *target == cell_ref.output() {
                             cap1 = arg1.clone();
                             cap2 = arg2.clone();
