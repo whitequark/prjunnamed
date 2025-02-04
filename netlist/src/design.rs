@@ -114,7 +114,7 @@ impl Design {
         if let Some(trit) = net.as_const() {
             return Err(trit);
         }
-        let index = net.as_cell().unwrap();
+        let index = net.as_cell_index().unwrap();
         let (cell_index, bit_index) = match self.cells[index] {
             CellRepr::Void => panic!("located a void cell %{index} in design"),
             CellRepr::Skip(start) => (start as usize, index - start as usize),
@@ -156,7 +156,7 @@ impl Design {
         let net = net.into();
         let mapped_net = *changes.replaced_nets.get(&net).unwrap_or(&net);
         // Assume the caller might want to locate the cell behind the net.
-        match mapped_net.as_cell() {
+        match mapped_net.as_cell_index() {
             Some(index) if index >= self.cells.len() => net,
             _ => mapped_net,
         }
@@ -523,7 +523,7 @@ impl Design {
             if keep.contains(&old_index) {
                 let new_index = self.cells.len();
                 for offset in 0..cell.output_len() {
-                    net_map.insert(Net::from_cell(old_index + offset), Net::from_cell(new_index + offset));
+                    net_map.insert(Net::from_cell_index(old_index + offset), Net::from_cell_index(new_index + offset));
                 }
                 let skip_count = cell.output_len().checked_sub(1).unwrap_or(0);
                 self.cells.push(cell);
@@ -542,5 +542,54 @@ impl Design {
         }
 
         did_change
+    }
+
+    pub fn statistics(&self) -> BTreeMap<String, usize> {
+        let result = RefCell::new(BTreeMap::<String, usize>::new());
+        for cell_ref in self.iter_cells() {
+            let fine = |name: &str, amount: usize| {
+                *result.borrow_mut().entry(format!("{name}")).or_default() += amount;
+            };
+            let coarse = |name: &str, size: usize| {
+                *result.borrow_mut().entry(format!("{name}:{size}")).or_default() += 1;
+            };
+            let custom = |args: std::fmt::Arguments| {
+                *result.borrow_mut().entry(format!("{args}")).or_default() += 1;
+            };
+            match &*cell_ref.get() {
+                Cell::Buf(arg) => fine("buf", arg.len()),
+                Cell::Not(arg) => fine("not", arg.len()),
+                Cell::And(arg, _) => fine("and", arg.len()),
+                Cell::Or(arg, _) => fine("or", arg.len()),
+                Cell::Xor(arg, _) => fine("xor", arg.len()),
+                Cell::Mux(_, arg, _) => fine("mux", arg.len()),
+                Cell::Adc(arg, _, _) => coarse("adc", arg.len()),
+                Cell::Eq(arg, _) => coarse("eq", arg.len()),
+                Cell::ULt(arg, _) => coarse("ult", arg.len()),
+                Cell::SLt(arg, _) => coarse("slt", arg.len()),
+                Cell::Shl(arg, _, _) => coarse("shl", arg.len()),
+                Cell::UShr(arg, _, _) => coarse("ushr", arg.len()),
+                Cell::SShr(arg, _, _) => coarse("sshr", arg.len()),
+                Cell::XShr(arg, _, _) => coarse("xshr", arg.len()),
+                Cell::Mul(arg, _) => coarse("mul", arg.len()),
+                Cell::UDiv(arg, _) => coarse("udiv", arg.len()),
+                Cell::UMod(arg, _) => coarse("umod", arg.len()),
+                Cell::SDivTrunc(arg, _) => coarse("sdiv_trunc", arg.len()),
+                Cell::SDivFloor(arg, _) => coarse("sdiv_floor", arg.len()),
+                Cell::SModTrunc(arg, _) => coarse("smod_trunc", arg.len()),
+                Cell::SModFloor(arg, _) => coarse("smod_floor", arg.len()),
+                Cell::Match(_) => custom(format_args!("match")),
+                Cell::Assign(AssignCell { value, .. }) => fine("assign", value.len()),
+                Cell::Dff(FlipFlop { data, .. }) => fine("dff", data.len()),
+                Cell::Memory(Memory { depth, width, .. }) => custom(format_args!("memory:{depth}:{width}")),
+                Cell::Iob(IoBuffer { io, .. }) => fine("iob", io.len()),
+                Cell::Target(TargetCell { kind, .. }) => custom(format_args!("{kind}")),
+                Cell::Other(Instance { kind, .. }) => custom(format_args!("{kind}")),
+                Cell::Input(_, width) => fine("input", *width),
+                Cell::Output(_, value) => fine("output", value.len()),
+                Cell::Name(_, _) => (),
+            }
+        }
+        result.into_inner()
     }
 }

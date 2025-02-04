@@ -26,7 +26,7 @@ impl Design {
     }
 
     fn write_net(&self, f: &mut std::fmt::Formatter, net: Net) -> std::fmt::Result {
-        if let Some(index) = net.as_cell() {
+        if let Some(index) = net.as_cell_index() {
             if !self.is_valid_cell_index(index) {
                 return write!(f, "%_{}", index);
             }
@@ -50,7 +50,7 @@ impl Design {
             return self.write_net(f, value[0]);
         } else if let Some(value) = value.as_const() {
             return write!(f, "{}", value);
-        } else if value.iter().any(|net| net.as_cell().map(|index| !self.is_valid_cell_index(index)).unwrap_or(false)) {
+        } else if value.iter().any(|net| net.as_cell_index().map(|index| !self.is_valid_cell_index(index)).unwrap_or(false)) {
             // Value contains newly added cells that we can't look up. Don't try to make
             // the display nicer, just make sure it doesn't panic.
             write!(f, "{{")?;

@@ -162,12 +162,12 @@ impl Net {
 
     const FIRST_CELL: u32 = 2; // Zero, One, then cells
 
-    pub(crate) fn from_cell(cell_index: usize) -> Net {
+    pub(crate) fn from_cell_index(cell_index: usize) -> Net {
         assert!(cell_index <= u32::MAX as usize - 3);
         Net { index: cell_index as u32 + Net::FIRST_CELL }
     }
 
-    pub(crate) fn as_cell(self) -> Option<usize> {
+    pub(crate) fn as_cell_index(self) -> Option<usize> {
         if self.index >= Self::FIRST_CELL && self != Self::UNDEF {
             Some((self.index - Self::FIRST_CELL) as usize)
         } else {
@@ -314,20 +314,6 @@ impl ControlNet {
         }
     }
 
-    pub fn visit(self, f: impl FnMut(Net)) {
-        match self {
-            ControlNet::Pos(net) => net.visit(f),
-            ControlNet::Neg(net) => net.visit(f),
-        }
-    }
-
-    pub fn visit_mut(&mut self, f: impl FnMut(&mut Net)) {
-        match self {
-            ControlNet::Pos(net) => net.visit_mut(f),
-            ControlNet::Neg(net) => net.visit_mut(f),
-        }
-    }
-
     pub fn into_pos(self, design: &Design) -> Net {
         match self {
             ControlNet::Pos(net) => net,
@@ -353,6 +339,20 @@ impl ControlNet {
             ControlNet::Neg(net) => net,
         }
     }
+
+    pub fn visit(self, f: impl FnMut(Net)) {
+        match self {
+            ControlNet::Pos(net) => net.visit(f),
+            ControlNet::Neg(net) => net.visit(f),
+        }
+    }
+
+    pub fn visit_mut(&mut self, f: impl FnMut(&mut Net)) {
+        match self {
+            ControlNet::Pos(net) => net.visit_mut(f),
+            ControlNet::Neg(net) => net.visit_mut(f),
+        }
+    }
 }
 
 impl From<Net> for ControlNet {
@@ -370,7 +370,7 @@ mod test {
         assert_eq!(Net::from(Trit::Zero), Net::ZERO);
         assert_eq!(Net::from(Trit::One), Net::ONE);
         assert_eq!(Net::from(Trit::Undef), Net::UNDEF);
-        assert_eq!(Net::from_cell(3), Net { index: 5 });
+        assert_eq!(Net::from_cell_index(3), Net { index: 5 });
     }
 
     #[test]
@@ -391,6 +391,6 @@ mod test {
         assert_eq!(format!("{:?}", Net::ZERO), "Net::ZERO");
         assert_eq!(format!("{:?}", Net::ONE), "Net::ONE");
         assert_eq!(format!("{:?}", Net::UNDEF), "Net::UNDEF");
-        assert_eq!(format!("{:?}", Net::from_cell(0)), "Net::from_cell(0)");
+        assert_eq!(format!("{:?}", Net::from_cell_index(0)), "Net::from_cell(0)");
     }
 }

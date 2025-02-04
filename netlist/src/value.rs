@@ -427,7 +427,7 @@ impl Value {
     pub(crate) fn cell(cell_index: usize, count: usize) -> Value {
         let mut nets = vec![];
         for net_index in 0..count {
-            nets.push(Net::from_cell(cell_index + net_index));
+            nets.push(Net::from_cell_index(cell_index + net_index));
         }
         Value { nets }
     }

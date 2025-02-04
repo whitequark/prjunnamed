@@ -4,7 +4,7 @@ use prjunnamed_generic::{canonicalize, decision, lower};
 use prjunnamed_netlist::{Cell, Design};
 
 fn process(name: &str, design: &mut Design) {
-    print!("; {} (initial)\n{:#}\n", name, design);
+    println!("; {} (initial)\n{:#}", name, design);
 
     match design.target() {
         None => {
@@ -24,7 +24,13 @@ fn process(name: &str, design: &mut Design) {
         }
     }
 
-    print!("; {} (final)\n{}\n", name, design);
+    println!("; {} (final)\n{}", name, design);
+
+    let stats = design.statistics();
+    println!("; cell counts:");
+    for (class, amount) in stats {
+        println!("; {:>7} {}", amount, class);
+    }
 }
 
 fn run() -> Result<(), Box<dyn std::error::Error>> {
