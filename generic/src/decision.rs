@@ -323,6 +323,9 @@ fn match_tree_into_matrix(
         for pattern in alternates {
             matrix.add(MatchRow::new(pattern.clone(), [output_net]));
         }
+        if alternates.is_empty() {
+            design.replace_net(output_net, Net::ZERO);
+        }
     }
     matrix.add(MatchRow::empty(match_cell.value.len()));
 
@@ -478,6 +481,11 @@ impl Decision {
         };
 
         let format_decision = |f: &mut std::fmt::Formatter, net: Net, value: usize, decision: &Decision| {
+            if let Decision::Result { rules } = decision {
+                if rules.is_empty() {
+                    return Ok(())
+                }
+            }
             for _ in 0..level {
                 write!(f, "  ")?;
             }
