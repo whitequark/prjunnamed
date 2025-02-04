@@ -213,6 +213,12 @@ impl From<String> for MetadataValue {
     }
 }
 
+impl From<&String> for MetadataValue {
+    fn from(value: &String) -> Self {
+        MetadataValue::String(value.to_owned())
+    }
+}
+
 impl From<&str> for MetadataValue {
     fn from(value: &str) -> Self {
         MetadataValue::String(value.to_owned())
