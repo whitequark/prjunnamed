@@ -1,6 +1,6 @@
 use std::{borrow::Cow, hash::Hash};
 
-use crate::{Design, Net, Value};
+use crate::{Design, Net, TargetCellPurity, Value};
 
 mod decision;
 mod flip_flop;
@@ -348,6 +348,22 @@ impl CellRepr {
             CellRepr::Input(_, width) => *width,
             CellRepr::Output(_, _) => 0,
             CellRepr::Name(_, _) => 0,
+        }
+    }
+
+    pub fn has_effects(&self, design: &Design) -> bool {
+        match self {
+            CellRepr::Iob(_)
+            | CellRepr::Other(_)
+            | CellRepr::Input(_, _)
+            | CellRepr::Output(_, _)
+            | CellRepr::Name(_, _) => true,
+
+            CellRepr::Target(target_cell) => {
+                design.target_prototype(&target_cell).purity == TargetCellPurity::HasEffects
+            }
+
+            _ => false,
         }
     }
 

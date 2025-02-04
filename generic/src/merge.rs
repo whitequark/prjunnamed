@@ -6,8 +6,7 @@ fn consider_for_merge(design: &Design, cell_ref: &CellRef) -> bool {
     match &*cell_ref.repr() {
         CellRepr::Other(_instance) => false,
         CellRepr::Target(target_cell) => {
-            let prototype = design.target_prototype(target_cell);
-            prototype.purity != TargetCellPurity::HasEffects
+            design.target_prototype(target_cell).purity != TargetCellPurity::HasEffects
         }
         _ => true,
     }
@@ -31,7 +30,7 @@ impl Numberer {
         let mut result = Value::EMPTY;
         for (out_net, arg_net) in out.iter().zip(arg.iter()) {
             let bit_cell_repr = rebuild(Value::from(arg_net));
-            result = result.concat(self.find_or_insert(bit_cell_repr, Value::from(out_net)));
+            result.extend(self.find_or_insert(bit_cell_repr, out_net));
         }
         result
     }
@@ -44,7 +43,7 @@ impl Numberer {
         for (out_net, (arg1_net, arg2_net)) in out.iter().zip(arg1.iter().zip(arg2.iter())) {
             let (arg1_net, arg2_net) = if arg1_net <= arg2_net { (arg1_net, arg2_net) } else { (arg2_net, arg1_net) };
             let bit_cell_repr = rebuild(Value::from(arg1_net), Value::from(arg2_net));
-            result = result.concat(self.find_or_insert(bit_cell_repr, Value::from(out_net)));
+            result.extend(self.find_or_insert(bit_cell_repr, out_net));
         }
         result
     }
@@ -56,7 +55,7 @@ impl Numberer {
         let mut result = Value::EMPTY;
         for (out_net, (arg1_net, arg2_net)) in out.iter().zip(arg1.iter().zip(arg2.iter())) {
             let bit_cell_repr = rebuild(Value::from(arg1_net), Value::from(arg2_net));
-            result = result.concat(self.find_or_insert(bit_cell_repr, Value::from(out_net)));
+            result.extend(self.find_or_insert(bit_cell_repr, out_net));
         }
         result
     }

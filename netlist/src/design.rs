@@ -504,20 +504,8 @@ impl Design {
             if matches!(cell, Cell::Skip(_) | Cell::Void) {
                 continue;
             }
-            match &*cell.repr() {
-                CellRepr::Iob(_)
-                | CellRepr::Other(_)
-                | CellRepr::Input(_, _)
-                | CellRepr::Output(_, _)
-                | CellRepr::Name(_, _) => {
-                    queue.insert(index);
-                }
-                CellRepr::Target(target_cell) => {
-                    if self.target_prototype(target_cell).purity == TargetCellPurity::HasEffects {
-                        queue.insert(index);
-                    }
-                }
-                _ => (),
+            if cell.repr().has_effects(self) {
+                queue.insert(index);
             }
         }
 
