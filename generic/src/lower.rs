@@ -17,23 +17,20 @@ fn add_horiz_or(design: &Design, value: Value) -> Net {
 fn lower_shift(
     design: &Design,
     value: &Value,
-    shcnt: &Value,
+    amount: &Value,
     stride: u32,
     shift: impl Fn(&Value, usize) -> Value,
     overflow: Value,
 ) -> Cell {
     let mut stride = stride as usize;
     let mut value = value.clone();
-    for (index, bit) in shcnt.iter().enumerate() {
+    for (index, bit) in amount.iter().enumerate() {
         if stride < value.len() {
-            let shval = shift(&value, stride);
-            value = design.add_mux(bit, shval, value);
+            let shifted = shift(&value, stride);
+            value = design.add_mux(bit, shifted, value);
             stride *= 2;
         } else {
-            let mut did_overflow = bit;
-            for bit in &shcnt[index + 1..] {
-                did_overflow = design.add_or1(did_overflow, bit);
-            }
+            let did_overflow = add_horiz_or(design, amount.slice(index + 1..));
             value = design.add_mux(did_overflow, overflow, value);
             break;
         }
@@ -64,19 +61,19 @@ pub fn lower(design: &mut Design) {
                 Cell::Not(sub.msb().into())
             }
             Cell::Shl(a, b, stride) => {
-                let shift = |value: &Value, shcnt| Value::zero(shcnt).concat(value.slice(..value.len() - shcnt));
+                let shift = |value: &Value, amount| Value::zero(amount).concat(value.slice(..value.len() - amount));
                 lower_shift(design, a, b, *stride, shift, Value::zero(a.len()))
             }
             Cell::UShr(a, b, stride) => {
-                let shift = |value: &Value, shcnt| value.slice(shcnt..).zext(a.len());
+                let shift = |value: &Value, amount| value.slice(amount..).zext(a.len());
                 lower_shift(design, a, b, *stride, shift, Value::zero(a.len()))
             }
             Cell::SShr(a, b, stride) => {
-                let shift = |value: &Value, shcnt| value.slice(shcnt..).sext(a.len());
+                let shift = |value: &Value, amount| value.slice(amount..).sext(a.len());
                 lower_shift(design, a, b, *stride, shift, Value::from(a.msb()).sext(a.len()))
             }
             Cell::XShr(a, b, stride) => {
-                let shift = |value: &Value, shcnt| value.slice(shcnt..).concat(Value::undef(shcnt));
+                let shift = |value: &Value, amount| value.slice(amount..).concat(Value::undef(amount));
                 lower_shift(design, a, b, *stride, shift, Value::undef(a.len()))
             }
             Cell::Mul(a, b) => {
