@@ -2,16 +2,13 @@
 ///
 /// The `decision` pass implements decision tree lowering based on the well-known heuristic
 /// algorithm developed for ML from the paper "Tree pattern matching for ML" by Marianne Baudinet
-/// and David MacQueen (unpublished, 1986) the extended abstract of which is available from:
+/// and David MacQueen (unpublished, 1985) the extended abstract of which is available from:
 /// *  https://smlfamily.github.io/history/Baudinet-DM-tree-pat-match-12-85.pdf (scan)
 /// *  https://www.classes.cs.uchicago.edu/archive/2011/spring/22620-1/papers/macqueen-baudinet85.pdf (OCR)
 ///
 /// The algorithm is described in §4 "Decision trees and the dispatching problem". Only two
 /// of the heuristics described apply here: the relevance heuristic and the branching factor
 /// heuristic.
-///
-/// TODO: actually use the heuristic; right now the column matching on a net with the lowest numeric
-/// value is chosen, which is a really awful "heuristic" that still produces mostly okay results
 ///
 use std::fmt::Display;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -40,7 +37,7 @@ struct MatchMatrix {
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Decision {
     Result { rules: BTreeSet<Net> },
-    Branch { net: Net, if0: Box<Decision>, if1: Box<Decision> },
+    Branch { test: Net, if0: Box<Decision>, if1: Box<Decision> },
 }
 
 impl MatchRow {
@@ -165,7 +162,10 @@ impl MatchMatrix {
 
         // Pick columns to remove where all of the patterns match any value.
         let mut all_undef = vec![true; self.value.len()];
-        for row in self.rows.iter() {
+        for (row_index, row) in self.rows.iter().enumerate() {
+            if remove_rows.contains(&row_index) {
+                continue;
+            }
             for col_index in 0..self.value.len() {
                 if row.pattern[col_index] != Trit::Undef {
                     all_undef[col_index] = false;
@@ -199,9 +199,20 @@ impl MatchMatrix {
         if self.value.is_empty() || self.rows.len() == 1 {
             Box::new(Decision::Result { rules: self.rows.into_iter().next().map(|r| r.rules).unwrap_or_default() })
         } else {
-            // TODO: better decision procedure
-            let test = self.value.iter().rev().next().unwrap();
+            // Fanfiction of the heuristics from the 1986 paper that reduces them to: split the matrix on the column
+            // with the fewest don't-care's in it.
+            let mut undef_count = vec![0; self.value.len()];
+            for row in self.rows.iter() {
+                for (col_index, mask) in row.pattern.iter().enumerate() {
+                    if mask == Trit::Undef {
+                        undef_count[col_index] += 1;
+                    }
+                }
+            }
+            let test_index = (0..self.value.len()).min_by(|&ai, &bi| undef_count[ai].cmp(&undef_count[bi]));
+            let test = self.value[test_index.unwrap()];
 
+            // Split the matrix into two, where the test net has a value of 0 and 1, and recurse.
             let if0 = self.clone().assume(test, Trit::Zero).dispatch();
             let if1 = self.clone().assume(test, Trit::One).dispatch();
             if if0 == if1 {
@@ -214,7 +225,7 @@ impl MatchMatrix {
                 // there are two rows but the `y` rule is still unreachable due to irrefutability.
                 if0
             } else {
-                Box::new(Decision::Branch { net: test, if0, if1 })
+                Box::new(Decision::Branch { test, if0, if1 })
             }
         }
     }
@@ -246,7 +257,7 @@ impl Decision {
                         sop.entry(rule).or_default().push(cond);
                     }
                 }
-                Decision::Branch { net, if0, if1 } => {
+                Decision::Branch { test: net, if0, if1 } => {
                     nets.push(*net);
                     bits.push(Trit::Zero);
                     subtree(design, if0, all_rules, sop, nets, bits, cache);
@@ -496,9 +507,9 @@ impl Decision {
                 format_rules(f, &rules)?;
                 write!(f, "\n")?;
             }
-            Decision::Branch { net, if0, if1 } => {
-                format_decision(f, *net, 0, if0)?;
-                format_decision(f, *net, 1, if1)?;
+            Decision::Branch { test, if0, if1 } => {
+                format_decision(f, *test, 0, if0)?;
+                format_decision(f, *test, 1, if1)?;
             }
         }
         Ok(())
@@ -544,8 +555,8 @@ mod test {
             Box::new(Decision::Result { rules: BTreeSet::from_iter([rule]) })
         }
 
-        fn br(&self, net: Net, if1: Box<Decision>, if0: Box<Decision>) -> Box<Decision> {
-            Box::new(Decision::Branch { net, if0, if1 })
+        fn br(&self, test: Net, if1: Box<Decision>, if0: Box<Decision>) -> Box<Decision> {
+            Box::new(Decision::Branch { test, if0, if1 })
         }
     }
 
@@ -723,7 +734,7 @@ mod test {
         m.add(MatchRow::new(h.pat("01"), [n2]));
         m = m.normalize();
         assert_eq!(m.rows.len(), 1);
-        assert_eq!(m.rows[0].pattern, h.pat("XX"));
+        assert_eq!(m.rows[0].pattern, h.pat(""));
         assert_eq!(m.rows[0].rules, BTreeSet::from_iter([n1]));
     }
 
@@ -736,6 +747,23 @@ mod test {
         let mut m = MatchMatrix::new(&v);
         m.add(MatchRow::new(h.pat("0X"), [n1]));
         m.add(MatchRow::new(h.pat("1X"), [n2]));
+        m = m.normalize();
+        assert_eq!(m.value, v.slice(0..1));
+        assert_eq!(m.rows.len(), 2);
+        assert_eq!(m.rows[0], MatchRow::new(h.pat("0"), [n1]));
+        assert_eq!(m.rows[1], MatchRow::new(h.pat("1"), [n2]));
+    }
+
+    #[test]
+    fn test_normalize_unused_column_after_elim() {
+        let h = Helper::new();
+        let v = h.val(2);
+        let (n1, n2, n3) = (h.net(), h.net(), h.net());
+
+        let mut m = MatchMatrix::new(&v.concat(&v));
+        m.add(MatchRow::new(h.pat("0XXX"), [n1]));
+        m.add(MatchRow::new(h.pat("1XXX"), [n2]));
+        m.add(MatchRow::new(h.pat("X0X1"), [n3]));
         m = m.normalize();
         assert_eq!(m.value, v.slice(0..1));
         assert_eq!(m.rows.len(), 2);
