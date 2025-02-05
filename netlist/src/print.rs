@@ -50,11 +50,14 @@ impl Design {
             return self.write_net(f, value[0]);
         } else if let Some(value) = value.as_const() {
             return write!(f, "{}", value);
-        } else if value.iter().any(|net| net.as_cell_index().map(|index| !self.is_valid_cell_index(index)).unwrap_or(false)) {
+        } else if value
+            .iter()
+            .any(|net| net.as_cell_index().map(|index| !self.is_valid_cell_index(index)).unwrap_or(false))
+        {
             // Value contains newly added cells that we can't look up. Don't try to make
             // the display nicer, just make sure it doesn't panic.
             write!(f, "{{")?;
-            for net in value {
+            for net in value.iter().rev() {
                 write!(f, " ")?;
                 self.write_net(f, net)?;
             }
@@ -70,10 +73,14 @@ impl Design {
             }
         }
 
+        enum Chunk {
+            Slice(usize, usize),
+            Net(Net),
+        }
         write!(f, "{{")?;
         let mut index = 0;
+        let mut chunks = vec![];
         while index < value.len() {
-            write!(f, " ")?;
             if let Ok((cell_ref_a, 0)) = self.find_cell(value[index]) {
                 let count = value[index..]
                     .iter()
@@ -87,13 +94,24 @@ impl Design {
                     })
                     .count();
                 if count > 0 {
-                    write!(f, "%{}:{}", cell_ref_a.debug_index(), count)?;
+                    chunks.push(Chunk::Slice(cell_ref_a.debug_index(), count));
                     index += count;
                     continue;
                 }
             }
-            self.write_net(f, value[index])?;
+            chunks.push(Chunk::Net(value[index]));
             index += 1;
+        }
+        for chunk in chunks.into_iter().rev() {
+            write!(f, " ")?;
+            match chunk {
+                Chunk::Slice(cell_index, count) => {
+                    write!(f, "%{}:{}", cell_index, count)?;
+                }
+                Chunk::Net(net) => {
+                    self.write_net(f, net)?;
+                }
+            }
         }
         write!(f, " }}")
     }
@@ -133,7 +151,7 @@ impl Design {
                 }
             }
             write!(f, "{{")?;
-            for io_net in io_value {
+            for io_net in io_value.iter().rev() {
                 write!(f, " ")?;
                 self.write_io_net(f, io_net)?;
             }

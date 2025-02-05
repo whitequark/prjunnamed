@@ -1022,7 +1022,7 @@ mod test {
                 i@"R"=%3
                 i@"E"=%4
             }
-            %7:0 = output "q" { %5 %6 }
+            %7:0 = output "q" { %6 %5 }
         "#};
         assert_isomorphic!(design, gold);
     }
@@ -1063,7 +1063,7 @@ mod test {
                 i@"R"=%5
                 i@"E"=%6
             }
-            %9:0 = output "q" { %7 %8 }
+            %9:0 = output "q" { %8 %7 }
         "#};
         assert_isomorphic!(design, gold);
     }
@@ -1103,7 +1103,7 @@ mod test {
                 i@"R"=%3
                 i@"E"=%5
             }
-            %8:0 = output "q" { %6 %7 }
+            %8:0 = output "q" { %7 %6 }
         "#};
         assert_isomorphic!(design, gold);
     }
@@ -1146,7 +1146,7 @@ mod test {
             }
             %9:1 = not %7
             %10:1 = not %8
-            %11:0 = output "q" { %9 %10 }
+            %11:0 = output "q" { %10 %9 }
         "#};
         assert_isomorphic!(design, gold);
     }
@@ -1185,7 +1185,7 @@ mod test {
                 i@"R"=%3
                 i@"E"=%4
             }
-            %7:0 = output "q" { %5 %6 }
+            %7:0 = output "q" { %6 %5 }
         "#};
         assert_isomorphic!(design, gold);
     }
@@ -1226,7 +1226,7 @@ mod test {
                 i@"R"=%5
                 i@"E"=%6
             }
-            %9:0 = output "q" { %7 %8 }
+            %9:0 = output "q" { %8 %7 }
         "#};
         assert_isomorphic!(design, gold);
     }
@@ -1269,7 +1269,7 @@ mod test {
             }
             %9:1 = not %7
             %10:1 = not %8
-            %11:0 = output "q" { %9 %10 }
+            %11:0 = output "q" { %10 %9 }
         "#};
         assert_isomorphic!(design, gold);
     }
@@ -1311,7 +1311,7 @@ mod test {
                 i@"R"=%3
                 i@"E"=%5
             }
-            %10:0 = output "q" { %8 %9 }
+            %10:0 = output "q" { %9 %8 }
         "#};
         assert_isomorphic!(design, gold);
     }
@@ -1465,7 +1465,7 @@ mod test {
             &"io":4
             %0:4 = input "o"
             %4:1 = input "oe"
-            %5:0 = output "i" {%6+0 %9+0 %12+0 %15+0}
+            %5:0 = output "i" {%15+0 %12+0 %9+0 %6+0}
             %6:3 = target "SB_IO" {
                 p@"PIN_TYPE"=const(101001)
                 p@"PULLUP"=const(0)

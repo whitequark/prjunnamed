@@ -202,12 +202,12 @@ fn parse_io_value_floating(t: &mut WithContext<impl Tokens<Item = char>, Context
 fn parse_io_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
     let mut value = IoValue::EMPTY;
     parse_symbol(t, '{')?;
-    let mut parts = t.many(|t| {
+    let parts = Vec::from_iter(t.many(|t| {
         parse_space(t);
         parse_io_net(t)
-    });
-    for part in parts.as_iter() {
-        value = value.concat(part)
+    }).as_iter());
+    for part in parts.into_iter().rev() {
+        value.extend([part]);
     }
     parse_space(t);
     parse_symbol(t, '}')?;
@@ -260,12 +260,12 @@ fn parse_value_part(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> O
 fn parse_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Value> {
     let mut value = Value::EMPTY;
     parse_symbol(t, '{')?;
-    let mut parts = t.many(|t| {
+    let parts = Vec::from_iter(t.many(|t| {
         parse_space(t);
         parse_value_part(t)
-    });
-    for part in parts.as_iter() {
-        value = value.concat(part)
+    }).as_iter());
+    for part in parts.into_iter().rev() {
+        value.extend(part);
     }
     parse_space(t);
     parse_symbol(t, '}')?;

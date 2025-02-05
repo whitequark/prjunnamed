@@ -37,7 +37,7 @@ fn test_const() {
 fn test_concat() {
     roundtrip("%0:0 = buf {}\n");
     onewaytrip("%0:1 = buf { 0 }\n", "%0:1 = buf 0\n");
-    onewaytrip("%0:2 = buf { 0 1 }\n", "%0:2 = buf 10\n");
+    onewaytrip("%0:2 = buf { 1 0 }\n", "%0:2 = buf 10\n");
 }
 
 #[test]
@@ -46,7 +46,7 @@ fn test_reference() {
     roundtrip("%0:2 = buf 00\n%2:1 = buf %0+0\n");
     roundtrip("%0:2 = buf 00\n%2:1 = buf %0+1\n");
     roundtrip("%0:2 = buf 00\n%2:2 = buf %0:2\n");
-    roundtrip("%0:2 = buf 00\n%2:2 = buf { %0+1 %0:1 }\n");
+    roundtrip("%0:2 = buf 00\n%2:2 = buf { %0:1 %0+1 }\n");
 }
 
 #[test]
