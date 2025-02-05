@@ -46,7 +46,7 @@ fn test_reference() {
     roundtrip("%0:2 = buf 00\n%2:1 = buf %0+0\n");
     roundtrip("%0:2 = buf 00\n%2:1 = buf %0+1\n");
     roundtrip("%0:2 = buf 00\n%2:2 = buf %0:2\n");
-    roundtrip("%0:2 = buf 00\n%2:2 = buf { %0:1 %0+1 }\n");
+    roundtrip("%0:2 = buf 00\n%2:2 = buf { %0+0 %0+1 }\n");
 }
 
 #[test]

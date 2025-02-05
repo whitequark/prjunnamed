@@ -74,7 +74,7 @@ impl Design {
         }
 
         enum Chunk {
-            Slice(usize, usize),
+            Slice { cell_index: usize, output_len: usize, count: usize },
             Net(Net),
         }
         write!(f, "{{")?;
@@ -94,7 +94,11 @@ impl Design {
                     })
                     .count();
                 if count > 0 {
-                    chunks.push(Chunk::Slice(cell_ref_a.debug_index(), count));
+                    chunks.push(Chunk::Slice {
+                        cell_index: cell_ref_a.debug_index(),
+                        output_len: cell_ref_a.output_len(),
+                        count,
+                    });
                     index += count;
                     continue;
                 }
@@ -105,8 +109,14 @@ impl Design {
         for chunk in chunks.into_iter().rev() {
             write!(f, " ")?;
             match chunk {
-                Chunk::Slice(cell_index, count) => {
-                    write!(f, "%{}:{}", cell_index, count)?;
+                Chunk::Slice { cell_index, output_len, count } => {
+                    if output_len == 1 && count == 1 {
+                        write!(f, "%{}", cell_index)?;
+                    } else if count == 1 {
+                        write!(f, "%{}+0", cell_index)?;
+                    } else {
+                        write!(f, "%{}:{}", cell_index, count)?;
+                    }
                 }
                 Chunk::Net(net) => {
                     self.write_net(f, net)?;
