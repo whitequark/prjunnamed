@@ -667,6 +667,7 @@ impl Target for SiliconBlueTarget {
     fn synthesize(&self, design: &mut Design) -> Result<(), ()> {
         prjunnamed_generic::decision(design);
         prjunnamed_generic::canonicalize(design);
+        prjunnamed_generic::lower_memory(design);
         prjunnamed_generic::lower(design);
         prjunnamed_generic::canonicalize(design);
         self.lower_ffs(design);
