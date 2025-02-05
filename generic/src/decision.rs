@@ -90,13 +90,6 @@ impl MatchMatrix {
         self
     }
 
-    fn slice(mut self, nets: &BTreeSet<Net>) -> Self {
-        for row in &mut self.rows {
-            row.rules = BTreeSet::from_iter(row.rules.intersection(nets).cloned());
-        }
-        self
-    }
-
     fn normalize(mut self) -> Self {
         let mut remove_cols = BTreeSet::new();
         let mut remove_rows = BTreeSet::new();
@@ -389,34 +382,16 @@ pub fn decision(design: &mut Design) {
     for root_matrix in root_matrices {
         let all_outputs = BTreeSet::from_iter(root_matrix.iter_rules());
         if cfg!(feature = "trace") {
-            eprintln!(">matrix (initial):\n{root_matrix}");
+            eprintln!(">matrix:\n{root_matrix}");
         }
 
-        let root_matrix = root_matrix.normalize();
+        let decision_tree = root_matrix.dispatch();
         if cfg!(feature = "trace") {
-            eprintln!(">matrix (normalized):\n{root_matrix}");
+            eprintln!(">decision tree:\n{decision_tree}")
         }
 
-        let mut unused_outputs = all_outputs.clone();
-        for net in all_outputs {
-            let sliced_matrix = root_matrix.clone().slice(&BTreeSet::from_iter([net]));
-            if cfg!(feature = "trace") {
-                eprintln!(">matrix (sliced):\n{sliced_matrix}")
-            }
-
-            let decision_tree = sliced_matrix.dispatch();
-            if cfg!(feature = "trace") {
-                eprintln!(">decision tree:\n{decision_tree}")
-            }
-
-            let replaced = decision_tree.emit(design, &mut cache);
-            unused_outputs = BTreeSet::from_iter(unused_outputs.difference(&replaced).cloned());
-        }
-
-        for net in unused_outputs {
-            if cfg!(feature = "trace") {
-                eprintln!(">unused rule: {net}")
-            }
+        let replaced_outputs = decision_tree.emit(design, &mut cache);
+        for net in all_outputs.difference(&replaced_outputs) {
             design.replace_net(net, Net::ZERO);
         }
     }
@@ -616,31 +591,6 @@ mod test {
         mr1.add(MatchRow::new(h.pat("XXXXX"), [n12]));
 
         assert_eq!(ml1, mr1, "\n{ml1} != \n{mr1}");
-    }
-
-    #[test]
-    fn test_slice() {
-        let h = Helper::new();
-
-        let v = h.val(2);
-        let (n1, n2) = (h.net(), h.net());
-        let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("01"), [n1]));
-        m.add(MatchRow::new(h.pat("10"), [n1]));
-        m.add(MatchRow::new(h.pat("XX"), [n2]));
-
-        let mut mr1 = MatchMatrix::new(&v);
-        mr1.add(MatchRow::new(h.pat("01"), [n1]));
-        mr1.add(MatchRow::new(h.pat("10"), [n1]));
-        mr1.add(MatchRow::new(h.pat("XX"), []));
-
-        let mut mr2 = MatchMatrix::new(&v);
-        mr2.add(MatchRow::new(h.pat("01"), []));
-        mr2.add(MatchRow::new(h.pat("10"), []));
-        mr2.add(MatchRow::new(h.pat("XX"), [n2]));
-
-        assert_eq!(m.clone().slice(&BTreeSet::from_iter([n1])), mr1);
-        assert_eq!(m.clone().slice(&BTreeSet::from_iter([n2])), mr2);
     }
 
     #[test]
