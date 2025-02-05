@@ -37,13 +37,13 @@ pub fn lower_memory(design: &mut Design) {
                 let mut data = q.clone();
                 for port in &memory.write_ports {
                     let wide_log2 = port.wide_log2(&memory);
-                    if port.addr.len() < 32 && row_index >= (1 << port.addr.len()) {
+                    let row_addr = row_index >> wide_log2;
+                    if port.addr.len() < 32 && row_addr >= (1 << port.addr.len()) {
                         // row not reachable by this port due to short address input
                         continue;
                     }
                     // true iff the write port is currently writing to this row
-                    let addr_match =
-                        design.add_eq(&port.addr, Const::from_uint((row_index >> wide_log2) as u128, port.addr.len()));
+                    let addr_match = design.add_eq(&port.addr, Const::from_uint(row_addr as u128, port.addr.len()));
                     let port_row = row_index % (1 << wide_log2);
                     // in case of wide ports, extract the data and mask parts that correspond to the current row
                     let port_slice = port_row * memory.width..(port_row + 1) * memory.width;
