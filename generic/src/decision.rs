@@ -87,6 +87,12 @@ impl MatchMatrix {
         BTreeSet::from_iter(self.rows.iter().flat_map(|row| row.rules.iter()).cloned()).into_iter()
     }
 
+    fn assume(mut self, target: Net, value: Trit) -> Self {
+        self.value =
+            Value::from_iter(self.value.into_iter().map(|net| if net == target { Net::from(value) } else { net }));
+        self
+    }
+
     fn slice(mut self, nets: &BTreeSet<Net>) -> Self {
         for row in &mut self.rows {
             row.rules = BTreeSet::from_iter(row.rules.intersection(nets).cloned());
@@ -95,9 +101,11 @@ impl MatchMatrix {
     }
 
     fn normalize(mut self) -> Self {
+        let mut remove_cols = BTreeSet::new();
+        let mut remove_rows = BTreeSet::new();
+
         // Pick columns to remove where the matched value is constant or has repeated nets.
         let mut first_at = BTreeMap::new();
-        let mut remove_cols = BTreeSet::new();
         for (index, net) in self.value.iter().enumerate() {
             if net.is_cell() && !first_at.contains_key(&net) {
                 first_at.insert(net, index);
@@ -106,9 +114,22 @@ impl MatchMatrix {
             }
         }
 
-        // Pick rows to remove that contradict themselves or the constant nets in matched value.
-        let mut remove_rows = BTreeSet::new();
+        // Pick rows to remove that:
+        // * are redundant with the previous row, or
+        // * contradict themselves or the constant nets in matched value.
+        let mut prev_pattern = None;
         'outer: for (row_index, row) in self.rows.iter_mut().enumerate() {
+            // Check if row will never match because of a previous row that:
+            // * has the same pattern, or
+            // * matches any value.
+            if let Some(ref prev_pattern) = prev_pattern {
+                if row.pattern == *prev_pattern || prev_pattern.is_undef() {
+                    remove_rows.insert(row_index);
+                    continue;
+                }
+            }
+            prev_pattern = Some(row.pattern.clone());
+            // Check if row is contradictory.
             for (net_index, net) in self.value.iter().enumerate() {
                 let mask = row.pattern[net_index];
                 // Row contradicts constant in matched value.
@@ -142,6 +163,21 @@ impl MatchMatrix {
             }
         }
 
+        // Pick columns to remove where all of the patterns match any value.
+        let mut all_undef = vec![true; self.value.len()];
+        for row in self.rows.iter() {
+            for col_index in 0..self.value.len() {
+                if row.pattern[col_index] != Trit::Undef {
+                    all_undef[col_index] = false;
+                }
+            }
+        }
+        for (col_index, matches_any) in all_undef.into_iter().enumerate() {
+            if matches_any {
+                remove_cols.insert(col_index);
+            }
+        }
+
         // Execute column and row removal.
         fn remove_indices<'a, T>(
             iter: impl IntoIterator<Item = T> + 'a,
@@ -158,85 +194,29 @@ impl MatchMatrix {
         self
     }
 
-    // Precondition: the matrix is in the normalized form (`value` contains no 0/1/X or duplicate nets).
-    fn decide(&self, live_nets: &BTreeSet<Net>, live_rows: &BTreeSet<usize>) -> Decision {
-        if live_nets.len() == 0 || live_rows.len() == 1 {
-            let mut rules = BTreeSet::new();
-            for row in live_rows {
-                rules.extend(self.rows[*row].rules.iter());
-            }
-            Decision::Result { rules }
-        } else {
-            // TODO: better decision procedure
-            let test = *live_nets.last().unwrap();
-
-            let (mut live_rows_if0, mut live_rows_if1) = (live_rows.clone(), live_rows.clone());
-            let (mut irrefutable_if0, mut irrefutable_if1) = (false, false);
-            for (row_index, row) in self.rows.iter().enumerate() {
-                // Ignore dead rows, as they will never match in this branch.
-                if !live_rows.contains(&row_index) {
-                    continue;
-                }
-                // Check if the pattern will match and whether it'll be refutable.
-                let mut test_mask = None;
-                let mut rest_refutable = false;
-                for (col_index, mask) in row.pattern.iter().enumerate() {
-                    let net = self.value[col_index];
-                    if !live_nets.contains(&net) {
-                        continue;
-                    }
-                    if net == test {
-                        test_mask = Some(mask);
-                    } else if matches!(mask, Trit::Zero | Trit::One) {
-                        rest_refutable = true;
-                    }
-                }
-                let test_mask = test_mask.unwrap();
-                // Kill rows that can't match (because of the mask or an earlier irrefutable pattern).
-                if irrefutable_if0 || matches!(test_mask, Trit::One) {
-                    live_rows_if0.remove(&row_index);
-                }
-                if irrefutable_if1 || matches!(test_mask, Trit::Zero) {
-                    live_rows_if1.remove(&row_index);
-                }
-                // Check whether no further patterns can possibly match (because this row is irrefutable).
-                if !rest_refutable && matches!(test_mask, Trit::Zero | Trit::Undef) {
-                    irrefutable_if0 = true;
-                }
-                if !rest_refutable && matches!(test_mask, Trit::One | Trit::Undef) {
-                    irrefutable_if1 = true;
-                }
-            }
-            // Kill the column and make a decision.
-            let mut live_nets = live_nets.clone();
-            live_nets.remove(&test);
-            if live_rows_if0 == live_rows_if1 {
-                // Skip the branch if the inputs to the decision function are the same.
-                self.decide(&live_nets, &live_rows_if0)
-            } else {
-                let if0 = self.decide(&live_nets, &live_rows_if0);
-                let if1 = self.decide(&live_nets, &live_rows_if1);
-                if if0 == if1 {
-                    // Skip the branch if the outputs of the decision function are the same. This can happen
-                    // e.g. in the following matrix:
-                    //   00 => x
-                    //   10 => x
-                    //   XX => y
-                    // regardless of the column selection order. Even if the column 1 is chosen (as it should be),
-                    // there are two rows but the `y` rule is still unreachable due to irrefutability.
-                    if0
-                } else {
-                    Decision::Branch { net: test, if0: Box::new(if0), if1: Box::new(if1) }
-                }
-            }
-        }
-    }
-
     fn dispatch(mut self) -> Box<Decision> {
         self = self.normalize();
-        let live_nets = BTreeSet::from_iter(self.value.iter());
-        let live_rows = BTreeSet::from_iter(0..self.rows.len());
-        Box::new(self.decide(&live_nets, &live_rows))
+        if self.value.is_empty() || self.rows.len() == 1 {
+            Box::new(Decision::Result { rules: self.rows.into_iter().next().map(|r| r.rules).unwrap_or_default() })
+        } else {
+            // TODO: better decision procedure
+            let test = self.value.iter().rev().next().unwrap();
+
+            let if0 = self.clone().assume(test, Trit::Zero).dispatch();
+            let if1 = self.clone().assume(test, Trit::One).dispatch();
+            if if0 == if1 {
+                // Skip the branch if the outputs of the decision function are the same. This can happen
+                // e.g. in the following matrix:
+                //   00 => x
+                //   10 => x
+                //   XX => y
+                // regardless of the column selection order. Even if the column 1 is chosen (as it should be),
+                // there are two rows but the `y` rule is still unreachable due to irrefutability.
+                if0
+            } else {
+                Box::new(Decision::Branch { net: test, if0, if1 })
+            }
+        }
     }
 }
 
@@ -448,7 +428,7 @@ pub fn decision(design: &mut Design) {
 impl Display for MatchRow {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         for (index, trit) in self.pattern.iter().rev().enumerate() {
-            if index != 0 && index % 5 == 0 {
+            if index != 0 && index % 4 == 0 {
                 write!(f, "_")?;
             }
             write!(f, "{trit}")?;
@@ -653,7 +633,7 @@ mod test {
     }
 
     #[test]
-    fn test_normalize_vert() {
+    fn test_normalize_vertical() {
         let h = Helper::new();
         let n = h.net();
 
@@ -696,7 +676,7 @@ mod test {
     }
 
     #[test]
-    fn test_normalize_horz() {
+    fn test_normalize_horizontal() {
         let h = Helper::new();
         let v = h.val(1);
         let n = h.net();
@@ -715,6 +695,52 @@ mod test {
         m3.add(MatchRow::new(h.pat("01"), [n]));
         m3 = m3.normalize();
         assert_eq!(m3.rows.len(), 0);
+    }
+
+    #[test]
+    fn test_normalize_duplicate_row() {
+        let h = Helper::new();
+        let v = h.val(2);
+        let (n1, n2) = (h.net(), h.net());
+
+        let mut m = MatchMatrix::new(v);
+        m.add(MatchRow::new(h.pat("01"), [n1]));
+        m.add(MatchRow::new(h.pat("01"), [n2]));
+        m = m.normalize();
+        assert_eq!(m.rows.len(), 1);
+        assert_eq!(m.rows[0].pattern, h.pat("01"));
+        assert_eq!(m.rows[0].rules, BTreeSet::from_iter([n1]));
+    }
+
+    #[test]
+    fn test_normalize_irrefitable() {
+        let h = Helper::new();
+        let v = h.val(2);
+        let (n1, n2) = (h.net(), h.net());
+
+        let mut m = MatchMatrix::new(v);
+        m.add(MatchRow::new(h.pat("XX"), [n1]));
+        m.add(MatchRow::new(h.pat("01"), [n2]));
+        m = m.normalize();
+        assert_eq!(m.rows.len(), 1);
+        assert_eq!(m.rows[0].pattern, h.pat("XX"));
+        assert_eq!(m.rows[0].rules, BTreeSet::from_iter([n1]));
+    }
+
+    #[test]
+    fn test_normalize_unused_column() {
+        let h = Helper::new();
+        let v = h.val(2);
+        let (n1, n2) = (h.net(), h.net());
+
+        let mut m = MatchMatrix::new(&v);
+        m.add(MatchRow::new(h.pat("0X"), [n1]));
+        m.add(MatchRow::new(h.pat("1X"), [n2]));
+        m = m.normalize();
+        assert_eq!(m.value, v.slice(0..1));
+        assert_eq!(m.rows.len(), 2);
+        assert_eq!(m.rows[0], MatchRow::new(h.pat("0"), [n1]));
+        assert_eq!(m.rows[1], MatchRow::new(h.pat("1"), [n2]));
     }
 
     macro_rules! assert_dispatch {
