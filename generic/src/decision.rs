@@ -226,37 +226,37 @@ impl MatchMatrix {
 
 impl Decision {
     fn emit(&self, design: &Design, cache: &mut HashMap<Cell, Net>) -> BTreeSet<Net> {
+        fn add_cell(design: &Design, cache: &mut HashMap<Cell, Net>, cell: Cell) -> Net {
+            *cache.entry(cell).or_insert_with_key(|cell| design.add_cell(cell.clone()).unwrap_net())
+        }
+
         fn subtree(
             design: &Design,
-            decision: &Decision,
-            all_rules: &mut BTreeSet<Net>,
-            sop: &mut BTreeMap<Net, Vec<Net>>,
+            cache: &mut HashMap<Cell, Net>,
+            sop: &mut BTreeMap<Net, BTreeSet<Net>>,
             nets: &mut Vec<Net>,
             bits: &mut Vec<Trit>,
-            cache: &mut HashMap<Cell, Net>,
+            decision: &Decision,
         ) {
             match decision {
                 Decision::Result { rules } => {
-                    let cond_cell = match &bits[..] {
+                    let cond = add_cell(design, cache, match &bits[..] {
                         [] => Cell::Buf(Trit::One.into()),
                         [Trit::One] => Cell::Buf(nets[0].into()),
                         [Trit::Zero] => Cell::Not(nets[0].into()),
                         _ => Cell::Eq(nets.clone().into(), Const::from(bits.clone()).into()),
-                    };
-                    let cond =
-                        *cache.entry(cond_cell).or_insert_with_key(|cell| design.add_cell(cell.clone()).unwrap_net());
+                    });
                     for &rule in rules {
-                        all_rules.insert(rule);
-                        sop.entry(rule).or_default().push(cond);
+                        sop.entry(rule).or_default().insert(cond);
                     }
                 }
                 Decision::Branch { test: net, if0, if1 } => {
                     nets.push(*net);
                     bits.push(Trit::Zero);
-                    subtree(design, if0, all_rules, sop, nets, bits, cache);
+                    subtree(design, cache, sop, nets, bits, if0);
                     bits.pop();
                     bits.push(Trit::One);
-                    subtree(design, if1, all_rules, sop, nets, bits, cache);
+                    subtree(design, cache, sop, nets, bits, if1);
                     bits.pop();
                     nets.pop();
                 }
@@ -265,18 +265,16 @@ impl Decision {
 
         // Convert decision tree into sum-of-products representation, and emit products as `eq` cells.
         // Although they will be merged later, this function avoids emitting duplicate cells anyway.
-        let mut all_rules = BTreeSet::new();
         let mut sop = BTreeMap::new();
         let (mut nets, mut bits) = (Vec::new(), Vec::new());
-        subtree(design, self, &mut all_rules, &mut sop, &mut nets, &mut bits, cache);
+        subtree(design, cache, &mut sop, &mut nets, &mut bits, self);
 
         // Emit sums as `or` cell sequences, and replace the void nets introduced for rules with the sum nets.
-        for (rule, products) in sop {
+        for (rule, products) in sop.iter() {
             let mut sum = None::<Net>;
-            for product in products {
+            for &product in products {
                 if let Some(ref mut sum) = sum {
-                    let sum_cell = Cell::Or((*sum).into(), product.into());
-                    *sum = *cache.entry(sum_cell).or_insert_with_key(|cell| design.add_cell(cell.clone()).unwrap_net());
+                    *sum = add_cell(design, cache, Cell::Or((*sum).into(), product.into()))
                 } else {
                     sum = Some(product);
                 }
@@ -286,11 +284,11 @@ impl Decision {
 
         // Return the set of all encountered rules. The caller will need to replace void nets for rules
         // that never appear in the decision trees to keep the netlist well-formed.
-        all_rules
+        BTreeSet::from_iter(sop.keys().cloned())
     }
 }
 
-// Convert a tree of `match` cells into a matrix, disregarding the enable input.
+// Convert a tree of `match` cells into a matrix.
 // The output of the cell is replaced with a newly conjured void.
 fn match_tree_into_matrix(
     design: &Design,
