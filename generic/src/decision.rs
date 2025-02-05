@@ -168,7 +168,7 @@ impl MatchMatrix {
             Decision::Result { rules }
         } else {
             // TODO: better decision procedure
-            let test = *live_nets.first().unwrap();
+            let test = *live_nets.last().unwrap();
 
             let (mut live_rows_if0, mut live_rows_if1) = (live_rows.clone(), live_rows.clone());
             let (mut irrefutable_if0, mut irrefutable_if1) = (false, false);
@@ -367,6 +367,7 @@ pub fn decision(design: &mut Design) {
                         // Node in a match tree.
                         subtrees.entry((enable_cell_ref, offset)).or_default().insert(cell_ref);
                     } else {
+                        // Some other signal.
                         roots.insert(cell_ref);
                     }
                 }
@@ -446,7 +447,7 @@ pub fn decision(design: &mut Design) {
 
 impl Display for MatchRow {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        for (index, trit) in self.pattern.iter().enumerate() {
+        for (index, trit) in self.pattern.iter().rev().enumerate() {
             if index != 0 && index % 5 == 0 {
                 write!(f, "_")?;
             }
@@ -838,11 +839,11 @@ mod test {
         let v = h.val(2);
         let (n1, n2, n3) = (h.net(), h.net(), h.net());
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("0X"), [n1]));
+        m.add(MatchRow::new(h.pat("X0"), [n1]));
         m.add(MatchRow::new(h.pat("11"), [n2]));
         m.add(MatchRow::new(h.pat("XX"), [n3]));
 
-        let d = h.br(v[0], h.br(v[1], h.rs(n2), h.rs(n3)), h.rs(n1));
+        let d = h.br(v[1], h.br(v[0], h.rs(n2), h.rs(n3)), h.rs(n1));
 
         assert_dispatch!(m, d);
     }

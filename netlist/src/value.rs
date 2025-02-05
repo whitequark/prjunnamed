@@ -598,7 +598,7 @@ impl Display for Value {
             write!(f, "{}", self[0])
         } else {
             write!(f, "{{")?;
-            for net in self.nets.iter() {
+            for net in self.nets.iter().rev() {
                 write!(f, " {}", net)?;
             }
             write!(f, " }}")
