@@ -1,4 +1,4 @@
-mod net;
+mod logic;
 mod value;
 mod param;
 mod io;
@@ -9,8 +9,8 @@ mod parse;
 mod target;
 mod isomorphic;
 
-pub use net::{ControlNet, Net, Trit};
-pub use value::{Const, Value};
+pub use logic::{Trit, Const};
+pub use value::{Net, ControlNet, Value};
 pub use param::ParamValue;
 pub use io::{IoNet, IoValue};
 pub use cell::{

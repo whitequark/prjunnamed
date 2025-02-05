@@ -3,389 +3,118 @@ use std::{
     fmt::{Debug, Display},
     ops::{Index, IndexMut},
     slice::SliceIndex,
-    str::FromStr,
 };
 
-use crate::{Net, Trit};
+use crate::{Const, Design, Trit};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
-pub struct Const {
-    trits: Vec<Trit>,
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct Net {
+    pub(crate) index: u32,
 }
 
-impl Const {
-    pub const EMPTY: Const = Const { trits: vec![] };
+impl Net {
+    pub const UNDEF: Net = Net { index: u32::MAX };
+    pub const ZERO: Net = Net { index: 0 };
+    pub const ONE: Net = Net { index: 1 };
 
-    pub const fn new() -> Self {
-        Self { trits: vec![] }
+    const FIRST_CELL: u32 = 2; // Zero, One, then cells
+
+    pub(crate) fn from_cell_index(cell_index: usize) -> Net {
+        assert!(cell_index <= u32::MAX as usize - 3);
+        Net { index: cell_index as u32 + Net::FIRST_CELL }
     }
 
-    pub fn zero(width: usize) -> Self {
-        Self::from_iter(std::iter::repeat_n(Trit::Zero, width))
-    }
-
-    pub fn ones(width: usize) -> Self {
-        Self::from_iter(std::iter::repeat_n(Trit::One, width))
-    }
-
-    pub fn undef(width: usize) -> Self {
-        Self::from_iter(std::iter::repeat_n(Trit::Undef, width))
-    }
-
-    pub fn push(&mut self, trit: impl Into<Trit>) {
-        self.trits.push(trit.into());
-    }
-
-    pub fn from_uint(val: u128, bits: usize) -> Self {
-        let mut trits = vec![];
-        if bits < 128 {
-            assert!(val < (1 << bits));
-        }
-        for i in 0..bits {
-            let trit = if i < u128::BITS as usize && ((val >> i) & 1) != 0 { Trit::One } else { Trit::Zero };
-            trits.push(trit);
-        }
-        Self { trits }
-    }
-
-    pub fn as_uint(&self) -> Option<u64> {
-        if self.has_undef() {
-            return None;
-        }
-        let mut res = 0;
-        for (pos, trit) in self.iter().enumerate() {
-            if trit == Trit::One {
-                if pos >= 64 {
-                    return None;
-                }
-                res |= 1 << pos;
-            }
-        }
-        Some(res)
-    }
-
-    pub fn as_int(&self) -> Option<i64> {
-        if self.has_undef() {
-            return None;
-        }
-        let mut width = self.len();
-        while width > 1 && self[width - 1] == self[width - 2] {
-            width -= 1;
-        }
-        if width > 64 {
-            return None;
-        }
-        let mut res = 0;
-        for (pos, trit) in self.iter().enumerate() {
-            if trit == Trit::One {
-                if pos == width - 1 {
-                    res |= -1 << pos;
-                } else {
-                    res |= 1 << pos;
-                }
-            }
-        }
-        Some(res)
-    }
-
-    pub fn lit(value: &str) -> Self {
-        value.parse().unwrap()
-    }
-
-    pub fn len(&self) -> usize {
-        self.trits.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.trits.is_empty()
-    }
-
-    pub fn iter(&self) -> impl DoubleEndedIterator<Item = Trit> + ExactSizeIterator + '_ {
-        self.trits.iter().copied()
-    }
-
-    pub fn lsb(&self) -> Trit {
-        self.trits[0]
-    }
-
-    pub fn msb(&self) -> Trit {
-        self.trits[self.len() - 1]
-    }
-
-    pub fn is_zero(&self) -> bool {
-        self.trits.iter().all(|&trit| trit == Trit::Zero)
-    }
-
-    pub fn is_ones(&self) -> bool {
-        self.trits.iter().all(|&trit| trit == Trit::One)
-    }
-
-    pub fn is_undef(&self) -> bool {
-        self.trits.iter().all(|&trit| trit == Trit::Undef)
-    }
-
-    pub fn has_undef(&self) -> bool {
-        self.trits.iter().any(|&trit| trit == Trit::Undef)
-    }
-
-    pub fn as_power_of_two(&self) -> Option<u32> {
-        let mut result = None;
-        for (offset, trit) in self.trits.iter().copied().enumerate() {
-            if trit == Trit::Undef {
-                return None;
-            }
-            if trit == Trit::One {
-                if result.is_some() {
-                    return None;
-                }
-                result = Some(offset as u32);
-            }
-        }
-        result
-    }
-
-    pub fn concat<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Self {
-        Self::from_iter(self.iter().chain(other.into().iter()))
-    }
-
-    pub fn slice(&self, range: impl std::ops::RangeBounds<usize>) -> Const {
-        Const::from_iter(self[(range.start_bound().cloned(), range.end_bound().cloned())].iter().copied())
-    }
-
-    pub fn combine<'a, 'b>(lft: impl Into<Cow<'a, Const>>, rgt: impl Into<Cow<'b, Const>>) -> Option<Const> {
-        let (lft, rgt) = (lft.into(), rgt.into());
-        assert_eq!(lft.len(), rgt.len());
-        let mut trits = vec![];
-        for (lft, rgt) in std::iter::zip(lft.iter(), rgt.iter()) {
-            trits.push(Trit::combine(lft, rgt)?);
-        }
-        Some(Const { trits })
-    }
-
-    pub fn not(&self) -> Const {
-        Const::from_iter(self.iter().map(|x| !x))
-    }
-
-    pub fn and<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
-        let other = other.into();
-        assert_eq!(self.len(), other.len());
-        Const::from_iter(self.iter().zip(other.iter()).map(|(x, y)| x & y))
-    }
-
-    pub fn or<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
-        let other = other.into();
-        assert_eq!(self.len(), other.len());
-        Const::from_iter(self.iter().zip(other.iter()).map(|(x, y)| x | y))
-    }
-
-    pub fn xor<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
-        let other = other.into();
-        assert_eq!(self.len(), other.len());
-        Const::from_iter(self.iter().zip(other.iter()).map(|(x, y)| x ^ y))
-    }
-
-    pub fn adc<'a>(&self, other: impl Into<Cow<'a, Const>>, ci: Trit) -> Const {
-        let other = other.into();
-        assert_eq!(self.len(), other.len());
-        let mut sum = vec![];
-        let mut carry = ci;
-        for (a, b) in self.iter().zip(other.iter()) {
-            let (y, co) = match (a, b, carry) {
-                (Trit::Undef, _, _) => (Trit::Undef, Trit::Undef),
-                (_, Trit::Undef, _) => (Trit::Undef, Trit::Undef),
-                (_, _, Trit::Undef) => (Trit::Undef, Trit::Undef),
-                (Trit::Zero, Trit::Zero, s) => (s, Trit::Zero),
-                (Trit::Zero, s, Trit::Zero) => (s, Trit::Zero),
-                (s, Trit::Zero, Trit::Zero) => (s, Trit::Zero),
-                (Trit::One, Trit::One, s) => (s, Trit::One),
-                (Trit::One, s, Trit::One) => (s, Trit::One),
-                (s, Trit::One, Trit::One) => (s, Trit::One),
-            };
-            carry = co;
-            sum.push(y);
-        }
-        sum.push(carry);
-        Const::from_iter(sum)
-    }
-
-    pub fn eq<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Trit {
-        let other = other.into();
-        assert_eq!(self.len(), other.len());
-        let mut undef = false;
-        for (x, y) in self.iter().zip(other.iter()) {
-            if x == Trit::Undef || y == Trit::Undef {
-                undef = true;
-            } else if x != y {
-                return Trit::Zero;
-            }
-        }
-        if undef {
-            Trit::Undef
+    pub(crate) fn as_cell_index(self) -> Option<usize> {
+        if self.index >= Self::FIRST_CELL && self != Self::UNDEF {
+            Some((self.index - Self::FIRST_CELL) as usize)
         } else {
-            Trit::One
+            None
         }
     }
 
-    pub fn ult<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Trit {
-        let other = other.into();
-        assert_eq!(self.len(), other.len());
-        if self.has_undef() || other.has_undef() {
-            Trit::Undef
+    pub fn as_const(self) -> Option<Trit> {
+        if self == Self::UNDEF {
+            Some(Trit::Undef)
+        } else if self == Self::ZERO {
+            Some(Trit::Zero)
+        } else if self == Self::ONE {
+            Some(Trit::One)
         } else {
-            for (x, y) in self.iter().zip(other.iter()).rev() {
-                if x != y {
-                    return Trit::from(x < y);
-                }
-            }
-            Trit::Zero
+            None
         }
     }
 
-    pub fn slt<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Trit {
-        let other = other.into();
-        assert_eq!(self.len(), other.len());
-        if self.has_undef() || other.has_undef() {
-            Trit::Undef
-        } else if self.msb() != other.msb() {
-            Trit::from(self.msb() > other.msb())
-        } else {
-            for (x, y) in self.iter().zip(other.iter()).rev() {
-                if x != y {
-                    return Trit::from(x < y);
-                }
-            }
-            Trit::Zero
-        }
+    pub fn is_cell(self) -> bool {
+        self.as_const().is_none()
     }
 
-    pub fn mul<'a>(&self, other: impl Into<Cow<'a, Const>>) -> Const {
-        let other = other.into();
-        assert_eq!(self.len(), other.len());
-        if self.has_undef() || other.has_undef() {
-            Const::undef(self.len())
-        } else {
-            let mut res = Const::zero(self.len());
-            for (i, bit) in other.iter().enumerate() {
-                if bit == Trit::One {
-                    res = res.adc(Const::zero(i).concat(self), Trit::Zero);
-                } else {
-                    res.trits.push(Trit::Zero);
-                }
-            }
-            res.slice(..self.len())
+    pub fn visit(self, mut f: impl FnMut(Net)) {
+        f(self)
+    }
+
+    pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
+        f(self)
+    }
+}
+
+impl From<bool> for Net {
+    fn from(value: bool) -> Self {
+        match value {
+            false => Net::ZERO,
+            true => Net::ONE,
         }
     }
 }
 
-impl From<Trit> for Const {
-    fn from(trit: Trit) -> Self {
-        Const { trits: vec![trit] }
-    }
-}
-
-impl From<Vec<Trit>> for Const {
-    fn from(trits: Vec<Trit>) -> Self {
-        Const { trits }
-    }
-}
-
-impl FromStr for Const {
-    type Err = ();
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut trits = vec![];
-        for char in s.chars() {
-            trits.push(Trit::from_char(char)?)
-        }
-        trits.reverse();
-        Ok(Const { trits })
-    }
-}
-
-impl FromIterator<Trit> for Const {
-    fn from_iter<T: IntoIterator<Item = Trit>>(iter: T) -> Self {
-        Const { trits: iter.into_iter().collect() }
-    }
-}
-
-impl Extend<Trit> for Const {
-    fn extend<T: IntoIterator<Item = Trit>>(&mut self, iter: T) {
-        for trit in iter {
-            self.trits.push(trit);
-        }
-    }
-}
-
-impl IntoIterator for &Const {
-    type Item = Trit;
-    type IntoIter = std::vec::IntoIter<Trit>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.trits.clone().into_iter()
-    }
-}
-
-impl IntoIterator for Const {
-    type Item = Trit;
-    type IntoIter = std::vec::IntoIter<Trit>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.trits.into_iter()
-    }
-}
-
-impl Debug for Const {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Const(")?;
-        for (index, trit) in self.trits.iter().enumerate() {
-            if index != 0 {
-                write!(f, ", ")?;
-            }
-            write!(f, "{:?}", trit)?;
-        }
-        write!(f, ")")?;
-        Ok(())
-    }
-}
-
-impl Display for Const {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        for trit in self.trits.iter().rev() {
-            write!(f, "{}", trit)?;
-        }
-        Ok(())
-    }
-}
-
-impl<'a> From<&'a Const> for Cow<'a, Const> {
-    fn from(value: &'a Const) -> Self {
-        Cow::Borrowed(value)
-    }
-}
-
-impl From<Const> for Cow<'_, Const> {
-    fn from(value: Const) -> Self {
-        Cow::Owned(value)
-    }
-}
-
-impl From<Trit> for Cow<'_, Const> {
+impl From<Trit> for Net {
     fn from(value: Trit) -> Self {
-        Cow::Owned(Const::from(value))
+        match value {
+            Trit::Undef => Self::UNDEF,
+            Trit::Zero => Self::ZERO,
+            Trit::One => Self::ONE,
+        }
     }
 }
 
-impl<I: SliceIndex<[Trit]>> Index<I> for Const {
-    type Output = I::Output;
-
-    fn index(&self, index: I) -> &Self::Output {
-        &self.trits[index]
+impl From<&Net> for Net {
+    fn from(net: &Net) -> Self {
+        *net
     }
 }
 
-impl<I: SliceIndex<[Trit]>> IndexMut<I> for Const {
-    fn index_mut(&mut self, index: I) -> &mut Self::Output {
-        &mut self.trits[index]
+impl TryFrom<Value> for Net {
+    type Error = ();
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        value.as_net().ok_or(())
+    }
+}
+
+impl Debug for Net {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Net { index: 0 } => write!(f, "Net::ZERO"),
+            Net { index: 1 } => write!(f, "Net::ONE"),
+            Net { index: u32::MAX } => write!(f, "Net::UNDEF"),
+            _ => {
+                let cell_index = self.index.checked_sub(Net::FIRST_CELL).unwrap();
+                write!(f, "Net::from_cell({cell_index})")
+            }
+        }
+    }
+}
+
+impl Display for Net {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            Net { index: 0 } => write!(f, "0"),
+            Net { index: 1 } => write!(f, "1"),
+            Net { index: u32::MAX } => write!(f, "X"),
+            _ => {
+                let cell_index = self.index.checked_sub(Net::FIRST_CELL).unwrap();
+                write!(f, "%_{cell_index}")
+            }
+        }
     }
 }
 
@@ -478,7 +207,7 @@ impl Value {
             for net in self.nets.iter() {
                 trits.push(net.as_const().unwrap())
             }
-            Some(Const { trits })
+            Some(Const::from(trits))
         } else {
             None
         }
@@ -578,14 +307,14 @@ impl Value {
 
 impl Debug for Value {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        write!(f, "Value(")?;
+        write!(f, "Value::from_iter([")?;
         for (index, net) in self.nets.iter().enumerate() {
             if index != 0 {
                 write!(f, ", ")?;
             }
             write!(f, "{:?}", net)?;
         }
-        write!(f, ")")?;
+        write!(f, "])")?;
         Ok(())
     }
 }
@@ -620,27 +349,11 @@ impl<I: SliceIndex<[Net]>> IndexMut<I> for Value {
     }
 }
 
-impl FromIterator<Net> for Value {
-    fn from_iter<T: IntoIterator<Item = Net>>(iter: T) -> Self {
-        Value { nets: iter.into_iter().collect() }
-    }
-}
-
-impl IntoIterator for &Value {
-    type Item = Net;
-    type IntoIter = std::vec::IntoIter<Net>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.nets.clone().into_iter()
-    }
-}
-
-impl IntoIterator for Value {
-    type Item = Net;
-    type IntoIter = std::vec::IntoIter<Net>;
-
-    fn into_iter(self) -> Self::IntoIter {
-        self.nets.into_iter()
+impl Extend<Net> for Value {
+    fn extend<T: IntoIterator<Item = Net>>(&mut self, iter: T) {
+        for net in iter {
+            self.nets.push(net);
+        }
     }
 }
 
@@ -682,7 +395,7 @@ impl From<Vec<Net>> for Value {
 
 impl From<&Const> for Value {
     fn from(value: &Const) -> Self {
-        Value::from_iter(value.trits.iter().copied().map(Net::from))
+        Value::from_iter(value.into_iter().map(Net::from))
     }
 }
 
@@ -728,81 +441,166 @@ impl<'a> From<&'a Value> for Cow<'a, Value> {
     }
 }
 
-impl Extend<Net> for Value {
-    fn extend<T: IntoIterator<Item = Net>>(&mut self, iter: T) {
-        for net in iter {
-            self.nets.push(net);
+impl FromIterator<Net> for Value {
+    fn from_iter<T: IntoIterator<Item = Net>>(iter: T) -> Self {
+        Value { nets: iter.into_iter().collect() }
+    }
+}
+
+impl IntoIterator for &Value {
+    type Item = Net;
+    type IntoIter = std::vec::IntoIter<Net>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.nets.clone().into_iter()
+    }
+}
+
+impl IntoIterator for Value {
+    type Item = Net;
+    type IntoIter = std::vec::IntoIter<Net>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.nets.into_iter()
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ControlNet {
+    Pos(Net),
+    Neg(Net),
+}
+
+impl ControlNet {
+    pub const UNDEF: ControlNet = ControlNet::Pos(Net::UNDEF);
+    pub const ZERO: ControlNet = ControlNet::Pos(Net::ZERO);
+    pub const ONE: ControlNet = ControlNet::Pos(Net::ONE);
+
+    pub fn net(self) -> Net {
+        match self {
+            Self::Pos(net) => net,
+            Self::Neg(net) => net,
         }
+    }
+
+    pub fn is_positive(self) -> bool {
+        matches!(self, Self::Pos(_))
+    }
+
+    pub fn is_negative(self) -> bool {
+        matches!(self, Self::Neg(_))
+    }
+
+    pub fn is_active(self) -> Option<bool> {
+        match self {
+            Self::Pos(net) if net == Net::ZERO => Some(false),
+            Self::Neg(net) if net == Net::ONE => Some(false),
+            Self::Pos(net) if net == Net::ONE => Some(true),
+            Self::Neg(net) if net == Net::ZERO => Some(true),
+            _ => None,
+        }
+    }
+
+    pub fn is_always(self, active: bool) -> bool {
+        self.is_active() == Some(active)
+    }
+
+    pub fn is_const(self) -> bool {
+        self.net().as_const().is_some()
+    }
+
+    pub fn canonicalize(self) -> Self {
+        match self {
+            Self::Neg(net) if net == Net::UNDEF => Self::Pos(net),
+            Self::Neg(net) if net == Net::ZERO => Self::Pos(Net::ONE),
+            Self::Neg(net) if net == Net::ONE => Self::Pos(Net::ZERO),
+            _ => self,
+        }
+    }
+
+    pub fn into_pos(self, design: &Design) -> Net {
+        match self {
+            ControlNet::Pos(net) => net,
+            ControlNet::Neg(net) => {
+                if let Some(trit) = net.as_const() {
+                    Net::from(!trit)
+                } else {
+                    design.add_not(net).unwrap_net()
+                }
+            }
+        }
+    }
+
+    pub fn into_neg(self, design: &Design) -> Net {
+        match self {
+            ControlNet::Pos(net) => {
+                if let Some(trit) = net.as_const() {
+                    Net::from(!trit)
+                } else {
+                    design.add_not(net).unwrap_net()
+                }
+            }
+            ControlNet::Neg(net) => net,
+        }
+    }
+
+    pub fn visit(self, f: impl FnMut(Net)) {
+        match self {
+            ControlNet::Pos(net) => net.visit(f),
+            ControlNet::Neg(net) => net.visit(f),
+        }
+    }
+
+    pub fn visit_mut(&mut self, f: impl FnMut(&mut Net)) {
+        match self {
+            ControlNet::Pos(net) => net.visit_mut(f),
+            ControlNet::Neg(net) => net.visit_mut(f),
+        }
+    }
+}
+
+impl From<Net> for ControlNet {
+    fn from(net: Net) -> Self {
+        ControlNet::Pos(net)
     }
 }
 
 #[cfg(test)]
 mod test {
-    use crate::{Net, Value, Const, Trit};
+    use crate::{Net, Trit, Value};
+
+    #[test]
+    fn test_net() {
+        assert_eq!(Net::from(Trit::Zero), Net::ZERO);
+        assert_eq!(Net::from(Trit::One), Net::ONE);
+        assert_eq!(Net::from(Trit::Undef), Net::UNDEF);
+        assert_eq!(Net::from_cell_index(3), Net { index: 5 });
+    }
+
+    #[test]
+    fn test_from_bool() {
+        assert_eq!(Net::from(false), Net::ZERO);
+        assert_eq!(Net::from(true), Net::ONE);
+    }
+
+    #[test]
+    fn test_from_trit() {
+        assert_eq!(Net::from(Trit::Zero), Net::ZERO);
+        assert_eq!(Net::from(Trit::One), Net::ONE);
+        assert_eq!(Net::from(Trit::Undef), Net::UNDEF);
+    }
+
+    #[test]
+    fn test_net_debug() {
+        assert_eq!(format!("{:?}", Net::ZERO), "Net::ZERO");
+        assert_eq!(format!("{:?}", Net::ONE), "Net::ONE");
+        assert_eq!(format!("{:?}", Net::UNDEF), "Net::UNDEF");
+        assert_eq!(format!("{:?}", Net::from_cell_index(0)), "Net::from_cell(0)");
+    }
 
     #[test]
     fn test_value() {
         let v01 = Value::from_iter([Net::ONE, Net::ZERO]);
         assert_eq!(v01.into_iter().collect::<Vec<_>>(), vec![Net::ONE, Net::ZERO]);
-    }
-
-    #[test]
-    fn test_not() {
-        for (a, y) in [("", ""), ("01", "10"), ("X10", "X01")] {
-            assert_eq!(Const::lit(a).not(), Const::lit(y));
-        }
-    }
-
-    #[test]
-    fn test_and() {
-        for (a, b, y) in [("", "", ""), ("1010", "1100", "1000"), ("X0X0", "XX00", "X000"), ("X1X1", "XX11", "XXX1")] {
-            assert_eq!(Const::lit(a).and(Const::lit(b)), Const::lit(y));
-        }
-    }
-
-    #[test]
-    fn test_or() {
-        for (a, b, y) in [("", "", ""), ("1010", "1100", "1110"), ("X0X0", "XX00", "XXX0"), ("X1X1", "XX11", "X111")] {
-            assert_eq!(Const::lit(a).or(Const::lit(b)), Const::lit(y));
-        }
-    }
-
-    #[test]
-    fn test_xor() {
-        for (a, b, y) in [("", "", ""), ("1010", "1100", "0110"), ("X0X0", "XX00", "XXX0"), ("X1X1", "XX11", "XXX0")] {
-            assert_eq!(Const::lit(a).xor(Const::lit(b)), Const::lit(y));
-        }
-    }
-
-    #[test]
-    fn test_mux() {
-        for (s, a, b, y) in [
-            ('0', "", "", ""),
-            ('0', "XXX101010", "X10XX1100", "X10XX1100"),
-            ('1', "XXX101010", "X10XX1100", "XXX101010"),
-            ('X', "XXX101010", "X10XX1100", "XXXXX1XX0"),
-        ] {
-            assert_eq!(Trit::lit(s).mux(Const::lit(a), Const::lit(b)), Const::lit(y));
-        }
-    }
-
-    #[test]
-    fn test_adc() {
-        for (a, b, c, y) in [
-            ("", "", '0', "0"),
-            ("", "", '1', "1"),
-            ("10101010", "11001100", '0', "101110110"),
-            ("1101", "1111", '1', "11101"),
-            ("1010X010", "11001100", '0', "XXXXXX110"),
-        ] {
-            assert_eq!(Const::lit(a).adc(Const::lit(b), Trit::lit(c)), Const::lit(y));
-        }
-    }
-
-    #[test]
-    fn test_mul() {
-        for (a, b, y) in [("", "", ""), ("0011", "0011", "1001"), ("0X11", "0011", "XXXX"), ("1101", "1101", "1001")] {
-            assert_eq!(Const::lit(a).mul(Const::lit(b)), Const::lit(y));
-        }
     }
 }
