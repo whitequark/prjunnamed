@@ -18,7 +18,7 @@ pub use cell::{
     MemoryPortRelation, TargetCell, Instance,
 };
 pub use design::{Design, CellRef};
-pub use parse::{parse, _parse_without_compacting, ParseError};
+pub use parse::{parse, ParseError};
 pub use target::{
     Target, TargetParamKind, TargetParam, TargetInput, TargetOutput, TargetIo, TargetCellPurity, TargetPrototype,
     TargetCellImportError, TargetImportError, register_target, create_target,

@@ -59,19 +59,18 @@ impl Context {
         } else {
             let mut nets = vec![];
             for offset in offsets {
-                let net = self.late_map.entry((index, offset)).or_insert_with(|| self.design.add_buf(Net::UNDEF)[0]);
+                let net = self.late_map.entry((index, offset)).or_insert_with(|| self.design.add_void(1).unwrap_net());
                 nets.push(*net);
             }
             Value::from(nets)
         }
     }
 
-    fn finalize(self) -> Design {
+    fn finalize(mut self) -> Design {
         for ((index, offset), net) in self.late_map.into_iter() {
             if let Some(output) = self.cell_map.get(&index) {
                 if offset < output.len() {
-                    let (cell_ref, _offset) = self.design.find_cell(net).unwrap();
-                    cell_ref.replace(Cell::Buf(output[offset].into()));
+                    self.design.replace_net(net, output[offset]);
                 } else {
                     panic!("late cell reference %{}+{} out of bounds for %{}:{}", index, offset, index, output.len());
                 }
@@ -79,6 +78,7 @@ impl Context {
                 panic!("unresolved late cell index %{}", index)
             }
         }
+        self.design.apply();
         self.design
     }
 }
@@ -749,17 +749,13 @@ pub struct ParseError {
 
 impl Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "failed to parse near: {:?}", &self.source[self.offset..])
+        write!(f, "failed to parse near offset {}: {:?}", self.offset, &self.source[self.offset..])
     }
 }
 
 impl std::error::Error for ParseError {}
 
-// The unit tests below rely on `buf` cells and pure cells not being removed.
-// They could be modified to use a primary output to keep the cells alive but it's probably not worth it.
-// TODO: this could probably become the normal `parse` if auto-insertion of bufs is removed?
-#[doc(hidden)]
-pub fn _parse_without_compacting(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, ParseError> {
+pub fn parse(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, ParseError> {
     let context = Context::new(target);
     let mut tokens = source.into_tokens().with_context(context);
     while parse_line(&mut tokens) {}
@@ -769,20 +765,6 @@ pub fn _parse_without_compacting(target: Option<Arc<dyn Target>>, source: &str) 
         return Err(ParseError { source: String::from(source), offset: tokens.location().offset() });
     }
     Ok(context.finalize())
-}
-
-pub fn parse(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, ParseError> {
-    _parse_without_compacting(target, source).map(|mut design| {
-        design.apply();
-        for cell_ref in design.iter_cells() {
-            match &*cell_ref.get() {
-                Cell::Buf(arg) => design.replace_value(cell_ref.output(), arg),
-                _ => (),
-            }
-        }
-        design.compact();
-        design
-    })
 }
 
 impl FromStr for Design {

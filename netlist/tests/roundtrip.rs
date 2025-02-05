@@ -1,11 +1,11 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use prjunnamed_netlist::{Const, Design, Target, TargetCell, TargetImportError, TargetPrototype, register_target};
-use prjunnamed_netlist::{parse, _parse_without_compacting};
+use prjunnamed_netlist::parse;
 
 #[track_caller]
 fn onewaytrip(text: &str, expect: &str) {
-    let design = match _parse_without_compacting(None, text) {
+    let design = match parse(None, text) {
         Ok(design) => design,
         Err(error) => panic!("{}", error),
     };
