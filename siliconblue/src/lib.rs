@@ -117,7 +117,7 @@ impl SiliconBlueTarget {
                 .add_input("CLOCK_ENABLE", Const::ones(1))
                 .add_input("INPUT_CLK", Const::undef(1))
                 .add_input("OUTPUT_CLK", Const::undef(1))
-                .add_input("LATCH_INPUT_ENABLE", Const::undef(1))
+                .add_input("LATCH_INPUT_VALUE", Const::undef(1))
                 .add_output("D_IN_0", 1)
                 .add_output("D_IN_1", 1)
                 .add_output("GLOBAL_BUFFER_OUTPUT", 1)
