@@ -72,7 +72,7 @@ impl MatchMatrix {
     fn add_enable(&mut self, enable: Net) {
         if enable != Net::ONE {
             for row in &mut self.rows {
-                row.pattern.push(Trit::Undef);
+                row.pattern.push(Trit::One);
             }
             self.rows.insert(0, MatchRow::new(Const::undef(self.value.len()).concat(Trit::Zero), []));
             self.value.push(enable);
@@ -688,8 +688,8 @@ mod test {
 
         let mut mr = MatchMatrix::new(&v.concat(en));
         mr.add(MatchRow::new(h.pat("XX0"), []));
-        mr.add(MatchRow::new(h.pat("01X"), [n1]));
-        mr.add(MatchRow::new(h.pat("10X"), [n2]));
+        mr.add(MatchRow::new(h.pat("011"), [n1]));
+        mr.add(MatchRow::new(h.pat("101"), [n2]));
 
         ml.add_enable(en);
         assert_eq!(ml, mr, "\n{ml} != \n{mr}");
