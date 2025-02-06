@@ -1,14 +1,6 @@
 use std::{borrow::Cow, collections::HashMap};
 
-use prjunnamed_netlist::{CellRef, Cell, Design, Value, TargetCellPurity};
-
-fn consider_for_merge(design: &Design, cell_ref: &CellRef) -> bool {
-    match &*cell_ref.get() {
-        Cell::Other(_instance) => false,
-        Cell::Target(target_cell) => design.target_prototype(target_cell).purity != TargetCellPurity::HasEffects,
-        _ => true,
-    }
-}
+use prjunnamed_netlist::{Cell, Design, Value};
 
 struct Numberer(HashMap<Cell, Value>);
 
@@ -70,7 +62,7 @@ impl Numberer {
 
 pub fn merge(design: &mut Design) -> bool {
     let mut numberer = Numberer::new();
-    for cell_ref in design.iter_cells_topo().filter(|cell_ref| consider_for_merge(design, cell_ref)) {
+    for cell_ref in design.iter_cells_topo().filter(|cell_ref| cell_ref.get().has_effects(design)) {
         let mut cell = cell_ref.get().into_owned();
         cell.visit_mut(|net| *net = design.map_net(*net));
         let output = cell_ref.output();
