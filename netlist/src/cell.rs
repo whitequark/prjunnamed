@@ -251,7 +251,8 @@ impl From<Cell> for CellRepr {
 impl CellRepr {
     pub fn output_len(&self) -> usize {
         match self {
-            CellRepr::Void | CellRepr::Skip(_) => unreachable!(),
+            CellRepr::Void => unreachable!("void cell"),
+            CellRepr::Skip(_) => unreachable!("skip cell"),
 
             CellRepr::Buf(_)
             | CellRepr::Not(_)
@@ -267,7 +268,8 @@ impl CellRepr {
 
     pub(crate) fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
-            CellRepr::Void | CellRepr::Skip(_) => unreachable!(),
+            CellRepr::Void => unreachable!("void cell"),
+            CellRepr::Skip(_) => unreachable!("skip cell"),
 
             CellRepr::Buf(arg) | CellRepr::Not(arg) => arg.visit(&mut f),
             CellRepr::And(arg1, arg2) | CellRepr::Or(arg1, arg2) | CellRepr::Xor(arg1, arg2) => {
@@ -286,7 +288,8 @@ impl CellRepr {
 
     pub(crate) fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
-            CellRepr::Void | CellRepr::Skip(_) => unreachable!(),
+            CellRepr::Void => unreachable!("void cell"),
+            CellRepr::Skip(_) => unreachable!("skip cell"),
 
             CellRepr::Buf(arg) | CellRepr::Not(arg) => arg.visit_mut(&mut f),
             CellRepr::And(arg1, arg2) | CellRepr::Or(arg1, arg2) | CellRepr::Xor(arg1, arg2) => {

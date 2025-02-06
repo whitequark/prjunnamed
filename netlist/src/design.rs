@@ -2,7 +2,7 @@ use std::ops::Range;
 use std::cell::RefCell;
 use std::borrow::Cow;
 use std::hash::Hash;
-use std::collections::{btree_map, BTreeMap, BTreeSet};
+use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
 use crate::cell::{CellRepr, Cell};
@@ -24,6 +24,7 @@ struct ChangeQueue {
     next_io: u32,
     added_ios: BTreeMap<String, Range<u32>>,
     added_cells: Vec<CellRepr>,
+    cell_cache: HashMap<Cell, Value>,
     replaced_cells: BTreeMap<usize, Cell>,
     unalived_cells: BTreeSet<usize>,
     replaced_nets: BTreeMap<Net, Net>,
@@ -42,6 +43,7 @@ impl Design {
                 next_io: 0,
                 added_ios: BTreeMap::new(),
                 added_cells: vec![],
+                cell_cache: HashMap::new(),
                 replaced_cells: BTreeMap::new(),
                 unalived_cells: BTreeSet::new(),
                 replaced_nets: BTreeMap::new(),
@@ -88,17 +90,22 @@ impl Design {
     }
 
     pub fn add_cell(&self, cell: Cell) -> Value {
-        cell.validate(self);
         let mut changes = self.changes.borrow_mut();
+        if let Some(value) = changes.cell_cache.get(&cell) {
+            return value.clone()
+        }
+        cell.validate(self);
         let index = self.cells.len() + changes.added_cells.len();
         let output_len = cell.output_len();
-        changes.added_cells.push(cell.into());
-        if output_len > 1 {
-            for _ in 0..(output_len - 1) {
-                changes.added_cells.push(CellRepr::Skip(index.try_into().expect("cell index too large")))
-            }
+        changes.added_cells.push(cell.clone().into());
+        for _ in 0..output_len.checked_sub(1).unwrap_or(0) {
+            changes.added_cells.push(CellRepr::Skip(index.try_into().expect("cell index too large")))
         }
-        Value::cell(index, output_len)
+        let output = Value::cell(index, output_len);
+        if !cell.has_effects(self) {
+            changes.cell_cache.insert(cell, output.clone());
+        }
+        output
     }
 
     pub fn add_void(&self, width: usize) -> Value {
@@ -189,6 +196,7 @@ impl Design {
         }
         self.ios.extend(std::mem::take(&mut changes.added_ios));
         self.cells.extend(std::mem::take(&mut changes.added_cells));
+        changes.cell_cache.clear();
         if !changes.replaced_nets.is_empty() {
             for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, CellRepr::Skip(_) | CellRepr::Void)) {
                 cell.visit_mut(|net| {

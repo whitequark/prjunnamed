@@ -11,7 +11,7 @@
 /// heuristic.
 ///
 use std::fmt::Display;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
 use union_find_rs::{traits::UnionFind, disjoint_sets::DisjointSets};
 
@@ -275,14 +275,9 @@ impl Decision {
         }
     }
 
-    fn emit_sop(&self, design: &Design, cache: &mut HashMap<Cell, Net>) -> BTreeSet<Net> {
-        fn add_cell(design: &Design, cache: &mut HashMap<Cell, Net>, cell: Cell) -> Net {
-            *cache.entry(cell).or_insert_with_key(|cell| design.add_cell(cell.clone()).unwrap_net())
-        }
-
+    fn emit_sop(&self, design: &Design) -> BTreeSet<Net> {
         fn subtree(
             design: &Design,
-            cache: &mut HashMap<Cell, Net>,
             sop: &mut BTreeMap<Net, BTreeSet<Net>>,
             nets: &mut Vec<Net>,
             bits: &mut Vec<Trit>,
@@ -290,12 +285,12 @@ impl Decision {
         ) {
             match decision {
                 Decision::Result { rules } => {
-                    let cond = add_cell(design, cache, match &bits[..] {
-                        [] => Cell::Buf(Trit::One.into()),
-                        [Trit::One] => Cell::Buf(nets[0].into()),
-                        [Trit::Zero] => Cell::Not(nets[0].into()),
-                        _ => Cell::Eq(nets.clone().into(), Const::from(bits.clone()).into()),
-                    });
+                    let cond = match &bits[..] {
+                        [] => design.add_buf1(Trit::One),
+                        [Trit::One] => design.add_buf1(nets[0]),
+                        [Trit::Zero] => design.add_not1(nets[0]),
+                        _ => design.add_eq(nets.clone(), Const::from(bits.clone())),
+                    };
                     for &rule in rules {
                         sop.entry(rule).or_default().insert(cond);
                     }
@@ -303,10 +298,10 @@ impl Decision {
                 Decision::Branch { test: net, if0, if1 } => {
                     nets.push(*net);
                     bits.push(Trit::Zero);
-                    subtree(design, cache, sop, nets, bits, if0);
+                    subtree(design, sop, nets, bits, if0);
                     bits.pop();
                     bits.push(Trit::One);
-                    subtree(design, cache, sop, nets, bits, if1);
+                    subtree(design, sop, nets, bits, if1);
                     bits.pop();
                     nets.pop();
                 }
@@ -317,14 +312,14 @@ impl Decision {
         // Although they will be merged later, this function avoids emitting duplicate cells anyway.
         let mut sop = BTreeMap::new();
         let (mut nets, mut bits) = (Vec::new(), Vec::new());
-        subtree(design, cache, &mut sop, &mut nets, &mut bits, self);
+        subtree(design, &mut sop, &mut nets, &mut bits, self);
 
         // Emit sums as `or` cell sequences, and replace the match outputs with the sum nets.
         for (rule, products) in sop.iter() {
             let mut sum = None::<Net>;
             for &product in products {
                 if let Some(ref mut sum) = sum {
-                    *sum = add_cell(design, cache, Cell::Or((*sum).into(), product.into()))
+                    *sum = design.add_or1(*sum, product);
                 } else {
                     sum = Some(product);
                 }
@@ -487,8 +482,6 @@ impl<'a> AssignChains<'a> {
 }
 
 pub fn decision(design: &mut Design) {
-    let mut cache = HashMap::new();
-
     // Detect and extract trees of `match` cells present in the netlist.
     let match_trees = MatchTrees::build(design);
 
@@ -515,7 +508,7 @@ pub fn decision(design: &mut Design) {
             decisions.insert(rule, decision.clone());
         }
 
-        let used_rules = decision.emit_sop(design, &mut cache);
+        let used_rules = decision.emit_sop(design);
         for unused_rule in all_rules.difference(&used_rules) {
             design.replace_net(unused_rule, Net::ZERO);
         }
@@ -1127,7 +1120,7 @@ mod test {
         let y1 =
             design.add_match(MatchCell { value: a.clone(), enable: Net::ONE, patterns: vec![vec![Const::lit("0")]] });
         let y2 = design.add_match(MatchCell { value: a.clone(), enable: y1[0], patterns: vec![vec![Const::lit("0")]] });
-        let y3 = design.add_match(MatchCell { value: a, enable: y1[0], patterns: vec![vec![Const::lit("0")]] });
+        let y3 = design.add_match(MatchCell { value: a, enable: y1[0], patterns: vec![vec![Const::lit("1")]] });
         design.apply();
 
         let y1_cell = design.find_cell(y1[0]).unwrap().0;
