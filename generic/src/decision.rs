@@ -197,10 +197,10 @@ impl MatchMatrix {
         self
     }
 
-    fn dispatch(mut self) -> Box<Decision> {
+    fn dispatch(mut self) -> Decision {
         self = self.normalize();
         if self.value.is_empty() || self.rows.len() == 1 {
-            Box::new(Decision::Result { rules: self.rows.into_iter().next().map(|r| r.rules).unwrap_or_default() })
+            Decision::Result { rules: self.rows.into_iter().next().map(|r| r.rules).unwrap_or_default() }
         } else {
             // Fanfiction of the heuristics from the 1986 paper that reduces them to: split the matrix on the column
             // with the fewest don't-care's in it.
@@ -228,14 +228,14 @@ impl MatchMatrix {
                 // there are two rows but the `y` rule is still unreachable due to irrefutability.
                 if0
             } else {
-                Box::new(Decision::Branch { test, if0, if1 })
+                Decision::Branch { test, if0: if0.into(), if1: if1.into() }
             }
         }
     }
 }
 
 impl Decision {
-    fn emit(&self, design: &Design, cache: &mut HashMap<Cell, Net>) -> BTreeSet<Net> {
+    fn emit_sop(&self, design: &Design, cache: &mut HashMap<Cell, Net>) -> BTreeSet<Net> {
         fn add_cell(design: &Design, cache: &mut HashMap<Cell, Net>, cell: Cell) -> Net {
             *cache.entry(cell).or_insert_with_key(|cell| design.add_cell(cell.clone()).unwrap_net())
         }
@@ -279,7 +279,7 @@ impl Decision {
         let (mut nets, mut bits) = (Vec::new(), Vec::new());
         subtree(design, cache, &mut sop, &mut nets, &mut bits, self);
 
-        // Emit sums as `or` cell sequences, and replace the void nets introduced for rules with the sum nets.
+        // Emit sums as `or` cell sequences, and replace the match outputs with the sum nets.
         for (rule, products) in sop.iter() {
             let mut sum = None::<Net>;
             for &product in products {
@@ -292,8 +292,8 @@ impl Decision {
             design.replace_net(rule, sum.unwrap());
         }
 
-        // Return the set of all encountered rules. The caller will need to replace void nets for rules
-        // that never appear in the decision trees to keep the netlist well-formed.
+        // Return the set of all encountered rules. The caller will need to replace match outputs
+        // that never appear in the decision trees with zeroes.
         BTreeSet::from_iter(sop.keys().cloned())
     }
 }
@@ -310,33 +310,20 @@ impl<'a> MatchTrees<'a> {
         let mut roots: BTreeSet<CellRef> = BTreeSet::new();
         let mut subtrees: BTreeMap<(CellRef, usize), BTreeSet<CellRef>> = BTreeMap::new();
         for cell_ref in design.iter_cells() {
-            if let Cell::Match(MatchCell { enable, .. }) = &*cell_ref.get() {
-                match design.find_cell(*enable) {
-                    Err(Trit::Undef) | Err(Trit::Zero) => {
-                        // Never enabled.
-                        cell_ref.replace(Cell::Buf(Const::zero(cell_ref.output_len()).into()));
-                    }
-                    Err(Trit::One) => {
-                        // Always enabled; is a root of a match tree.
-                        roots.insert(cell_ref);
-                    }
-                    Ok((enable_cell_ref, offset)) => {
-                        // Conditionally enabled; may be a node in a match tree or a root, depending on
-                        // what the enable signal is connected to.
-                        if let Cell::Match(_) = &*enable_cell_ref.get() {
-                            // Node in a match tree.
-                            subtrees.entry((enable_cell_ref, offset)).or_default().insert(cell_ref);
-                        } else {
-                            // Some other signal.
-                            roots.insert(cell_ref);
-                        }
-                    }
+            let Cell::Match(MatchCell { enable, .. }) = &*cell_ref.get() else { continue };
+            if let Ok((enable_cell_ref, offset)) = design.find_cell(*enable) {
+                if let Cell::Match(_) = &*enable_cell_ref.get() {
+                    // Driven by a match cell; may be a subtree or a root depending on its fanout.
+                    subtrees.entry((enable_cell_ref, offset)).or_default().insert(cell_ref);
+                    continue;
                 }
             }
+            // Driven by some other cell or a constant; is a root.
+            roots.insert(cell_ref);
         }
 
         // Whenever multiple subtrees are connected to the same one-hot output, it is not possible
-        // to merge them into the same matrix. Turn all of the subtrees into roots.
+        // to merge all of them into the same matrix. Turn all of these subtrees into roots.
         let subtrees = BTreeMap::from_iter(subtrees.into_iter().filter_map(|(key, subtrees)| {
             if subtrees.len() == 1 {
                 Some((key, subtrees.into_iter().next().unwrap()))
@@ -351,10 +338,9 @@ impl<'a> MatchTrees<'a> {
 
     // Convert a tree of `match` cells into a matrix.
     // The output of the cell is replaced with a newly conjured void.
-    fn match_tree_into_matrix(&self, cell_ref: CellRef) -> MatchMatrix {
+    fn cell_into_matrix(&self, cell_ref: CellRef) -> MatchMatrix {
         let Cell::Match(match_cell) = &*cell_ref.get() else { unreachable!() };
-        let output = self.design.add_void(match_cell.output_len());
-        self.design.replace_value(cell_ref.output(), &output);
+        let output = cell_ref.output();
 
         // Create matrix for this cell.
         let mut matrix = MatchMatrix::new(&match_cell.value);
@@ -371,7 +357,7 @@ impl<'a> MatchTrees<'a> {
         // Create matrices for subtrees and merge them into the matrix for this cell.
         for (offset, output_net) in output.iter().enumerate() {
             if let Some(&sub_cell_ref) = self.subtrees.get(&(cell_ref, offset)) {
-                matrix = matrix.merge(output_net, &self.match_tree_into_matrix(sub_cell_ref));
+                matrix = matrix.merge(output_net, &self.cell_into_matrix(sub_cell_ref));
             }
         }
 
@@ -381,7 +367,7 @@ impl<'a> MatchTrees<'a> {
     fn iter_matrices<'b>(&'b self) -> impl Iterator<Item = MatchMatrix> + 'b {
         self.roots.iter().map(|&cell_ref| {
             let Cell::Match(MatchCell { enable, .. }) = &*cell_ref.get() else { unreachable!() };
-            let mut matrix = self.match_tree_into_matrix(cell_ref);
+            let mut matrix = self.cell_into_matrix(cell_ref);
             matrix.add_enable(*enable);
             matrix
         })
@@ -389,25 +375,27 @@ impl<'a> MatchTrees<'a> {
 }
 
 pub fn decision(design: &mut Design) {
+    let mut cache = HashMap::new();
+
     // Detect and extract trees of `match` cells present in the netlist.
     let match_trees = MatchTrees::build(design);
 
     // Combine each tree of `match` cells into a single match matrix.
-    let mut cache = HashMap::new();
+    // Then build a decision tree for it and use it to drive the output.
     for matrix in match_trees.iter_matrices() {
-        let all_outputs = BTreeSet::from_iter(matrix.iter_rules());
+        let all_rules = BTreeSet::from_iter(matrix.iter_rules());
         if cfg!(feature = "trace") {
             eprintln!(">matrix:\n{matrix}");
         }
 
-        let decision_tree = matrix.dispatch();
+        let decision = matrix.dispatch();
         if cfg!(feature = "trace") {
-            eprintln!(">decision tree:\n{decision_tree}")
+            eprintln!(">decision tree:\n{decision}")
         }
 
-        let replaced_outputs = decision_tree.emit(design, &mut cache);
-        for net in all_outputs.difference(&replaced_outputs) {
-            design.replace_net(net, Net::ZERO);
+        let used_rules = decision.emit_sop(design, &mut cache);
+        for unused_rule in all_rules.difference(&used_rules) {
+            design.replace_net(unused_rule, Net::ZERO);
         }
     }
 
@@ -777,7 +765,7 @@ mod test {
         ($m:expr, $d:expr) => {
             let dl = $m.clone().dispatch();
             let dr = $d;
-            assert!(dl == dr, "\ndispatching {}\n{} != \n{}", $m, dl, dr);
+            assert!(dl == *dr, "\ndispatching {}\n{} != \n{}", $m, dl, dr);
         };
     }
 
@@ -935,23 +923,6 @@ mod test {
     }
 
     #[test]
-    fn test_match_tree_build_root_0() {
-        let mut design = Design::new();
-        let a = design.add_input("a", 1);
-        let y = design.add_match(MatchCell { value: a, enable: Net::ZERO, patterns: vec![vec![Const::lit("0")]] });
-        design.apply();
-
-        let match_trees = MatchTrees::build(&design);
-        assert!(match_trees.roots == BTreeSet::from_iter([]));
-        assert!(match_trees.subtrees == BTreeMap::from_iter([]));
-        design.apply();
-
-        let y_cell = design.find_cell(y[0]).unwrap().0;
-        let Cell::Buf(arg) = &*y_cell.get() else { unreachable!() };
-        assert_eq!(*arg, Value::zero(1));
-    }
-
-    #[test]
     fn test_match_tree_build_root_pi() {
         let mut design = Design::new();
         let a = design.add_input("a", 1);
@@ -962,7 +933,6 @@ mod test {
         let y_cell = design.find_cell(y[0]).unwrap().0;
 
         let match_trees = MatchTrees::build(&design);
-        dbg!(match_trees.roots.len());
         assert!(match_trees.roots == BTreeSet::from_iter([y_cell]));
         assert!(match_trees.subtrees == BTreeMap::from_iter([]));
     }
@@ -1039,7 +1009,7 @@ mod test {
         design.apply();
 
         let y_cell = design.find_cell(y[0]).unwrap().0;
-        let m = MatchTrees::build(&design).match_tree_into_matrix(y_cell);
+        let m = MatchTrees::build(&design).cell_into_matrix(y_cell);
         design.apply();
 
         let yy_cell = design.find_cell(yy[0]).unwrap().0;
@@ -1075,7 +1045,7 @@ mod test {
         design.apply();
 
         let ya_cell = design.find_cell(ya[0]).unwrap().0;
-        let ml = MatchTrees::build(&design).match_tree_into_matrix(ya_cell);
+        let ml = MatchTrees::build(&design).cell_into_matrix(ya_cell);
         design.apply();
 
         let Cell::Buf(ya) = &*design.find_cell(yya[0]).unwrap().0.get() else { unreachable!() };
