@@ -650,9 +650,9 @@ mod test {
 
     use std::collections::{BTreeMap, BTreeSet};
 
-    use prjunnamed_netlist::{Cell, Const, Design, MatchCell, Net, Trit, Value};
+    use prjunnamed_netlist::{assert_isomorphic, AssignCell, Cell, Const, Design, MatchCell, Net, Trit, Value};
 
-    use super::{Decision, MatchMatrix, MatchRow, MatchTrees};
+    use super::{decision, AssignChains, Decision, MatchMatrix, MatchRow, MatchTrees};
 
     struct Helper(Design);
 
@@ -1204,5 +1204,201 @@ mod test {
         mr.add(MatchRow::new(Const::lit("XXXXX"), []));
 
         assert_eq!(ml, mr, "\n{ml} != \n{mr}");
+    }
+
+    fn assign(value: impl Into<Value>, enable: impl Into<Net>, update: impl Into<Value>) -> AssignCell {
+        AssignCell { value: value.into(), enable: enable.into(), update: update.into(), offset: 0 }
+    }
+
+    #[test]
+    fn test_assign_chains_build_1() {
+        let mut design = Design::new();
+        let x = design.add_input("x", 4);
+        let _a1 = design.add_assign(assign(Value::zero(4), Net::ONE, x));
+        design.apply();
+
+        let AssignChains { chains } = AssignChains::build(&design);
+
+        assert!(chains.is_empty());
+    }
+
+    #[test]
+    fn test_assign_chains_build_2() {
+        let mut design = Design::new();
+        let x = design.add_input("x", 4);
+        let a1 = design.add_assign(assign(Value::zero(4), Net::ONE, x));
+        let y = design.add_input("y", 4);
+        let a2 = design.add_assign(assign(a1.clone(), Net::ONE, y));
+        design.apply();
+
+        let a1_cell = design.find_cell(a1[0]).unwrap().0;
+        let a2_cell = design.find_cell(a2[0]).unwrap().0;
+        let AssignChains { chains } = AssignChains::build(&design);
+
+        assert!(chains == &[vec![a1_cell, a2_cell]]);
+    }
+
+    #[test]
+    fn test_assign_chains_build_3_fork() {
+        let mut design = Design::new();
+        let x = design.add_input("x", 4);
+        let a1 = design.add_assign(assign(Value::zero(4), Net::ONE, x));
+        let y = design.add_input("y", 4);
+        let _a2 = design.add_assign(assign(a1.clone(), Net::ONE, y));
+        let z = design.add_input("z", 4);
+        let _a3 = design.add_assign(assign(a1.clone(), Net::ONE, z));
+        design.apply();
+
+        let AssignChains { chains } = AssignChains::build(&design);
+
+        assert!(chains.is_empty());
+    }
+
+    #[test]
+    fn test_assign_chains_build_partial_update() {
+        let mut design = Design::new();
+        let x = design.add_input("x", 4);
+        let a1 = design.add_assign(assign(Value::zero(4), Net::ONE, x));
+        let y = design.add_input("y", 3);
+        let _a2 = design.add_assign(AssignCell { value: a1.clone(), enable: Net::ONE, update: y, offset: 1 });
+        design.apply();
+
+        let AssignChains { chains } = AssignChains::build(&design);
+
+        assert!(chains.is_empty());
+    }
+
+    #[test]
+    fn test_assign_chains_build_partial_value() {
+        let mut design = Design::new();
+        let x = design.add_input("x", 4);
+        let a1 = design.add_assign(assign(Value::zero(4), Net::ONE, x));
+        let y = design.add_input("y", 3);
+        let _a2 = design.add_assign(assign(a1.slice(..3), Net::ONE, y));
+        design.apply();
+
+        let AssignChains { chains } = AssignChains::build(&design);
+
+        assert!(chains.is_empty());
+    }
+
+    #[test]
+    fn test_assign_lower_disjoint() {
+        let mut dl = Design::new();
+        let c = dl.add_input("c", 2);
+        let m = dl.add_match(MatchCell {
+            value: c.clone(),
+            enable: Net::ONE,
+            patterns: vec![
+                vec![
+                    Const::lit("00"), // x1
+                    Const::lit("11"),
+                ], // x1
+                vec![Const::lit("01")], // x2
+                vec![Const::lit("10")], // x3
+            ],
+        });
+        let a1 = dl.add_assign(assign(Value::zero(4), m[0], dl.add_input("x1", 4)));
+        let a2 = dl.add_assign(assign(a1, m[1], dl.add_input("x2", 4)));
+        let a3 = dl.add_assign(assign(a2, m[2], dl.add_input("x3", 4)));
+        dl.add_output("y", a3);
+        dl.apply();
+
+        decision(&mut dl);
+
+        let mut dr = Design::new();
+        let c = dr.add_input("c", 2);
+        let x1 = dr.add_input("x1", 4);
+        let x2 = dr.add_input("x2", 4);
+        let x3 = dr.add_input("x3", 4);
+        let m1 = dr.add_mux(c[1], &x3, &x1);
+        let m2 = dr.add_mux(c[1], &x1, &x2);
+        let m3 = dr.add_mux(c[0], m2, m1);
+        dr.add_output("y", m3);
+
+        assert_isomorphic!(dl, dr);
+    }
+
+    #[test]
+    fn test_assign_lower_overlapping() {
+        let mut dl = Design::new();
+        let c = dl.add_input("c", 1);
+        let m = dl.add_match(MatchCell {
+            value: c.clone(),
+            enable: Net::ONE,
+            patterns: vec![vec![Const::lit("0")], vec![Const::lit("1")]],
+        });
+        let a1 = dl.add_assign(assign(Value::zero(4), m[0], dl.add_input("x1", 4)));
+        let a2 = dl.add_assign(assign(a1, m[1], dl.add_input("x2", 4)));
+        let a3 = dl.add_assign(assign(a2, m[1], dl.add_input("x3", 4)));
+        dl.add_output("y", a3);
+        dl.apply();
+
+        decision(&mut dl);
+
+        let mut dr = Design::new();
+        let c = dr.add_input1("c");
+        let bc = dr.add_buf1(c);
+        let nc = dr.add_not1(c);
+        let x1 = dr.add_input("x1", 4);
+        let x2 = dr.add_input("x2", 4);
+        let x3 = dr.add_input("x3", 4);
+        let m1 = dr.add_mux(nc, x1, Value::zero(4));
+        let m2 = dr.add_mux(bc, x2, m1);
+        let m3 = dr.add_mux(bc, x3, m2);
+        dr.add_output("y", m3);
+
+        assert_isomorphic!(dl, dr);
+    }
+
+    #[test]
+    fn test_assign_lower_different_matches() {
+        let mut dl = Design::new();
+        let c1 = dl.add_input("c1", 1);
+        let c2 = dl.add_input("c2", 1);
+        let m1 = dl.add_match(MatchCell { value: c1, enable: Net::ONE, patterns: vec![vec![Const::lit("0")]] });
+        let m2 = dl.add_match(MatchCell { value: c2, enable: Net::ONE, patterns: vec![vec![Const::lit("0")]] });
+        let a1 = dl.add_assign(assign(Value::zero(4), m1[0], dl.add_input("x1", 4)));
+        let a2 = dl.add_assign(assign(a1, m2[0], dl.add_input("x2", 4)));
+        dl.add_output("y", a2);
+        dl.apply();
+
+        decision(&mut dl);
+
+        let mut dr = Design::new();
+        let c1 = dr.add_input1("c1");
+        let c2 = dr.add_input1("c2");
+        let bc1 = dr.add_not1(c1);
+        let bc2 = dr.add_not1(c2);
+        let m1 = dr.add_mux(bc1, dr.add_input("x1", 4), Value::zero(4));
+        let m2 = dr.add_mux(bc2, dr.add_input("x2", 4), m1);
+        dr.add_output("y", m2);
+
+        assert_isomorphic!(dl, dr);
+    }
+
+    #[test]
+    fn test_assign_lower_partial() {
+        let mut dl = Design::new();
+        let en = dl.add_input1("en");
+        let assign = dl.add_assign(AssignCell {
+            value: dl.add_input("value", 6),
+            enable: en,
+            update: dl.add_input("update", 3),
+            offset: 2,
+        });
+        dl.add_output("assign", assign);
+        dl.apply();
+
+        decision(&mut dl);
+
+        let mut dr = Design::new();
+        let en = dr.add_input1("en");
+        let value = dr.add_input("value", 6);
+        let update = dr.add_input("update", 3);
+        let mux = dr.add_mux(en, update, value.slice(2..5));
+        dr.add_output("assign", value.slice(..2).concat(mux.concat(value.slice(5..))));
+
+        assert_isomorphic!(dl, dr);
     }
 }
