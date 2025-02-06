@@ -154,7 +154,10 @@ impl Design {
     pub fn map_net(&self, net: impl Into<Net>) -> Net {
         let changes = self.changes.borrow();
         let net = net.into();
-        let mapped_net = *changes.replaced_nets.get(&net).unwrap_or(&net);
+        let mut mapped_net = net;
+        while let Some(new_net) = changes.replaced_nets.get(&mapped_net) {
+            mapped_net = *new_net;
+        }
         // Assume the caller might want to locate the cell behind the net.
         match mapped_net.as_cell_index() {
             Some(index) if index >= self.cells.len() => net,
@@ -163,7 +166,9 @@ impl Design {
     }
 
     pub fn map_value(&self, value: impl Into<Value>) -> Value {
-        value.into().iter().map(|net| self.map_net(net)).collect::<Vec<_>>().into()
+        let mut value = value.into();
+        value.visit_mut(|net| *net = self.map_net(*net));
+        value
     }
 
     pub fn apply(&mut self) -> bool {
