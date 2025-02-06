@@ -36,7 +36,7 @@ fn test_lower_iob_input() {
             i@"CLOCK_ENABLE"=1
             i@"INPUT_CLK"=X
             i@"OUTPUT_CLK"=X
-            i@"LATCH_INPUT_ENABLE"=X
+            i@"LATCH_INPUT_VALUE"=X
             io@"PACKAGE_PIN"=&"io"
             io@"PACKAGE_PIN_B"=&_
         }
@@ -68,7 +68,7 @@ fn test_lower_iob_output() {
             i@"CLOCK_ENABLE"=1
             i@"INPUT_CLK"=X
             i@"OUTPUT_CLK"=X
-            i@"LATCH_INPUT_ENABLE"=X
+            i@"LATCH_INPUT_VALUE"=X
             io@"PACKAGE_PIN"=&"io"
             io@"PACKAGE_PIN_B"=&_
         }
@@ -104,7 +104,7 @@ fn test_lower_iob_tristate() {
             i@"CLOCK_ENABLE"=1
             i@"INPUT_CLK"=X
             i@"OUTPUT_CLK"=X
-            i@"LATCH_INPUT_ENABLE"=X
+            i@"LATCH_INPUT_VALUE"=X
             io@"PACKAGE_PIN"=&"io"
             io@"PACKAGE_PIN_B"=&_
         }
@@ -140,7 +140,7 @@ fn test_lower_iob_tristate_inv() {
             i@"CLOCK_ENABLE"=1
             i@"INPUT_CLK"=X
             i@"OUTPUT_CLK"=X
-            i@"LATCH_INPUT_ENABLE"=X
+            i@"LATCH_INPUT_VALUE"=X
             io@"PACKAGE_PIN"=&"io"
             io@"PACKAGE_PIN_B"=&_
         }
@@ -175,7 +175,7 @@ fn test_lower_iob_tristate_wide() {
             i@"CLOCK_ENABLE"=1
             i@"INPUT_CLK"=X
             i@"OUTPUT_CLK"=X
-            i@"LATCH_INPUT_ENABLE"=X
+            i@"LATCH_INPUT_VALUE"=X
             io@"PACKAGE_PIN"=&"io"+0
             io@"PACKAGE_PIN_B"=&_
         }
@@ -191,7 +191,7 @@ fn test_lower_iob_tristate_wide() {
             i@"CLOCK_ENABLE"=1
             i@"INPUT_CLK"=X
             i@"OUTPUT_CLK"=X
-            i@"LATCH_INPUT_ENABLE"=X
+            i@"LATCH_INPUT_VALUE"=X
             io@"PACKAGE_PIN"=&"io"+1
             io@"PACKAGE_PIN_B"=&_
         }
@@ -207,7 +207,7 @@ fn test_lower_iob_tristate_wide() {
             i@"CLOCK_ENABLE"=1
             i@"INPUT_CLK"=X
             i@"OUTPUT_CLK"=X
-            i@"LATCH_INPUT_ENABLE"=X
+            i@"LATCH_INPUT_VALUE"=X
             io@"PACKAGE_PIN"=&"io"+2
             io@"PACKAGE_PIN_B"=&_
         }
@@ -223,7 +223,7 @@ fn test_lower_iob_tristate_wide() {
             i@"CLOCK_ENABLE"=1
             i@"INPUT_CLK"=X
             i@"OUTPUT_CLK"=X
-            i@"LATCH_INPUT_ENABLE"=X
+            i@"LATCH_INPUT_VALUE"=X
             io@"PACKAGE_PIN"=&"io"+3
             io@"PACKAGE_PIN_B"=&_
         }
