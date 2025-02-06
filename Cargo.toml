@@ -22,6 +22,7 @@ easy-smt = "0.2"
 env_logger = "0.11"
 argparse = "0.2"
 json = "0.12"
+union-find-rs = "0.2.1"
 
 [workspace.package]
 edition = "2021"

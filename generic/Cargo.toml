@@ -13,6 +13,7 @@ doctest = false
 prjunnamed-netlist.workspace = true
 prjunnamed-pattern.workspace = true
 prjunnamed-smt2.workspace = true
+union-find-rs.workspace = true
 
 [features]
 trace = []

@@ -12,8 +12,10 @@
 ///
 use std::fmt::Display;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::rc::Rc;
+use union_find_rs::{traits::UnionFind, disjoint_sets::DisjointSets};
 
-use prjunnamed_netlist::{CellRef, Cell, Const, Design, MatchCell, Net, Trit, Value};
+use prjunnamed_netlist::{AssignCell, Cell, CellRef, Const, Design, MatchCell, Net, Trit, Value};
 
 /// Maps `pattern` (a constant where 0 and 1 match the respective states, and X matches any state)
 /// to a set of `rules` (the nets that are asserted if the `pattern` matches the value being tested).
@@ -235,6 +237,44 @@ impl MatchMatrix {
 }
 
 impl Decision {
+    fn disjoint(&self, disjoint_sets: &mut DisjointSets<Net>) {
+        match self {
+            Decision::Result { rules } => {
+                let mut unify_with = None;
+                for &rule in rules {
+                    let _ = disjoint_sets.make_set(rule);
+                    if let Some(other_rule) = unify_with {
+                        disjoint_sets.union(&rule, &other_rule).unwrap();
+                    } else {
+                        unify_with = Some(rule);
+                    }
+                }
+            }
+            Decision::Branch { if0, if1, .. } => {
+                if0.disjoint(disjoint_sets);
+                if1.disjoint(disjoint_sets);
+            }
+        }
+    }
+
+    fn emit_mux(&self, design: &Design, values: &BTreeMap<Net, Value>, default: &Value) -> Value {
+        match self {
+            Decision::Result { rules } => {
+                let mut result = None;
+                for rule in rules {
+                    if let Some(value) = values.get(&rule) {
+                        assert!(result.is_none());
+                        result = Some(value.clone());
+                    }
+                }
+                result.unwrap_or(default.clone())
+            }
+            Decision::Branch { test, if0, if1 } => {
+                design.add_mux(*test, if1.emit_mux(design, values, default), if0.emit_mux(design, values, default))
+            }
+        }
+    }
+
     fn emit_sop(&self, design: &Design, cache: &mut HashMap<Cell, Net>) -> BTreeSet<Net> {
         fn add_cell(design: &Design, cache: &mut HashMap<Cell, Net>, cell: Cell) -> Net {
             *cache.entry(cell).or_insert_with_key(|cell| design.add_cell(cell.clone()).unwrap_net())
@@ -374,23 +414,105 @@ impl<'a> MatchTrees<'a> {
     }
 }
 
+struct AssignChains<'a> {
+    chains: Vec<Vec<CellRef<'a>>>,
+}
+
+impl<'a> AssignChains<'a> {
+    fn build(design: &'a Design) -> AssignChains<'a> {
+        let mut roots: BTreeSet<CellRef> = BTreeSet::new();
+        let mut links: BTreeMap<CellRef, BTreeSet<CellRef>> = BTreeMap::new();
+        for cell_ref in design.iter_cells() {
+            let Cell::Assign(AssignCell { value, offset: 0, .. }) = &*cell_ref.get() else { continue };
+            if let Ok((value_cell_ref, _offset)) = design.find_cell(value[0]) {
+                if value_cell_ref.output() == *value {
+                    if let Cell::Assign(_) = &*value_cell_ref.get() {
+                        links.entry(value_cell_ref).or_default().insert(cell_ref);
+                        continue;
+                    }
+                }
+            }
+            roots.insert(cell_ref);
+        }
+
+        let mut chains = Vec::new();
+        for root in roots {
+            let mut chain = vec![root];
+            while let Some(links) = links.get(&chain.last().unwrap()) {
+                if links.len() == 1 {
+                    chain.push(*links.first().unwrap());
+                } else {
+                    break;
+                }
+            }
+            if chain.len() > 1 {
+                chains.push(chain);
+            }
+        }
+
+        Self { chains }
+    }
+
+    fn iter_disjoint<'b>(
+        &'b self,
+        decisions: &'a BTreeMap<Net, Rc<Decision>>,
+        disjoint_sets: &'a DisjointSets<Net>,
+    ) -> impl Iterator<Item = (Rc<Decision>, &'b Vec<CellRef<'a>>)> {
+        fn enable_of(cell_ref: CellRef) -> Net {
+            let Cell::Assign(AssignCell { enable, .. }) = &*cell_ref.get() else { unreachable!() };
+            *enable
+        }
+
+        self.chains.iter().filter_map(move |chain| {
+            // Check if the enables belong to the same decision tree.
+            let Some(decision) = decisions.get(&enable_of(chain[0])) else { return None };
+            for &other_cell in chain[1..].iter() {
+                let Some(other_decision) = decisions.get(&enable_of(other_cell)) else { return None };
+                if !std::ptr::eq(&**decision, &**other_decision) {
+                    return None;
+                }
+            }
+
+            // Check if the enables are disjoint (like in a SystemVerilog "unique" or "unique0" statement).
+            let enables = BTreeSet::from_iter(chain.iter().map(|&cell_ref| enable_of(cell_ref)));
+            let unique_enables =
+                BTreeSet::from_iter(enables.iter().filter_map(|enable| disjoint_sets.find_set(enable).ok()));
+            if chain.len() != enables.len() || chain.len() != unique_enables.len() {
+                return None;
+            }
+
+            Some((decision.clone(), chain))
+        })
+    }
+}
+
 pub fn decision(design: &mut Design) {
     let mut cache = HashMap::new();
 
     // Detect and extract trees of `match` cells present in the netlist.
     let match_trees = MatchTrees::build(design);
 
+    // Detect and extract chains of `assign` statements without slicing.
+    let assign_chains = AssignChains::build(design);
+
     // Combine each tree of `match` cells into a single match matrix.
     // Then build a decision tree for it and use it to drive the output.
+    let mut decisions: BTreeMap<Net, Rc<Decision>> = BTreeMap::new();
+    let mut disjoint_sets: DisjointSets<Net> = DisjointSets::new();
     for matrix in match_trees.iter_matrices() {
         let all_rules = BTreeSet::from_iter(matrix.iter_rules());
         if cfg!(feature = "trace") {
             eprintln!(">matrix:\n{matrix}");
         }
 
-        let decision = matrix.dispatch();
+        let decision = Rc::new(matrix.dispatch());
         if cfg!(feature = "trace") {
             eprintln!(">decision tree:\n{decision}")
+        }
+
+        decision.disjoint(&mut disjoint_sets);
+        for &rule in &all_rules {
+            decisions.insert(rule, decision.clone());
         }
 
         let used_rules = decision.emit_sop(design, &mut cache);
@@ -399,16 +521,38 @@ pub fn decision(design: &mut Design) {
         }
     }
 
-    // Lower `assign` cells.
-    for cell_ref in design.iter_cells() {
-        if let Cell::Assign(assign_cell) = &*cell_ref.get() {
-            let mut nets = Vec::from_iter(assign_cell.value.iter());
-            let slice = assign_cell.offset..(assign_cell.offset + assign_cell.update.len());
-            nets[slice.clone()].copy_from_slice(
-                &design.add_mux(assign_cell.enable, &assign_cell.update, assign_cell.value.slice(slice))[..],
-            );
-            design.replace_value(cell_ref.output(), Value::from(nets));
+    // Find chains of `assign` cells that are order-independent.
+    // Then lower these cells to a `mux` tree without `eq` cells.
+    let mut used_assigns = BTreeSet::new();
+    for (decision, chain) in assign_chains.iter_disjoint(&decisions, &disjoint_sets) {
+        let (first_assign, last_assign) = (chain.first().unwrap(), chain.last().unwrap());
+        if cfg!(feature = "trace") {
+            eprintln!(">chain:");
+            for &cell_ref in chain {
+                eprintln!("{}", design.display_cell(cell_ref));
+            }
         }
+
+        let mut values = BTreeMap::new();
+        let Cell::Assign(AssignCell { value: default, .. }) = &*first_assign.get() else { unreachable!() };
+        for &cell_ref in chain {
+            let Cell::Assign(AssignCell { enable, update, .. }) = &*cell_ref.get() else { unreachable!() };
+            values.insert(*enable, update.clone());
+        }
+
+        design.replace_value(last_assign.output(), decision.emit_mux(design, &values, default));
+        used_assigns.insert(*last_assign);
+    }
+
+    // Lower other `assign` cells.
+    for cell_ref in design.iter_cells().filter(|cell_ref| !used_assigns.contains(cell_ref)) {
+        let Cell::Assign(assign_cell) = &*cell_ref.get() else { continue };
+        let mut nets = Vec::from_iter(assign_cell.value.iter());
+        let slice = assign_cell.offset..(assign_cell.offset + assign_cell.update.len());
+        nets[slice.clone()].copy_from_slice(
+            &design.add_mux(assign_cell.enable, &assign_cell.update, assign_cell.value.slice(slice))[..],
+        );
+        design.replace_value(cell_ref.output(), Value::from(nets));
     }
 
     design.compact();
