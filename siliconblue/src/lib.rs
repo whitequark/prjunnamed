@@ -808,57 +808,82 @@ impl SiliconBlueTarget {
                     'cell_bits: for index in 0..output.len() {
                         let slice = cell.get().slice(index..index + 1).unwrap();
                         let mut lut = Lut::from_cell(slice).unwrap();
-                        let mut inputs_by_depth = Vec::from_iter(
-                            lut.inputs()
-                                .iter()
-                                .map(|net| (net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0), net)),
-                        );
-                        inputs_by_depth.sort_by_key(|&(depth, net)| (std::cmp::Reverse(depth), net));
-                        for (_, net) in inputs_by_depth {
-                            let Some(input_disposition) = net_dispositions.get(&net) else {
-                                continue;
-                            };
-                            match *input_disposition {
-                                NetDisposition::CarryOut(_) => (),
-                                NetDisposition::Lut(_depth, ref input_lut) => {
-                                    let Some(input_index) = lut.inputs().iter().position(|input| input == net) else {
-                                        // input disappeared — optimized out by earlier merge?
-                                        continue;
-                                    };
-                                    let merged_lut = lut.merge(input_index, input_lut);
-                                    if merged_lut.inputs().len() <= 4 {
-                                        lut = merged_lut;
-                                    }
-                                }
-                                NetDisposition::LutCarry(depth, ref input_lut, ci, co) => {
-                                    if use_count[&net] != 1 {
-                                        continue;
-                                    }
-                                    let Some(input_index) = lut.inputs().iter().position(|input| input == net) else {
-                                        // input disappeared — optimized out by earlier merge?
-                                        continue;
-                                    };
+                        let mut full_merge_lut = lut.clone();
+                        for net in lut.inputs() {
+                            if let Some(NetDisposition::Lut(_depth, ref input_lut)) = net_dispositions.get(&net) {
+                                let Some(input_index) = full_merge_lut.inputs().iter().position(|input| input == net)
+                                else {
+                                    // input disappeared — optimized out by earlier merge?
+                                    continue;
+                                };
+                                full_merge_lut = full_merge_lut.merge(input_index, input_lut);
+                            }
+                        }
+                        if full_merge_lut.inputs().len() <= 4 {
+                            lut = full_merge_lut;
+                        } else {
+                            let mut inputs_by_depth =
+                                Vec::from_iter(lut.inputs().iter().map(|net| {
+                                    (net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0), net)
+                                }));
 
-                                    if let Some(merged_lut) = lut.merge(input_index, input_lut).expand_with_fixed(&[
-                                        None,
-                                        Some(input_lut.inputs()[1]),
-                                        Some(input_lut.inputs()[2]),
-                                        if input_lut.inputs()[3] == ci { Some(input_lut.inputs()[3]) } else { None },
-                                    ]) {
-                                        net_dispositions.remove(&net);
-                                        let depth = (merged_lut
-                                            .inputs()
-                                            .iter()
-                                            .map(|net| {
-                                                net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0)
-                                            })
-                                            .max()
-                                            .unwrap_or(0)
-                                            + 1)
-                                        .max(depth);
-                                        net_dispositions
-                                            .insert(output[index], NetDisposition::LutCarry(depth, merged_lut, ci, co));
-                                        continue 'cell_bits;
+                            inputs_by_depth.sort_by_key(|&(depth, net)| (std::cmp::Reverse(depth), net));
+                            for (_, net) in inputs_by_depth {
+                                let Some(input_disposition) = net_dispositions.get(&net) else {
+                                    continue;
+                                };
+                                match *input_disposition {
+                                    NetDisposition::CarryOut(_) => (),
+                                    NetDisposition::Lut(_depth, ref input_lut) => {
+                                        let Some(input_index) = lut.inputs().iter().position(|input| input == net)
+                                        else {
+                                            // input disappeared — optimized out by earlier merge?
+                                            continue;
+                                        };
+                                        let merged_lut = lut.merge(input_index, input_lut);
+                                        if merged_lut.inputs().len() <= 4 {
+                                            lut = merged_lut;
+                                        }
+                                    }
+                                    NetDisposition::LutCarry(depth, ref input_lut, ci, co) => {
+                                        if use_count[&net] != 1 {
+                                            continue;
+                                        }
+                                        let Some(input_index) = lut.inputs().iter().position(|input| input == net)
+                                        else {
+                                            // input disappeared — optimized out by earlier merge?
+                                            continue;
+                                        };
+
+                                        if let Some(merged_lut) =
+                                            lut.merge(input_index, input_lut).expand_with_fixed(&[
+                                                None,
+                                                Some(input_lut.inputs()[1]),
+                                                Some(input_lut.inputs()[2]),
+                                                if input_lut.inputs()[3] == ci {
+                                                    Some(input_lut.inputs()[3])
+                                                } else {
+                                                    None
+                                                },
+                                            ])
+                                        {
+                                            net_dispositions.remove(&net);
+                                            let depth = (merged_lut
+                                                .inputs()
+                                                .iter()
+                                                .map(|net| {
+                                                    net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0)
+                                                })
+                                                .max()
+                                                .unwrap_or(0)
+                                                + 1)
+                                            .max(depth);
+                                            net_dispositions.insert(
+                                                output[index],
+                                                NetDisposition::LutCarry(depth, merged_lut, ci, co),
+                                            );
+                                            continue 'cell_bits;
+                                        }
                                     }
                                 }
                             }
