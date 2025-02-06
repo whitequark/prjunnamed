@@ -495,12 +495,12 @@ pub fn decision(design: &mut Design) {
     for matrix in match_trees.iter_matrices() {
         let all_rules = BTreeSet::from_iter(matrix.iter_rules());
         if cfg!(feature = "trace") {
-            eprintln!(">matrix:\n{matrix}");
+            eprint!(">matrix:\n{matrix}");
         }
 
         let decision = Rc::new(matrix.dispatch());
         if cfg!(feature = "trace") {
-            eprintln!(">decision tree:\n{decision}")
+            eprint!(">decision tree:\n{decision}")
         }
 
         decision.disjoint(&mut disjoint_sets);

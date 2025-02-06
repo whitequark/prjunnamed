@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use prjunnamed_netlist::{Const, Net, Value};
+use prjunnamed_netlist::{CellRef, Const, Design, Net, Trit, Value};
 
 pub trait NetOrValue: Sized + Clone + Debug + Display {
     fn len(&self) -> usize;
@@ -69,5 +69,22 @@ impl NetOrValue for Value {
             None => *capture = Some(Value::from(net)),
         }
         true
+    }
+}
+
+// Used to interpose accesses to the design in order to track which nets were examined.
+pub trait DesignDyn {
+    fn find_cell(&self, net: Net) -> Result<(CellRef, usize), Trit>;
+
+    fn inner(&self) -> &Design;
+}
+
+impl DesignDyn for Design {
+    fn find_cell(&self, net: Net) -> Result<(CellRef, usize), Trit> {
+        Design::find_cell(self, net)
+    }
+
+    fn inner(&self) -> &Design {
+        self
     }
 }

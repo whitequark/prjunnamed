@@ -1,6 +1,6 @@
-use prjunnamed_netlist::{Cell, Design, Net, Value};
+use prjunnamed_netlist::{Cell, Net, Value};
 
-use crate::{NetOrValue, Pattern};
+use crate::{DesignDyn, NetOrValue, Pattern};
 
 pub struct PAdc<P1, P2, P3>(P1, P2, P3);
 
@@ -13,7 +13,7 @@ impl<P1, P2, P3> PAdc<P1, P2, P3> {
 impl<P1: Pattern<Value>, P2: Pattern<Value>, P3: Pattern<Net>> Pattern<Value> for PAdc<P1, P2, P3> {
     type Capture = (Value, P1::Capture, P2::Capture, P3::Capture);
 
-    fn execute(&self, design: &Design, target: &Value) -> Option<Self::Capture> {
+    fn execute(&self, design: &dyn DesignDyn, target: &Value) -> Option<Self::Capture> {
         if target.is_empty() {
             return None;
         }
@@ -56,7 +56,7 @@ macro_rules! compare_patterns {
         impl<T: NetOrValue, P1: Pattern<Value>, P2: Pattern<Value>> Pattern<T> for $name<P1, P2> {
             type Capture = (Net, P1::Capture, P2::Capture);
 
-            fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
+            fn execute(&self, design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
                 if target.len() != 1 { return None }
                 let target = target.iter().next().unwrap();
                 let (cap1, cap2);
@@ -95,7 +95,7 @@ macro_rules! arithmetic_patterns {
         impl<P1: Pattern<Value>, P2: Pattern<Value>> Pattern<Value> for $name<P1, P2> {
             type Capture = (Value, P1::Capture, P2::Capture);
 
-            fn execute(&self, design: &Design, target: &Value) -> Option<Self::Capture> {
+            fn execute(&self, design: &dyn DesignDyn, target: &Value) -> Option<Self::Capture> {
                 if target.len() == 0 { return None }
                 let (cap1, cap2);
                 if let Ok((cell_ref, 0)) = design.find_cell(target.iter().next().unwrap()) {

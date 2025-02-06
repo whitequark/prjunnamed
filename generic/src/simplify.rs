@@ -3,8 +3,6 @@ use prjunnamed_pattern::{netlist_replace, patterns::*};
 
 pub fn simplify(design: &mut Design) -> bool {
     let rules = netlist_replace! {
-        let design;
-
         [PBuf [PAny@a]]                 => a;
 
         [PNot [PConst@a]]               => a.not();

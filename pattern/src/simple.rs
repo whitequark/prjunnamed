@@ -1,6 +1,6 @@
-use prjunnamed_netlist::{Cell, Const, Design, Net, Trit, Value};
+use prjunnamed_netlist::{Cell, Const, Net, Trit, Value};
 
-use crate::{NetOrValue, Pattern};
+use crate::{DesignDyn, NetOrValue, Pattern};
 
 pub struct PAny;
 
@@ -13,7 +13,7 @@ impl PAny {
 impl<T: Clone> Pattern<T> for PAny {
     type Capture = (T,);
 
-    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
+    fn execute(&self, _design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         Some((target.clone(),))
     }
 }
@@ -29,7 +29,7 @@ impl<P> PBind<P> {
 impl<T: Clone, P: Pattern<T>> Pattern<T> for PBind<P> {
     type Capture = (T, P::Capture);
 
-    fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
+    fn execute(&self, design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         self.0.execute(design, target).and_then(|capture| Some((target.clone(), capture)))
     }
 }
@@ -45,7 +45,7 @@ impl PConst {
 impl Pattern<Net> for PConst {
     type Capture = (Trit,);
 
-    fn execute(&self, _design: &Design, target: &Net) -> Option<Self::Capture> {
+    fn execute(&self, _design: &dyn DesignDyn, target: &Net) -> Option<Self::Capture> {
         Net::as_const(*target).map(|value| (value,))
     }
 }
@@ -53,7 +53,7 @@ impl Pattern<Net> for PConst {
 impl Pattern<Value> for PConst {
     type Capture = (Const,);
 
-    fn execute(&self, _design: &Design, target: &Value) -> Option<Self::Capture> {
+    fn execute(&self, _design: &dyn DesignDyn, target: &Value) -> Option<Self::Capture> {
         Value::as_const(&target).map(|value| (value,))
     }
 }
@@ -69,7 +69,7 @@ impl PZero {
 impl Pattern<u32> for PZero {
     type Capture = ((),);
 
-    fn execute(&self, _design: &Design, target: &u32) -> Option<Self::Capture> {
+    fn execute(&self, _design: &dyn DesignDyn, target: &u32) -> Option<Self::Capture> {
         if *target == 0 {
             Some(((),))
         } else {
@@ -81,7 +81,7 @@ impl Pattern<u32> for PZero {
 impl<T: NetOrValue> Pattern<T> for PZero {
     type Capture = ((),);
 
-    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
+    fn execute(&self, _design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         match target.as_const() {
             Some(value) if value.iter().all(|net| net == Trit::Zero) => Some(((),)),
             _ => None,
@@ -100,7 +100,7 @@ impl POnes {
 impl<T: NetOrValue> Pattern<T> for POnes {
     type Capture = ((),);
 
-    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
+    fn execute(&self, _design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         match target.as_const() {
             Some(value) if value.len() == 0 => None,
             Some(value) if value.iter().all(|net| net == Trit::One) => Some(((),)),
@@ -120,7 +120,7 @@ impl PUndef {
 impl<T: NetOrValue> Pattern<T> for PUndef {
     type Capture = ((),);
 
-    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
+    fn execute(&self, _design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         match target.as_const() {
             Some(value) if value.len() == 0 => None,
             Some(value) if value.iter().all(|net| net == Trit::Undef) => Some(((),)),
@@ -140,7 +140,7 @@ impl PHasX {
 impl<T: NetOrValue> Pattern<T> for PHasX {
     type Capture = ((),);
 
-    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
+    fn execute(&self, _design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         match target.as_const() {
             Some(value) if value.has_undef() => Some(((),)),
             _ => None,
@@ -159,7 +159,7 @@ impl PPow2 {
 impl<T: NetOrValue> Pattern<T> for PPow2 {
     type Capture = (u32,);
 
-    fn execute(&self, _design: &Design, target: &T) -> Option<Self::Capture> {
+    fn execute(&self, _design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         target.as_const().and_then(|value| value.as_power_of_two().map(|exp| (exp,)))
     }
 }
@@ -177,7 +177,7 @@ impl PInput {
 impl<T: NetOrValue> Pattern<T> for PInput {
     type Capture = (T,);
 
-    fn execute(&self, design: &Design, target: &T) -> Option<Self::Capture> {
+    fn execute(&self, design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         if let Some(net) = target.iter().next() {
             if let Ok((cell_ref, 0)) = design.find_cell(net) {
                 if let Cell::Input(name, _size) = &*cell_ref.get() {
@@ -203,7 +203,7 @@ impl<P: Pattern<Value>> Pattern<Value> for PZExt<P> {
     // The amount of extension bits can be found using: [PZExt@y [PAny@a]] => y.len() - a.len()
     type Capture = (Value, P::Capture);
 
-    fn execute(&self, design: &Design, target: &Value) -> Option<Self::Capture> {
+    fn execute(&self, design: &dyn DesignDyn, target: &Value) -> Option<Self::Capture> {
         let zext_count = target.iter().rev().take_while(|net| *net == Net::ZERO).count();
         self.0.execute(design, &target.slice(..target.len() - zext_count)).map(|capture| (target.clone(), capture))
     }
@@ -221,7 +221,7 @@ impl<P: Pattern<Value>> Pattern<Value> for PSExt<P> {
     // The amount of extension bits can be found using: [PZExt@y [PAny@a]] => y.len() - a.len()
     type Capture = (Value, P::Capture);
 
-    fn execute(&self, design: &Design, target: &Value) -> Option<Self::Capture> {
+    fn execute(&self, design: &dyn DesignDyn, target: &Value) -> Option<Self::Capture> {
         if target.len() < 1 {
             return None;
         }
