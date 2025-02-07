@@ -5,10 +5,11 @@ use std::hash::Hash;
 use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
 
-use crate::cell::{CellRepr, Cell};
+use crate::cell::CellRepr;
+use crate::smt::{SmtEngine, SmtBuilder};
 use crate::{
-    AssignCell, ControlNet, FlipFlop, Instance, IoBuffer, IoNet, IoValue, MatchCell, Memory, Net, Target, TargetCell,
-    TargetCellPurity, TargetPrototype, Trit, Value,
+    Trit, Net, Value, ControlNet, IoNet, IoValue, Cell, AssignCell, MatchCell, FlipFlop, Instance, IoBuffer, Memory,
+    Target, TargetCell, TargetCellPurity, TargetPrototype,
 };
 
 #[derive(Debug, Clone)]
@@ -92,7 +93,7 @@ impl Design {
     pub fn add_cell(&self, cell: Cell) -> Value {
         let mut changes = self.changes.borrow_mut();
         if let Some(value) = changes.cell_cache.get(&cell) {
-            return value.clone()
+            return value.clone();
         }
         cell.validate(self);
         let index = self.cells.len() + changes.added_cells.len();
@@ -178,7 +179,73 @@ impl Design {
         value
     }
 
+    pub fn is_changed(&self) -> bool {
+        let changes = self.changes.borrow();
+        changes.added_ios.len()
+            + changes.added_cells.len()
+            + changes.replaced_cells.len()
+            + changes.unalived_cells.len()
+            + changes.replaced_nets.len()
+            > 0
+    }
+
+    pub fn verify<SMT: SmtEngine>(&self, engine: SMT) -> Result<(), SMT::Error> {
+        let changes = self.changes.borrow();
+        let mut smt = SmtBuilder::new(engine);
+        for (index, cell) in self.cells.iter().chain(changes.added_cells.iter()).enumerate() {
+            if matches!(cell, CellRepr::Skip(_) | CellRepr::Void) {
+            } else if cell.output_len() == 0 {
+            } else if let Some(new_cell) = changes.replaced_cells.get(&index) {
+                smt.replace_cell(&Value::cell(index, cell.output_len()), &*cell.get(), new_cell)?;
+            } else {
+                smt.add_cell(&Value::cell(index, cell.output_len()), &*cell.get())?;
+            }
+        }
+        for (&net, &new_net) in changes.replaced_nets.iter() {
+            if let Some(index) = net.as_cell_index() {
+                let cell = if index < self.cells.len() {
+                    &self.cells[index]
+                } else {
+                    &changes.added_cells[index - self.cells.len()]
+                };
+                if matches!(cell, CellRepr::Void) {
+                    smt.replace_void_net(net, new_net)?;
+                    continue;
+                }
+            }
+            smt.replace_net(net, new_net)?;
+        }
+        if let Some(example) = smt.check()? {
+            let mut message = format!("verification failed!\n");
+            message.push_str(&format!("\ndesign:\n{self:#}"));
+            message.push_str("\ncounterexample:\n");
+            for (index, cell) in self.cells.iter().chain(changes.added_cells.iter()).enumerate() {
+                if matches!(cell, CellRepr::Skip(_) | CellRepr::Void) {
+                } else if cell.output_len() == 0 {
+                } else {
+                    let output = Value::cell(index, cell.output_len());
+                    let value = example.get_value(&output).unwrap();
+                    message.push_str(&format!("{} = {}\n", self.display_value(&output), value));
+                }
+            }
+            for (&net, &new_net) in changes.replaced_nets.iter() {
+                if example.get_value(net) != example.get_value(new_net) {
+                    message.push_str(&format!(
+                        "\npossible cause: replacing net {} with net {} is not valid",
+                        self.display_net(net),
+                        self.display_net(new_net)
+                    ));
+                }
+            }
+            panic!("{message}");
+        }
+        Ok(())
+    }
+
     pub fn apply(&mut self) -> bool {
+        #[cfg(feature = "verify")]
+        self.verify(crate::EasySmtEngine::z3().unwrap()).unwrap();
+
         let changes = self.changes.get_mut();
         let mut did_change = !changes.added_ios.is_empty() || !changes.added_cells.is_empty();
         for cell_index in std::mem::take(&mut changes.unalived_cells) {

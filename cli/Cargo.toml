@@ -18,6 +18,7 @@ prjunnamed-smt2.workspace = true
 prjunnamed-yosys_json.workspace = true
 prjunnamed-siliconblue.workspace = true
 argparse.workspace = true
+env_logger.workspace = true
 
 [features]
 trace = [

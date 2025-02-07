@@ -11,6 +11,11 @@ doctest = false
 
 [features]
 trace = []
+verify = ["easy-smt"]
 
 [dependencies]
 yap.workspace = true
+easy-smt = { workspace = true, optional = true }
+
+[dev-dependencies]
+env_logger.workspace = true

@@ -26,6 +26,7 @@ impl Design {
     }
 
     fn write_net(&self, f: &mut std::fmt::Formatter, net: Net) -> std::fmt::Result {
+        let net = self.map_net(net); // or we'll panic on a void cell when displaying designs with changes
         if let Some(index) = net.as_cell_index() {
             if !self.is_valid_cell_index(index) {
                 return write!(f, "%_{}", index);
@@ -44,6 +45,7 @@ impl Design {
     }
 
     fn write_value(&self, f: &mut std::fmt::Formatter, value: &Value) -> std::fmt::Result {
+        let value = self.map_value(value); // or we'll panic on a void cell when displaying designs with changes
         if value.is_empty() {
             return write!(f, "{{}}");
         } else if value.len() == 1 {
@@ -64,7 +66,7 @@ impl Design {
             write!(f, " }}")?;
             return Ok(());
         } else if let Ok((cell_ref, _offset)) = self.find_cell(value[0]) {
-            if *value == cell_ref.output() {
+            if value == cell_ref.output() {
                 if value.len() == 1 {
                     return write!(f, "%{}", cell_ref.debug_index());
                 } else {

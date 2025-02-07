@@ -86,6 +86,7 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn main() {
+    env_logger::init();
     if let Err(error) = run() {
         eprintln!("error: {}", error);
         std::process::exit(1)

@@ -1,4 +1,4 @@
-use prjunnamed_netlist::{CellRef, Cell, ControlNet, Design, FlipFlop, IoBuffer, Net, ParamValue, Trit, Value};
+use prjunnamed_netlist::{Cell, CellRef, ControlNet, Design, FlipFlop, IoBuffer, Net, ParamValue, Trit, Value};
 use prjunnamed_pattern::{netlist_replace, patterns::*};
 
 pub fn simplify(design: &mut Design) -> bool {

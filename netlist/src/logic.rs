@@ -177,6 +177,11 @@ impl Const {
         Self::from_iter(std::iter::repeat_n(Trit::Undef, width))
     }
 
+    pub fn one_hot(width: usize, hot_at: usize) -> Self {
+        assert!(hot_at < width);
+        Self::from_iter((0..width).map(|index| if index == hot_at { Trit::One } else { Trit::Zero }))
+    }
+
     pub fn push(&mut self, trit: impl Into<Trit>) {
         self.trits.push(trit.into());
     }

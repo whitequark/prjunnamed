@@ -7,7 +7,9 @@ mod design;
 mod print;
 mod parse;
 mod target;
+
 mod isomorphic;
+mod smt;
 
 pub use logic::{Trit, Const};
 pub use value::{Net, ControlNet, Value};
@@ -23,4 +25,8 @@ pub use target::{
     Target, TargetParamKind, TargetParam, TargetInput, TargetOutput, TargetIo, TargetCellPurity, TargetPrototype,
     TargetCellImportError, TargetImportError, register_target, create_target,
 };
+
 pub use isomorphic::{isomorphic, NotIsomorphic};
+pub use smt::{SmtEngine, SmtResponse};
+#[cfg(feature = "easy-smt")]
+pub use smt::easy_smt::EasySmtEngine;

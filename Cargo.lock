@@ -75,9 +75,8 @@ checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 
 [[package]]
 name = "easy-smt"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7211bd77fbd80a1c43c4f69f9cb8281fbc3c585df68930c40e4cfa2795b7d586"
+version = "0.2.7"
+source = "git+https://github.com/whitequark/easy-smt?branch=fix-let#6a964ecc3a3e43828674207cee9694f70d7f05d2"
 dependencies = [
  "log",
  "unicode-segmentation",
@@ -147,6 +146,7 @@ name = "prjunnamed-cli"
 version = "0.1.0"
 dependencies = [
  "argparse",
+ "env_logger",
  "prjunnamed-generic",
  "prjunnamed-netlist",
  "prjunnamed-pattern",
@@ -176,6 +176,8 @@ dependencies = [
 name = "prjunnamed-netlist"
 version = "0.1.0"
 dependencies = [
+ "easy-smt",
+ "env_logger",
  "yap",
 ]
 
