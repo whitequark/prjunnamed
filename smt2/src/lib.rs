@@ -160,11 +160,10 @@ impl<'a, 'b> SmtEmitter<'a, 'b> {
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvurem(arg1_sexpr, arg2_sexpr)
             }
-            Cell::SDivTrunc(_arg1, _arg2) => {
-                unimplemented!("waiting on https://github.com/elliottt/easy-smt/pull/35");
-                // let arg1_sexpr = self.value_ref(arg1)?;
-                // let arg2_sexpr = self.value_ref(arg2)?;
-                // self.context.bvsdiv(arg1_sexpr, arg2_sexpr)
+            Cell::SDivTrunc(arg1, arg2) => {
+                let arg1_sexpr = self.value_ref(arg1)?;
+                let arg2_sexpr = self.value_ref(arg2)?;
+                self.context.bvsdiv(arg1_sexpr, arg2_sexpr)
             }
             Cell::SDivFloor(_arg1, _arg2) => todo!(),
             Cell::SModTrunc(arg1, arg2) => {
@@ -172,11 +171,10 @@ impl<'a, 'b> SmtEmitter<'a, 'b> {
                 let arg2_sexpr = self.value_ref(arg2)?;
                 self.context.bvsrem(arg1_sexpr, arg2_sexpr)
             }
-            Cell::SModFloor(_arg1, _arg2) => {
-                unimplemented!("waiting on https://github.com/elliottt/easy-smt/pull/35");
-                // let arg1_sexpr = self.value_ref(arg1)?;
-                // let arg2_sexpr = self.value_ref(arg2)?;
-                // self.context.bvsmod(arg1_sexpr, arg2_sexpr)
+            Cell::SModFloor(arg1, arg2) => {
+                let arg1_sexpr = self.value_ref(arg1)?;
+                let arg2_sexpr = self.value_ref(arg2)?;
+                self.context.bvsmod(arg1_sexpr, arg2_sexpr)
             }
             Cell::Match { .. } => unimplemented!("matches are not implemented yet"),
             Cell::Assign { .. } => unimplemented!("assigns are not implemented yet"),
@@ -251,8 +249,8 @@ pub fn verify_transformation(design: &mut Design, transform: impl FnOnce(&mut De
             let get_value = |mangled: SExpr| {
                 let value_sexpr = environment.get(&mangled).expect("solver should return a value");
                 match context.get(*value_sexpr) {
-                    SExprData::List(_sexprs) => panic!("solver should return an atom"),
                     SExprData::Atom(value) => value,
+                    SExprData::List(_) | SExprData::String(_) => panic!("solver should return an atom"),
                 }
             };
 
