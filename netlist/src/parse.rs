@@ -12,7 +12,6 @@ use crate::{
 struct Context {
     design: Design,
     is_empty: bool,
-    next_cell: usize,
     cell_map: BTreeMap<usize, Value>,        // source cell index -> value
     late_map: BTreeMap<(usize, usize), Net>, // source cell index + net offset -> buffer
 }
@@ -22,7 +21,6 @@ impl Context {
         Context {
             design: Design::with_target(target),
             is_empty: true,
-            next_cell: 0,
             cell_map: BTreeMap::new(),
             late_map: BTreeMap::new(),
         }
@@ -47,9 +45,7 @@ impl Context {
         self.is_empty = false;
         let value = self.design.add_cell(cell);
         assert_eq!(value.len(), width, "cell width should match declaration width");
-        assert!(index >= self.next_cell, "cell index should monotonically grow");
-        self.next_cell += value.len().max(1);
-        self.cell_map.insert(index, value.clone());
+        assert_eq!(self.cell_map.insert(index, value.clone()), None, "cell indices cannot be reused");
         value
     }
 
