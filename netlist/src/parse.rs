@@ -314,7 +314,9 @@ fn parse_io(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Io
     let (name, size) = parse_io_name_size(t)?;
     parse_space(t);
     parse_symbol(t, '\n')?;
-    Some(t.context_mut().add_io(name, size))
+    let io_value = t.context_mut().add_io(name, size);
+    t.context_mut().design.apply();
+    Some(io_value)
 }
 
 fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Value> {
@@ -736,7 +738,6 @@ fn parse_line(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
         parse_cell(t).is_some(),
         { parse_space(t); t.token('\n') }
     ) {
-        t.context_mut().design.apply();
         true
     } else {
         false

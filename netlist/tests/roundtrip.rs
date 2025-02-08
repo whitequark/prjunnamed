@@ -119,7 +119,7 @@ fn test_memories() {
          write addr=%1:3 data=%4:4 clk=%0\n}\n",
     );
     roundtrip(
-        "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n%8:4 = buf 0000\n\
+        "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n%8:4 = buf 0001\n\
          %12:0 = memory depth=#8 width=#4 {\n  \
          write addr=%1:3 data=%4:4 mask=%8:4 clk=%0\n}\n",
     );
@@ -169,13 +169,13 @@ fn test_memories() {
          read addr=%5:3 width=#4 clk=%0+1 clr=%0+2 rst=%0+3 en=%0+4 en>rst init=1010 []\n}\n",
     );
     roundtrip(
-        "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n%8:4 = buf 0000\n\
+        "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n%8:4 = buf 0001\n\
          %12:4 = memory depth=#8 width=#4 {\n  \
          write addr=%1:3 data=%4:4 mask=%8:4 clk=%0\n  \
          read addr=%1:3 width=#4 clk=%0 [undef]\n}\n",
     );
     roundtrip(
-        "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n%8:4 = buf 0000\n\
+        "%0:1 = buf 0\n%1:3 = buf 000\n%4:4 = buf 0000\n%8:4 = buf 0001\n\
          %12:4 = memory depth=#8 width=#4 {\n  \
          write addr=%1:3 data=%4:4 mask=%8:4 clk=%0\n  \
          write addr=%1:3 data=%4:4 mask=%8:4 clk=%0\n  \
