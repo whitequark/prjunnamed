@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::ops::Range;
 use std::cell::RefCell;
 use std::borrow::Cow;
@@ -671,5 +672,92 @@ impl Design {
             }
         }
         result.into_inner()
+    }
+}
+
+// This can't be in `crate::print` because of the privacy violations.
+impl Display for Design {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        let changes = self.changes.borrow();
+
+        let diff = self.is_changed();
+        let added = "+";
+        let removed = "-";
+        let unchanged = " ";
+
+        if let Some(target) = self.target() {
+            write!(f, "{}target ", if !diff { "" } else { unchanged })?;
+            self.write_string(f, target.name())?;
+            for (name, value) in target.options() {
+                write!(f, " ")?;
+                self.write_string(f, &name)?;
+                write!(f, "=")?;
+                self.write_string(f, &value)?;
+            }
+            writeln!(f)?;
+        }
+
+        for (name, io_value) in self.iter_ios() {
+            write!(f, "{}&", if !diff { "" } else { unchanged })?;
+            self.write_string(f, name)?;
+            writeln!(f, ":{}", io_value.len())?;
+        }
+        for (name, io_value) in &changes.added_ios {
+            write!(f, "{added}&")?;
+            self.write_string(f, name)?;
+            writeln!(f, ":{}", io_value.len())?;
+        }
+
+        let write_cell = |f: &mut std::fmt::Formatter, index: usize, cell: &Cell| {
+            if !diff {
+                write!(f, "%{}:{} = ", index, cell.output_len())?;
+                self.write_cell(f, cell, "")?;
+                writeln!(f)
+            } else if changes.unalived_cells.contains(&index) {
+                write!(f, "{removed}%{}:{} = ", index, cell.output_len())?;
+                self.write_cell(f, cell, "")?;
+                writeln!(f)
+            } else {
+                let mut mapped_cell = cell.clone();
+                mapped_cell.visit_mut(|net| {
+                    while let Some(&new_net) = changes.replaced_nets.get(net) {
+                        *net = new_net;
+                    }
+                });
+                if index >= self.cells.len() {
+                    write!(f, "{added}%_{}:{} = ", index, mapped_cell.output_len())?;
+                    self.write_cell(f, &mapped_cell, added)?;
+                    writeln!(f)
+                } else if mapped_cell != *cell {
+                    write!(f, "{removed}%{}:{} = ", index, cell.output_len())?;
+                    self.write_cell(f, cell, removed)?;
+                    writeln!(f)?;
+                    write!(f, "{added}%{}:{} = ", index, cell.output_len())?;
+                    self.write_cell(f, &mapped_cell, added)?;
+                    writeln!(f)
+                } else {
+                    write!(f, "{unchanged}%{}:{} = ", index, cell.output_len())?;
+                    self.write_cell(f, cell, unchanged)?;
+                    writeln!(f)
+                }
+            }
+        };
+
+        if f.alternate() {
+            for cell_ref in self.iter_cells() {
+                write_cell(f, cell_ref.index, &*cell_ref.get())?;
+            }
+        } else {
+            for cell_ref in self.iter_cells_topo() {
+                write_cell(f, cell_ref.index, &*cell_ref.get())?;
+            }
+        }
+        for (offset, cell_repr) in changes.added_cells.iter().enumerate() {
+            if !matches!(cell_repr, CellRepr::Skip(_) | CellRepr::Void) {
+                write_cell(f, self.cells.len() + offset, &*cell_repr.get())?;
+            }
+        }
+
+        Ok(())
     }
 }

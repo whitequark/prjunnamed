@@ -202,7 +202,8 @@ impl<SMT: SmtEngine> SmtBuilder<SMT> {
                         bv_one_hot = self.engine.build_bitvec_ite(
                             bv_to_bool(self.engine.build_extract(index, index, bv_matches.clone())),
                             self.engine.build_bitvec_lit(&Const::one_hot(patterns.len(), index)),
-                            bv_one_hot);
+                            bv_one_hot,
+                        );
                     }
                     self.engine.build_bitvec_ite(bv_to_bool(bv_enable), bv_one_hot, bv_all_cold)
                 })
