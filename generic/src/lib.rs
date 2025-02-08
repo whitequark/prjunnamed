@@ -6,11 +6,11 @@ mod merge;
 mod split;
 mod lower;
 mod lower_memory;
-mod iob_insert;
+mod iobuf_insert;
 
 pub use decision::decision;
 pub use lower::lower;
-pub use iob_insert::iob_insert;
+pub use iobuf_insert::iobuf_insert;
 pub use lower_memory::lower_memory;
 
 pub fn canonicalize(design: &mut Design) {

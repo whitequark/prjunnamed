@@ -194,15 +194,15 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }
             }
-            (Cell::Iob(iob_l), Cell::Iob(iob_r)) => {
-                for (io_net_l, io_net_r) in iob_l.io.iter().zip(iob_r.io.iter()) {
+            (Cell::IoBuf(iobuf_l), Cell::IoBuf(iobuf_r)) => {
+                for (io_net_l, io_net_r) in iobuf_l.io.iter().zip(iobuf_r.io.iter()) {
                     if !ios.contains(&(io_net_l, io_net_r)) {
                         return Err(NotIsomorphic::IoNetMismatch(io_net_l, io_net_r));
                     }
                 }
-                queue_vals(&mut queue, &iob_l.output, &iob_r.output)?;
-                queue.insert((iob_l.enable.net(), iob_r.enable.net()));
-                if iob_l.enable.is_positive() != iob_r.enable.is_positive() {
+                queue_vals(&mut queue, &iobuf_l.output, &iobuf_r.output)?;
+                queue.insert((iobuf_l.enable.net(), iobuf_r.enable.net()));
+                if iobuf_l.enable.is_positive() != iobuf_r.enable.is_positive() {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }
             }

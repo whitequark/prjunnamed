@@ -65,7 +65,7 @@ pub enum Cell {
 
     Dff(FlipFlop),
     Memory(Memory),
-    Iob(IoBuffer),
+    IoBuf(IoBuffer),
     Target(TargetCell),
     Other(Instance),
 
@@ -154,7 +154,7 @@ impl Cell {
                     }
                 }
             }
-            Cell::Iob(io_buffer) => {
+            Cell::IoBuf(io_buffer) => {
                 assert_eq!(io_buffer.output.len(), io_buffer.io.len());
             }
             Cell::Target(target_cell) => {
@@ -196,7 +196,7 @@ impl Cell {
                 }))
             }
             Cell::Dff(flip_flop) => Some(Cell::Dff(flip_flop.slice(range))),
-            Cell::Iob(io_buffer) => Some(Cell::Iob(io_buffer.slice(range))),
+            Cell::IoBuf(io_buffer) => Some(Cell::IoBuf(io_buffer.slice(range))),
             _ => None,
         }
     }
@@ -343,7 +343,7 @@ impl Cell {
 
             Cell::Dff(flip_flop) => flip_flop.output_len(),
             Cell::Memory(memory) => memory.output_len(),
-            Cell::Iob(io_buffer) => io_buffer.output_len(),
+            Cell::IoBuf(io_buffer) => io_buffer.output_len(),
             Cell::Target(target_cell) => target_cell.output_len,
             Cell::Other(instance) => instance.output_len(),
 
@@ -355,7 +355,7 @@ impl Cell {
 
     pub fn has_effects(&self, design: &Design) -> bool {
         match self {
-            Cell::Iob(_) | Cell::Other(_) | Cell::Input(_, _) | Cell::Output(_, _) | Cell::Name(_, _) => true,
+            Cell::IoBuf(_) | Cell::Other(_) | Cell::Input(_, _) | Cell::Output(_, _) | Cell::Name(_, _) => true,
 
             Cell::Target(target_cell) => design.target_prototype(&target_cell).purity == TargetCellPurity::HasEffects,
 
@@ -396,7 +396,7 @@ impl Cell {
             Cell::Assign(assign_cell) => assign_cell.visit(&mut f),
             Cell::Dff(flip_flop) => flip_flop.visit(&mut f),
             Cell::Memory(memory) => memory.visit(&mut f),
-            Cell::Iob(io_buffer) => io_buffer.visit(&mut f),
+            Cell::IoBuf(io_buffer) => io_buffer.visit(&mut f),
             Cell::Target(target_cell) => target_cell.visit(&mut f),
             Cell::Other(instance) => instance.visit(&mut f),
         }
@@ -435,7 +435,7 @@ impl Cell {
             Cell::Assign(assign_cell) => assign_cell.visit_mut(&mut f),
             Cell::Dff(flip_flop) => flip_flop.visit_mut(&mut f),
             Cell::Memory(memory) => memory.visit_mut(&mut f),
-            Cell::Iob(io_buffer) => io_buffer.visit_mut(&mut f),
+            Cell::IoBuf(io_buffer) => io_buffer.visit_mut(&mut f),
             Cell::Target(target_cell) => target_cell.visit_mut(&mut f),
             Cell::Other(instance) => instance.visit_mut(&mut f),
         }

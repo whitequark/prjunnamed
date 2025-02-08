@@ -671,7 +671,7 @@ impl Target for SiliconBlueTarget {
         prjunnamed_generic::lower(design);
         prjunnamed_generic::canonicalize(design);
         self.lower_ffs(design);
-        self.lower_iobs(design);
+        self.lower_iobufs(design);
         prjunnamed_generic::canonicalize(design);
         self.lower_luts(design);
         prjunnamed_generic::canonicalize(design);
@@ -680,10 +680,10 @@ impl Target for SiliconBlueTarget {
 }
 
 impl SiliconBlueTarget {
-    pub fn lower_iobs(&self, design: &mut Design) {
+    pub fn lower_iobufs(&self, design: &mut Design) {
         let prototype = self.prototype(SB_IO).unwrap();
         for cell_ref in design.iter_cells() {
-            if let Cell::Iob(io_buffer) = &*cell_ref.get() {
+            if let Cell::IoBuf(io_buffer) = &*cell_ref.get() {
                 let enable = io_buffer.enable.into_pos(design);
                 let mut output_value = Value::EMPTY;
                 for bit_index in 0..io_buffer.output.len() {

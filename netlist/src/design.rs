@@ -488,8 +488,8 @@ impl Design {
             Dff(arg.into());
         add_memory(arg: impl Into<Memory>) -> Value :
             Memory(arg.into());
-        add_iob(arg: impl Into<IoBuffer>) -> Value :
-            Iob(arg.into());
+        add_iobuf(arg: impl Into<IoBuffer>) -> Value :
+            IoBuf(arg.into());
         add_other(arg: impl Into<Instance>) -> Value :
             Other(arg.into());
         add_target(arg: impl Into<TargetCell>) -> Value :
@@ -542,7 +542,7 @@ impl Design {
         // emit inputs, iobs and stateful cells first, in netlist order
         for cell in self.iter_cells() {
             match &*cell.get() {
-                Cell::Input(..) | Cell::Iob(..) | Cell::Dff(..) | Cell::Other(..) => {
+                Cell::Input(..) | Cell::IoBuf(..) | Cell::Dff(..) | Cell::Other(..) => {
                     visited.insert(cell.index);
                     result.push(cell);
                 }
@@ -683,7 +683,7 @@ impl Design {
                 Cell::Assign(AssignCell { value, .. }) => fine("assign", value.len()),
                 Cell::Dff(FlipFlop { data, .. }) => fine("dff", data.len()),
                 Cell::Memory(Memory { depth, width, .. }) => custom(format_args!("memory:{depth}:{width}")),
-                Cell::Iob(IoBuffer { io, .. }) => fine("iob", io.len()),
+                Cell::IoBuf(IoBuffer { io, .. }) => fine("iobuf", io.len()),
                 Cell::Target(TargetCell { kind, .. }) => custom(format_args!("{kind}")),
                 Cell::Other(Instance { kind, .. }) => custom(format_args!("{kind}")),
                 Cell::Input(_, width) => fine("input", *width),

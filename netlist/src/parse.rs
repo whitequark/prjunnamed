@@ -605,14 +605,14 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                     read_ports,
                 })
             }
-            "iob" => {
+            "iobuf" => {
                 parse_space(t);
                 let io = parse_io_value(t)?;
                 parse_space(t);
                 parse_keyword_eq_expect(t, "o")?;
                 let output = parse_value_arg(t)?;
                 let enable = parse_control_arg(t, "en")?;
-                Cell::Iob(IoBuffer { io, output, enable })
+                Cell::IoBuf(IoBuffer { io, output, enable })
             }
             "target" => {
                 parse_space(t);

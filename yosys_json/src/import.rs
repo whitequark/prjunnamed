@@ -85,7 +85,7 @@ impl ModuleImporter<'_> {
                 }
             }
             if let Some(&io_net) = self.io_nets.get(&ynet) {
-                self.design.add_iob(IoBuffer {
+                self.design.add_iobuf(IoBuffer {
                     enable: ControlNet::Pos(Net::ONE),
                     output: Value::from(net),
                     io: IoValue::from(io_net),
@@ -499,7 +499,7 @@ impl ModuleImporter<'_> {
                 let enable = ControlNet::Pos(enable.unwrap_net());
                 let bits = cell.connections.get("Y").unwrap();
                 let io = self.io_value(bits);
-                let value = self.design.add_iob(IoBuffer { output, enable, io });
+                let value = self.design.add_iobuf(IoBuffer { output, enable, io });
                 for (&bit, net) in bits.iter().zip(value.iter()) {
                     let yosys::Bit::Net(ynet) = bit else { unreachable!() };
                     assert!(!self.driven_nets.contains(&ynet));
@@ -725,7 +725,7 @@ impl ModuleImporter<'_> {
             self.design.replace_net(
                 net,
                 self.design
-                    .add_iob(IoBuffer {
+                    .add_iobuf(IoBuffer {
                         output: Value::undef(1),
                         enable: ControlNet::Pos(Net::ZERO),
                         io: io_net.into(),

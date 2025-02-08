@@ -432,8 +432,8 @@ impl Design {
                 }
                 write!(f, "}}")?;
             }
-            Cell::Iob(io_buffer) => {
-                write!(f, "iob ")?;
+            Cell::IoBuf(io_buffer) => {
+                write!(f, "iobuf ")?;
                 self.write_io_value(f, &io_buffer.io)?;
                 write!(f, " o=")?;
                 self.write_value(f, &io_buffer.output)?;

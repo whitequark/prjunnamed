@@ -90,8 +90,8 @@ fn test_cells() {
     roundtrip("%0:4 = buf 0000\n%4:2 = assign en=%0+2 { %0:2 } %0+3 at=#1\n");
     roundtrip("%0:2 = buf 00\n%2:1 = dff %0+0 clk=%0+1\n");
     roundtrip("%0:0 = memory depth=#256 width=#16 {\n}\n");
-    roundtrip("&\"purr\":1\n%0:2 = buf 00\n%2:1 = iob &\"purr\" o=%0+0 en=%0+1\n");
-    roundtrip("&\"purr\":2\n%0:2 = buf 00\n%2:2 = iob &\"purr\":2 o=%0:2 en=%0+1\n");
+    roundtrip("&\"purr\":1\n%0:2 = buf 00\n%2:1 = iobuf &\"purr\" o=%0+0 en=%0+1\n");
+    roundtrip("&\"purr\":2\n%0:2 = buf 00\n%2:2 = iobuf &\"purr\":2 o=%0:2 en=%0+1\n");
     roundtrip("%0:0 = \"instance\" {\n}\n");
     roundtrip("%0:2 = input \"awa\"\n");
     roundtrip("%0:2 = buf 00\n%2:0 = output \"bite\" %0:2\n");

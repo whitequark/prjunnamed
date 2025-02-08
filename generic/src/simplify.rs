@@ -373,8 +373,8 @@ fn fold_controls(design: &Design, cell_ref: CellRef) {
             }
             cell_ref.replace(Cell::Dff(flip_flop));
         }
-        Cell::Iob(io_buffer) => {
-            cell_ref.replace(Cell::Iob(IoBuffer {
+        Cell::IoBuf(io_buffer) => {
+            cell_ref.replace(Cell::IoBuf(IoBuffer {
                 io: io_buffer.io.clone(),
                 output: io_buffer.output.clone(),
                 enable: fold_control_net(io_buffer.enable),
@@ -1416,7 +1416,7 @@ mod test {
     }
 
     #[test]
-    fn test_iob_simplify_enable() {
+    fn test_iobuf_simplify_enable() {
         for size in [1, 2] {
             let design = Design::new();
             let io_buffer = IoBuffer {
@@ -1424,14 +1424,14 @@ mod test {
                 output: design.add_input("o", size),
                 enable: ControlNet::Pos(design.add_not(design.add_input("e", 1))[0]),
             };
-            design.add_output("i", design.add_iob(io_buffer));
+            design.add_output("i", design.add_iobuf(io_buffer));
             let gold = Design::new();
             let io_buffer = IoBuffer {
                 io: gold.add_io("io", size),
                 output: gold.add_input("o", size),
                 enable: ControlNet::Neg(gold.add_input1("e")),
             };
-            gold.add_output("i", gold.add_iob(io_buffer));
+            gold.add_output("i", gold.add_iobuf(io_buffer));
             assert_simplify_isomorphic!(design, gold);
         }
         for size in [1, 2] {
@@ -1441,31 +1441,31 @@ mod test {
                 output: design.add_input("o", size),
                 enable: ControlNet::Neg(design.add_not(design.add_input("e", 1))[0]),
             };
-            design.add_output("i", design.add_iob(io_buffer));
+            design.add_output("i", design.add_iobuf(io_buffer));
             let gold = Design::new();
             let io_buffer = IoBuffer {
                 io: gold.add_io("io", size),
                 output: gold.add_input("o", size),
                 enable: ControlNet::Pos(gold.add_input1("e")),
             };
-            gold.add_output("i", gold.add_iob(io_buffer));
+            gold.add_output("i", gold.add_iobuf(io_buffer));
             assert_simplify_isomorphic!(design, gold);
         }
     }
 
     #[test]
-    fn test_iob_canonicalize_controls() {
+    fn test_iobuf_canonicalize_controls() {
         let design = Design::new();
         let io_buffer = IoBuffer {
             io: design.add_io("io", 1),
             output: design.add_input("o", 1),
             enable: ControlNet::Neg(Net::ONE),
         };
-        design.add_output("i", design.add_iob(io_buffer));
+        design.add_output("i", design.add_iobuf(io_buffer));
         let gold = Design::new();
         let io_buffer =
             IoBuffer { io: gold.add_io("io", 1), output: gold.add_input("o", 1), enable: ControlNet::Pos(Net::ZERO) };
-        gold.add_output("i", gold.add_iob(io_buffer));
+        gold.add_output("i", gold.add_iobuf(io_buffer));
         assert_simplify_isomorphic!(design, gold);
     }
 

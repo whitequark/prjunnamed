@@ -459,7 +459,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                     .add_to(&format!("${}", cell_index), &mut ys_module);
             }
 
-            Cell::Iob(io_buffer) => {
+            Cell::IoBuf(io_buffer) => {
                 let ys_enable =
                     ys_control_net_pos(&mut ys_module, &format!("${}$en$not", cell_index), io_buffer.enable);
                 CellDetails::new("$tribuf")
