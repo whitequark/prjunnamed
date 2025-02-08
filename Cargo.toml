@@ -4,9 +4,10 @@ members = [
     "netlist",
     "pattern",
     "generic",
-    "smt2",
+    "lut",
     "yosys_json",
-    "cli", "siliconblue", "lut",
+    "siliconblue",
+    "cli",
 ]
 
 [workspace.dependencies]
@@ -14,12 +15,11 @@ prjunnamed-netlist.path = "netlist"
 prjunnamed-pattern.path = "pattern"
 prjunnamed-generic.path = "generic"
 prjunnamed-lut.path = "lut"
-prjunnamed-smt2.path = "smt2"
 prjunnamed-yosys_json.path = "yosys_json"
 prjunnamed-siliconblue.path = "siliconblue"
 yap = "0.12.0"
 # easy-smt = "0.2.7"
-easy-smt = { git = "https://github.com/whitequark/easy-smt", branch = "fix-let" }
+easy-smt = { git = "https://github.com/whitequark/easy-smt", branch = "buf-writer" }
 env_logger = "0.11"
 argparse = "0.2"
 json = "0.12"

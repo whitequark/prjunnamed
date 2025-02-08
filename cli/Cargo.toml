@@ -14,7 +14,6 @@ path = "src/main.rs"
 prjunnamed-netlist.workspace = true
 prjunnamed-pattern.workspace = true
 prjunnamed-generic.workspace = true
-prjunnamed-smt2.workspace = true
 prjunnamed-yosys_json.workspace = true
 prjunnamed-siliconblue.workspace = true
 argparse.workspace = true

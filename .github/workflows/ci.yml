@@ -16,3 +16,5 @@ jobs:
       uses: cda-tum/setup-z3@v1
     - name: Run tests
       run: cargo test
+    - name: Run tests and verify with SMT
+      run: cargo test --features verify -p prjunnamed-generic

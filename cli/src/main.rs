@@ -1,6 +1,5 @@
 use std::{collections::BTreeMap, fs::File, io::Write};
 
-use prjunnamed_generic::{canonicalize, decision, lower};
 use prjunnamed_netlist::{Cell, Design};
 
 fn process(name: &str, design: &mut Design) {
@@ -8,10 +7,10 @@ fn process(name: &str, design: &mut Design) {
 
     match design.target() {
         None => {
-            decision(design);
-            canonicalize(design);
-            lower(design);
-            canonicalize(design);
+            prjunnamed_generic::decision(design);
+            prjunnamed_generic::canonicalize(design);
+            prjunnamed_generic::lower(design);
+            prjunnamed_generic::canonicalize(design);
         }
         Some(ref target) => {
             for cell_ref in design.iter_cells() {

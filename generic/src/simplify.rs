@@ -412,7 +412,6 @@ mod test {
         TargetPrototype, Trit, Value,
     };
     use prjunnamed_pattern::{assert_netlist, netlist_matches, patterns::*};
-    use prjunnamed_smt2::verify_transformation;
 
     use super::simplify;
 
@@ -460,12 +459,14 @@ mod test {
         })
     }
 
+    #[allow(dead_code)]
     #[derive(Debug)]
     struct MockTarget {
         prototypes: BTreeMap<String, TargetPrototype>,
     }
 
     impl MockTarget {
+        #[allow(dead_code)]
         fn new() -> Arc<Self> {
             Arc::new(MockTarget {
                 prototypes: BTreeMap::from_iter([
@@ -744,11 +745,8 @@ mod test {
         );
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -771,11 +769,8 @@ mod test {
         let y = design.add_adc(a.concat(&ab), b.concat(&ab), c.unwrap_net());
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -795,11 +790,8 @@ mod test {
         let y = design.add_adc(&a, &b, b.lsb());
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -817,11 +809,8 @@ mod test {
         let y = design.add_adc(&a, &b, a.lsb());
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -839,11 +828,8 @@ mod test {
         let y = design.add_adc(&a, &b, b.lsb());
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 1);
         let b = gold.add_input("b", 1);
@@ -859,11 +845,8 @@ mod test {
         let y = design.add_adc(&a, &a, Net::ZERO);
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         gold.add_output("y", Value::from(Net::ZERO).concat(a));
@@ -879,11 +862,8 @@ mod test {
         let y = design.add_adc(&a, &a, c.unwrap_net());
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let c = gold.add_input("c", 1);
@@ -904,11 +884,8 @@ mod test {
         );
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -926,11 +903,8 @@ mod test {
         let y = design.add_adc(a, Value::zero(4).concat(&b), Net::ZERO);
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 8);
         let b = gold.add_input("b", 4);
@@ -948,11 +922,8 @@ mod test {
         let y = design.add_adc(a, Value::from(Const::lit("1111")).concat(&b), Net::ONE);
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 8);
         let b = gold.add_input("b", 4);
@@ -970,11 +941,8 @@ mod test {
         let y = design.add_adc(a.concat(Value::zero(4)), Value::zero(4).concat(&b), Net::ZERO);
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -993,11 +961,8 @@ mod test {
         let y = design.add_adc(al.concat(Value::zero(4)).concat(ah), bl.concat(Value::zero(4)).concat(bh), Net::ZERO);
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let al = gold.add_input("al", 4);
         let ah = gold.add_input("ah", 4);
@@ -1019,11 +984,8 @@ mod test {
         let y = design.add_adc(a.concat(Value::zero(4)), b.concat(Value::zero(4)), c.unwrap_net());
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -1043,11 +1005,8 @@ mod test {
         let y = design.add_adc(a.sext(8), b.sext(8), c.unwrap_net());
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let a = gold.add_input("a", 4);
         let b = gold.add_input("b", 4);
@@ -1069,11 +1028,8 @@ mod test {
         let y = design.add_adc(al.sext(4).concat(ah.sext(4)), bl.sext(4).concat(bh.sext(4)), c.unwrap_net());
         design.add_output("y", y);
         design.apply();
-        verify_transformation(&mut design, |design| {
-            simplify(design);
-            simplify(design); // clean up zero length adcs
-        })
-        .unwrap();
+        simplify(&mut design);
+        simplify(&mut design); // clean up zero length adcs
         let mut gold = Design::new();
         let al = gold.add_input("al", 1);
         let bl = gold.add_input("bl", 1);
@@ -1513,6 +1469,7 @@ mod test {
         assert_simplify_isomorphic!(design, gold);
     }
 
+    #[cfg(not(feature = "verify"))]
     #[test]
     fn test_target_cell_simplify() {
         let target = MockTarget::new();

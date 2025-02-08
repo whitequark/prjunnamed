@@ -76,7 +76,7 @@ checksum = "5b63caa9aa9397e2d9480a9b13673856c78d8ac123288526c37d7839f2a86990"
 [[package]]
 name = "easy-smt"
 version = "0.2.7"
-source = "git+https://github.com/whitequark/easy-smt?branch=fix-let#6a964ecc3a3e43828674207cee9694f70d7f05d2"
+source = "git+https://github.com/whitequark/easy-smt?branch=buf-writer#ca7fd6aa15bf6438d01811c151196e8a73823ac4"
 dependencies = [
  "log",
  "unicode-segmentation",
@@ -151,7 +151,6 @@ dependencies = [
  "prjunnamed-netlist",
  "prjunnamed-pattern",
  "prjunnamed-siliconblue",
- "prjunnamed-smt2",
  "prjunnamed-yosys_json",
 ]
 
@@ -161,7 +160,6 @@ version = "0.1.0"
 dependencies = [
  "prjunnamed-netlist",
  "prjunnamed-pattern",
- "prjunnamed-smt2",
  "union-find-rs",
 ]
 
@@ -194,15 +192,6 @@ version = "0.1.0"
 dependencies = [
  "prjunnamed-generic",
  "prjunnamed-lut",
- "prjunnamed-netlist",
-]
-
-[[package]]
-name = "prjunnamed-smt2"
-version = "0.1.0"
-dependencies = [
- "easy-smt",
- "env_logger",
  "prjunnamed-netlist",
 ]
 

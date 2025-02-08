@@ -176,7 +176,7 @@ impl SmtEngine for EasySmtEngine {
             return Ok(*sexpr);
         }
         let sort = state.context.bool_sort();
-        let sexpr = state.context.declare_const(format!("|{name}|"), sort)?;
+        let sexpr = state.context.declare_const(name, sort)?;
         state.declares.insert(name.to_owned(), sexpr);
         Ok(sexpr)
     }
@@ -187,7 +187,7 @@ impl SmtEngine for EasySmtEngine {
             return Ok(*sexpr);
         }
         let sort = state.context.bit_vec_sort(state.context.numeral(width));
-        let sexpr = state.context.declare_const(format!("|{name}|"), sort)?;
+        let sexpr = state.context.declare_const(name, sort)?;
         state.declares.insert(name.to_owned(), sexpr);
         Ok(sexpr)
     }

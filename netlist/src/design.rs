@@ -240,7 +240,7 @@ impl Design {
                 } else if cell.output_len() == 0 {
                 } else {
                     let output = Value::cell(index, cell.output_len());
-                    let (now, was) = (example.get_past_value(&output), example.get_value(&output));
+                    let (was, now) = (example.get_past_value(&output), example.get_value(&output));
                     message.push_str(&match (was, now) {
                         (Some(was), Some(now)) => format!("{} = {} -> {}\n", self.display_value(&output), was, now),
                         (None, Some(now)) => format!("{} = {}\n", self.display_value(&output), now),
@@ -738,7 +738,12 @@ impl Display for Design {
                 self.write_cell(f, cell, "")?;
                 writeln!(f)
             } else {
-                let mut mapped_cell = cell.clone();
+                let mut mapped_cell;
+                if let Some(replaced_cell) = changes.replaced_cells.get(&index) {
+                    mapped_cell = replaced_cell.clone();
+                } else {
+                    mapped_cell = cell.clone();
+                }
                 mapped_cell.visit_mut(|net| {
                     while let Some(&new_net) = changes.replaced_nets.get(net) {
                         *net = new_net;
@@ -752,7 +757,7 @@ impl Display for Design {
                     write!(f, "{removed}%{}:{} = ", index, cell.output_len())?;
                     self.write_cell(f, cell, removed)?;
                     writeln!(f)?;
-                    write!(f, "{added}%{}:{} = ", index, cell.output_len())?;
+                    write!(f, "{added}%{}:{} = ", index, mapped_cell.output_len())?;
                     self.write_cell(f, &mapped_cell, added)?;
                     writeln!(f)
                 } else {
