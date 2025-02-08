@@ -257,7 +257,7 @@ impl Decision {
         }
     }
 
-    fn emit_mux(&self, design: &Design, values: &BTreeMap<Net, Value>, default: &Value) -> Value {
+    fn emit_disjoint_mux(&self, design: &Design, values: &BTreeMap<Net, Value>, default: &Value) -> Value {
         match self {
             Decision::Result { rules } => {
                 let mut result = None;
@@ -269,67 +269,23 @@ impl Decision {
                 }
                 result.unwrap_or(default.clone())
             }
-            Decision::Branch { test, if0, if1 } => {
-                design.add_mux(*test, if1.emit_mux(design, values, default), if0.emit_mux(design, values, default))
-            }
+            Decision::Branch { test, if0, if1 } => design.add_mux(
+                *test,
+                if1.emit_disjoint_mux(design, values, default),
+                if0.emit_disjoint_mux(design, values, default),
+            ),
         }
     }
 
-    fn emit_sop(&self, design: &Design) -> BTreeSet<Net> {
-        fn subtree(
-            design: &Design,
-            sop: &mut BTreeMap<Net, BTreeSet<Net>>,
-            nets: &mut Vec<Net>,
-            bits: &mut Vec<Trit>,
-            decision: &Decision,
-        ) {
-            match decision {
-                Decision::Result { rules } => {
-                    let cond = match &bits[..] {
-                        [] => design.add_buf1(Trit::One),
-                        [Trit::One] => design.add_buf1(nets[0]),
-                        [Trit::Zero] => design.add_not1(nets[0]),
-                        _ => design.add_eq(nets.clone(), Const::from(bits.clone())),
-                    };
-                    for &rule in rules {
-                        sop.entry(rule).or_default().insert(cond);
-                    }
-                }
-                Decision::Branch { test: net, if0, if1 } => {
-                    nets.push(*net);
-                    bits.push(Trit::Zero);
-                    subtree(design, sop, nets, bits, if0);
-                    bits.pop();
-                    bits.push(Trit::One);
-                    subtree(design, sop, nets, bits, if1);
-                    bits.pop();
-                    nets.pop();
-                }
+    fn emit_one_hot_mux(&self, design: &Design, nets: &Value) -> Value {
+        match self {
+            Decision::Result { rules } => Value::from_iter(
+                nets.iter().map(|net| if rules.contains(&net) { Trit::One } else { Trit::Zero }.into()),
+            ),
+            Decision::Branch { test, if0, if1 } => {
+                design.add_mux(*test, if1.emit_one_hot_mux(design, nets), if0.emit_one_hot_mux(design, nets))
             }
         }
-
-        // Convert decision tree into sum-of-products representation, and emit products as `eq` cells.
-        // Although they will be merged later, this function avoids emitting duplicate cells anyway.
-        let mut sop = BTreeMap::new();
-        let (mut nets, mut bits) = (Vec::new(), Vec::new());
-        subtree(design, &mut sop, &mut nets, &mut bits, self);
-
-        // Emit sums as `or` cell sequences, and replace the match outputs with the sum nets.
-        for (rule, products) in sop.iter() {
-            let mut sum = None::<Net>;
-            for &product in products {
-                if let Some(ref mut sum) = sum {
-                    *sum = design.add_or1(*sum, product);
-                } else {
-                    sum = Some(product);
-                }
-            }
-            design.replace_net(rule, sum.unwrap());
-        }
-
-        // Return the set of all encountered rules. The caller will need to replace match outputs
-        // that never appear in the decision trees with zeroes.
-        BTreeSet::from_iter(sop.keys().cloned())
     }
 }
 
@@ -508,10 +464,8 @@ pub fn decision(design: &mut Design) {
             decisions.insert(rule, decision.clone());
         }
 
-        let used_rules = decision.emit_sop(design);
-        for unused_rule in all_rules.difference(&used_rules) {
-            design.replace_net(unused_rule, Net::ZERO);
-        }
+        let nets = Value::from_iter(all_rules);
+        design.replace_value(&nets, decision.emit_one_hot_mux(design, &nets));
     }
 
     // Find chains of `assign` cells that are order-independent.
@@ -533,7 +487,7 @@ pub fn decision(design: &mut Design) {
             values.insert(*enable, update.clone());
         }
 
-        design.replace_value(last_assign.output(), decision.emit_mux(design, &values, default));
+        design.replace_value(last_assign.output(), decision.emit_disjoint_mux(design, &values, default));
         used_assigns.insert(*last_assign);
     }
 
@@ -1331,14 +1285,13 @@ mod test {
 
         let mut dr = Design::new();
         let c = dr.add_input1("c");
-        let bc = dr.add_buf1(c);
-        let nc = dr.add_not1(c);
         let x1 = dr.add_input("x1", 4);
         let x2 = dr.add_input("x2", 4);
         let x3 = dr.add_input("x3", 4);
-        let m1 = dr.add_mux(nc, x1, Value::zero(4));
-        let m2 = dr.add_mux(bc, x2, m1);
-        let m3 = dr.add_mux(bc, x3, m2);
+        let mc = dr.add_mux(c, Const::lit("10"), Const::lit("01"));
+        let m1 = dr.add_mux(mc[0], x1, Value::zero(4));
+        let m2 = dr.add_mux(mc[1], x2, m1);
+        let m3 = dr.add_mux(mc[1], x3, m2);
         dr.add_output("y", m3);
 
         assert_isomorphic!(dl, dr);
@@ -1361,10 +1314,10 @@ mod test {
         let mut dr = Design::new();
         let c1 = dr.add_input1("c1");
         let c2 = dr.add_input1("c2");
-        let bc1 = dr.add_not1(c1);
-        let bc2 = dr.add_not1(c2);
-        let m1 = dr.add_mux(bc1, dr.add_input("x1", 4), Value::zero(4));
-        let m2 = dr.add_mux(bc2, dr.add_input("x2", 4), m1);
+        let mc1 = dr.add_mux(c1, Const::lit("0"), Const::lit("1"));
+        let mc2 = dr.add_mux(c2, Const::lit("0"), Const::lit("1"));
+        let m1 = dr.add_mux(mc1[0], dr.add_input("x1", 4), Value::zero(4));
+        let m2 = dr.add_mux(mc2[0], dr.add_input("x2", 4), m1);
         dr.add_output("y", m2);
 
         assert_isomorphic!(dl, dr);
@@ -1393,5 +1346,20 @@ mod test {
         dr.add_output("assign", value.slice(..2).concat(mux.concat(value.slice(5..))));
 
         assert_isomorphic!(dl, dr);
+    }
+
+    #[test]
+    fn test_match_eq_refinement() {
+        let mut design = Design::new();
+        let a = design.add_input("a", 2);
+        let m = design.add_match(MatchCell {
+            value: a,
+            enable: Net::ONE,
+            patterns: vec![vec![Const::lit("00")], vec![Const::lit("XX")]],
+        });
+        design.add_output("y", m);
+        design.apply();
+
+        decision(&mut design);
     }
 }
