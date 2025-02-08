@@ -217,7 +217,8 @@ impl From<Cell> for Cow<'_, Cell> {
 impl CellRepr {
     pub fn get(&self) -> Cow<'_, Cell> {
         match *self {
-            CellRepr::Void | CellRepr::Skip(_) => unreachable!(),
+            CellRepr::Void => unreachable!("void cell"),
+            CellRepr::Skip(_) => unreachable!("skip cell"),
 
             CellRepr::Buf(arg) => Cow::Owned(Cell::Buf(Value::from(arg))),
             CellRepr::Not(arg) => Cow::Owned(Cell::Not(Value::from(arg))),

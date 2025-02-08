@@ -1,6 +1,6 @@
 use std::{borrow::Cow, cell::RefCell, collections::BTreeMap};
 
-use crate::{AssignCell, Cell, Const, MatchCell, Net, Trit, Value};
+use crate::{AssignCell, Cell, Const, ControlNet, Design, MatchCell, Net, Trit, Value};
 
 #[cfg(feature = "easy-smt")]
 pub mod easy_smt;
@@ -64,44 +64,102 @@ pub trait SmtEngine {
     fn get_bitvec(&self, term: &Self::BitVec) -> Result<Const, Self::Error>;
 }
 
-pub struct SmtBuilder<SMT: SmtEngine> {
+pub struct SmtBuilder<'a, SMT: SmtEngine> {
+    design: &'a Design,
     engine: SMT,
-    nets: RefCell<BTreeMap<Net, SMT::BitVec>>,
+    curr: RefCell<BTreeMap<Net, SMT::BitVec>>,
+    past: RefCell<BTreeMap<Net, SMT::BitVec>>,
     eqs: RefCell<Vec<SMT::Bool>>,
 }
 
-impl<SMT: SmtEngine> SmtBuilder<SMT> {
-    pub fn new(engine: SMT) -> Self {
-        Self { engine, nets: RefCell::new(BTreeMap::new()), eqs: RefCell::new(Vec::new()) }
+impl<'a, SMT: SmtEngine> SmtBuilder<'a, SMT> {
+    pub fn new(design: &'a Design, engine: SMT) -> Self {
+        Self {
+            design,
+            engine,
+            curr: RefCell::new(BTreeMap::new()),
+            past: RefCell::new(BTreeMap::new()),
+            eqs: RefCell::new(Vec::new()),
+        }
+    }
+
+    fn trit(&self, trit: Trit) -> SMT::BitVec {
+        match trit {
+            Trit::Undef => unimplemented!("undef cannot be lowered to SMT-LIB"),
+            Trit::Zero => self.engine.build_bitvec_lit(&Const::zero(1)),
+            Trit::One => self.engine.build_bitvec_lit(&Const::ones(1)),
+        }
+    }
+
+    fn concat(&self, bv_elems: impl IntoIterator<IntoIter: DoubleEndedIterator<Item = SMT::BitVec>>) -> SMT::BitVec {
+        let mut bv_result = None;
+        for bv_elem in bv_elems.into_iter().rev() {
+            if let Some(bv_msb) = bv_result {
+                bv_result = Some(self.engine.build_concat(bv_msb, bv_elem));
+            } else {
+                bv_result = Some(bv_elem)
+            }
+        }
+        bv_result.expect("SMT bit vectors cannot be empty")
+    }
+
+    fn curr_net(&self, net: Net) -> Result<SMT::BitVec, SMT::Error> {
+        if let Some(trit) = net.as_const() {
+            return Ok(self.trit(trit));
+        }
+        let bv_net = self.engine.declare_bitvec_const(&format!("n{}", net.as_cell_index().unwrap()), 1)?;
+        self.curr.borrow_mut().insert(net, bv_net.clone());
+        Ok(bv_net)
+    }
+
+    fn curr_value(&self, value: &Value) -> Result<SMT::BitVec, SMT::Error> {
+        Ok(self.concat(value.iter().map(|net| self.curr_net(net)).collect::<Result<Vec<_>, _>>()?.into_iter()))
+    }
+
+    fn past_net(&self, net: Net) -> Result<SMT::BitVec, SMT::Error> {
+        if let Some(trit) = net.as_const() {
+            return Ok(self.trit(trit));
+        }
+        let bv_net = self.engine.declare_bitvec_const(&format!("p{}", net.as_cell_index().unwrap()), 1)?;
+        self.past.borrow_mut().insert(net, bv_net.clone());
+        Ok(bv_net)
+    }
+
+    fn past_value(&self, value: &Value) -> Result<SMT::BitVec, SMT::Error> {
+        Ok(self.concat(value.iter().map(|net| self.past_net(net)).collect::<Result<Vec<_>, _>>()?.into_iter()))
     }
 
     fn net(&self, net: Net) -> Result<SMT::BitVec, SMT::Error> {
-        match net.as_const() {
-            Some(Trit::Undef) => unimplemented!("undef cannot be lowered to SMT-LIB"),
-            Some(Trit::Zero) => Ok(self.engine.build_bitvec_lit(&Const::zero(1))),
-            Some(Trit::One) => Ok(self.engine.build_bitvec_lit(&Const::ones(1))),
-            None => {
-                let bv_net = self.engine.declare_bitvec_const(&format!("n{}", net.as_cell_index().unwrap()), 1)?;
-                self.nets.borrow_mut().insert(net, bv_net.clone());
-                Ok(bv_net)
+        if let Ok(index) = net.as_cell_index() {
+            if !self.design.is_valid_cell_index(index) {
+                return self.curr_net(net); // FIXME: is this even sound?
             }
+        }
+        match self.design.find_cell(net) {
+            Ok((cell_ref, _offset)) if matches!(&*cell_ref.get(), Cell::Dff(_)) => self.past_net(net),
+            _ => self.curr_net(net),
         }
     }
 
     fn value(&self, value: &Value) -> Result<SMT::BitVec, SMT::Error> {
-        let mut bv_value = None;
-        for net in value.iter().rev() {
-            let bv_net = self.net(net)?;
-            if let Some(bv_msb) = bv_value {
-                bv_value = Some(self.engine.build_concat(bv_msb, bv_net));
-            } else {
-                bv_value = Some(bv_net)
-            }
-        }
-        Ok(bv_value.expect("SMT bit vectors cannot be empty"))
+        Ok(self.concat(value.iter().map(|net| self.net(net)).collect::<Result<Vec<_>, _>>()?.into_iter()))
     }
 
-    fn cell(&self, cell: &Cell) -> Result<SMT::BitVec, SMT::Error> {
+    fn control_net(&self, control_net: ControlNet) -> Result<SMT::Bool, SMT::Error> {
+        let active = if control_net.is_positive() { Const::ones(1) } else { Const::zero(1) };
+        Ok(self.engine.build_bitvec_eq(self.net(control_net.net())?, self.engine.build_bitvec_lit(&active)))
+    }
+
+    fn async_net(&self, control_net: ControlNet) -> Result<SMT::Bool, SMT::Error> {
+        let inactive = if control_net.is_positive() { Const::zero(1) } else { Const::ones(1) };
+        let active = if control_net.is_positive() { Const::ones(1) } else { Const::zero(1) };
+        Ok(self.engine.build_and(&[
+            self.engine.build_bitvec_eq(self.curr_net(control_net.net())?, self.engine.build_bitvec_lit(&active)),
+            self.engine.build_bitvec_eq(self.past_net(control_net.net())?, self.engine.build_bitvec_lit(&inactive)),
+        ]))
+    }
+
+    fn cell(&self, output: &Value, cell: &Cell) -> Result<SMT::BitVec, SMT::Error> {
         fn resize(value: &Value, width: usize) -> Value {
             if width <= value.len() {
                 value.slice(..width)
@@ -217,7 +275,50 @@ impl<SMT: SmtEngine> SmtBuilder<SMT> {
                 })?,
                 self.value(value)?,
             ),
-            Cell::Dff(_flip_flop) => unimplemented!("flip-flops are not lowered to SMT-LIB yet"),
+            Cell::Dff(flip_flop) => {
+                // The use of `has_...` is only required because any X in reset/clear values cause a panic right now.
+                let build_reset = |data| -> Result<SMT::BitVec, SMT::Error> {
+                    Ok(self.engine.build_bitvec_ite(
+                        self.control_net(flip_flop.reset)?,
+                        self.engine.build_bitvec_lit(&flip_flop.reset_value),
+                        data,
+                    ))
+                };
+                let build_enable = |data| -> Result<SMT::BitVec, SMT::Error> {
+                    Ok(self.engine.build_bitvec_ite(
+                        self.control_net(flip_flop.enable)?,
+                        data,
+                        self.past_value(&output)?,
+                    ))
+                };
+                let mut data = self.value(&flip_flop.data)?;
+                if flip_flop.has_reset() && flip_flop.has_enable() {
+                    if flip_flop.reset_over_enable {
+                        data = build_reset(build_enable(data)?)?;
+                    } else {
+                        data = build_enable(build_reset(data)?)?;
+                    }
+                } else if flip_flop.has_reset() {
+                    data = build_reset(data)?;
+                } else if flip_flop.has_enable() {
+                    data = build_enable(data)?;
+                }
+                // FIXME: simultaneous clock+clear must evaluate to undef
+                let value = if flip_flop.has_clock() {
+                    self.engine.build_bitvec_ite(self.async_net(flip_flop.clock)?, data, self.past_value(&output)?)
+                } else {
+                    self.engine.build_bitvec_lit(&flip_flop.init_value)
+                };
+                if flip_flop.has_clear() {
+                    self.engine.build_bitvec_ite(
+                        self.async_net(flip_flop.clear)?,
+                        self.engine.build_bitvec_lit(&flip_flop.clear_value),
+                        value,
+                    )
+                } else {
+                    value
+                }
+            }
             Cell::Memory(_memory) => unimplemented!("memories are not lowered to SMT-LIB yet"),
             Cell::Iob(_io_buffer) => unimplemented!("IO buffers are not lowered to SMT-LIB yet"),
             Cell::Target(_target_cell) => unimplemented!("target cells cannot be lowered to SMT-LIB yet"),
@@ -231,24 +332,30 @@ impl<SMT: SmtEngine> SmtBuilder<SMT> {
     pub fn add_cell(&mut self, output: &Value, cell: &Cell) -> Result<(), SMT::Error> {
         match cell {
             // Declare the nets used by the cell so that it is present in the counterexample even if unused.
-            Cell::Input(_, _) => self.value(output).map(|_| ()),
-            _ => self.engine.assert(self.engine.build_bitvec_eq(self.cell(cell)?, self.value(output)?)),
+            Cell::Input(_, _) => self.curr_value(output).map(|_| ()),
+            _ => self.engine.assert(self.engine.build_bitvec_eq(self.curr_value(output)?, self.cell(output, cell)?)),
         }
     }
 
     pub fn replace_cell(&mut self, output: &Value, old_cell: &Cell, new_cell: &Cell) -> Result<(), SMT::Error> {
         self.add_cell(output, old_cell)?;
-        self.eqs.borrow_mut().push(self.engine.build_bitvec_eq(self.cell(new_cell)?, self.value(output)?));
+        self.eqs.borrow_mut().push(self.engine.build_bitvec_eq(self.curr_value(output)?, self.cell(output, new_cell)?));
         Ok(())
     }
 
     pub fn replace_net(&mut self, from_net: Net, to_net: Net) -> Result<(), SMT::Error> {
-        self.eqs.borrow_mut().push(self.engine.build_bitvec_eq(self.net(from_net)?, self.net(to_net)?));
+        self.eqs.borrow_mut().push(self.engine.build_bitvec_eq(self.curr_net(from_net)?, self.net(to_net)?));
         Ok(())
     }
 
     pub fn replace_void_net(&mut self, from_net: Net, to_net: Net) -> Result<(), SMT::Error> {
-        self.engine.assert(self.engine.build_bitvec_eq(self.net(from_net)?, self.net(to_net)?))?;
+        self.engine.assert(self.engine.build_bitvec_eq(self.curr_net(from_net)?, self.net(to_net)?))
+    }
+
+    pub fn replace_dff_net(&mut self, from_net: Net, to_net: Net) -> Result<(), SMT::Error> {
+        // Essentially a single induction step.
+        self.engine.assert(self.engine.build_bitvec_eq(self.past_net(from_net)?, self.past_net(to_net)?))?;
+        self.eqs.borrow_mut().push(self.engine.build_bitvec_eq(self.curr_net(from_net)?, self.curr_net(to_net)?));
         Ok(())
     }
 
@@ -262,29 +369,47 @@ impl<SMT: SmtEngine> SmtBuilder<SMT> {
             SmtResponse::Unknown => panic!("SMT solver returned unknown"),
             SmtResponse::Unsat => Ok(None),
             SmtResponse::Sat => {
-                let mut net_values = BTreeMap::new();
-                for (net, bv_net) in self.nets.borrow().iter() {
-                    net_values.insert(*net, self.engine.get_bitvec(bv_net)?[0]);
+                let (mut curr, mut past) = (BTreeMap::new(), BTreeMap::new());
+                for (net, bv_net) in self.curr.borrow().iter() {
+                    curr.insert(*net, self.engine.get_bitvec(bv_net)?[0]);
                 }
-                Ok(Some(SmtExample(net_values)))
+                for (net, bv_net) in self.past.borrow().iter() {
+                    past.insert(*net, self.engine.get_bitvec(bv_net)?[0]);
+                }
+                Ok(Some(SmtExample { curr, past }))
             }
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SmtExample(BTreeMap<Net, Trit>);
+pub struct SmtExample {
+    curr: BTreeMap<Net, Trit>,
+    past: BTreeMap<Net, Trit>,
+}
 
 impl SmtExample {
-    pub fn get_net(&self, net: Net) -> Result<Trit, ()> {
-        self.0.get(&net).cloned().ok_or(())
+    pub fn get_net(&self, net: Net) -> Option<Trit> {
+        self.curr.get(&net).cloned()
     }
 
-    pub fn get_value<'a>(&self, value: impl Into<Cow<'a, Value>>) -> Result<Const, ()> {
+    pub fn get_value<'a>(&self, value: impl Into<Cow<'a, Value>>) -> Option<Const> {
         let mut result = Const::EMPTY;
         for net in &*value.into() {
             result.push(self.get_net(net)?);
         }
-        Ok(result)
+        Some(result)
+    }
+
+    pub fn get_past_net(&self, net: Net) -> Option<Trit> {
+        self.past.get(&net).cloned()
+    }
+
+    pub fn get_past_value<'a>(&self, value: impl Into<Cow<'a, Value>>) -> Option<Const> {
+        let mut result = Const::EMPTY;
+        for net in &*value.into() {
+            result.push(self.get_past_net(net)?);
+        }
+        Some(result)
     }
 }

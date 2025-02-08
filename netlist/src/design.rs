@@ -169,7 +169,7 @@ impl Design {
         }
         // Assume the caller might want to locate the cell behind the net.
         match mapped_net.as_cell_index() {
-            Some(index) if index >= self.cells.len() => net,
+            Ok(index) if index >= self.cells.len() => net,
             _ => mapped_net,
         }
     }
@@ -192,7 +192,21 @@ impl Design {
 
     pub fn verify<SMT: SmtEngine>(&self, engine: SMT) -> Result<(), SMT::Error> {
         let changes = self.changes.borrow();
-        let mut smt = SmtBuilder::new(engine);
+        let locate_cell = |net: Net| {
+            net.as_cell_index().map(|index| {
+                if index < self.cells.len() {
+                    &self.cells[index]
+                } else {
+                    &changes.added_cells[index - self.cells.len()]
+                }
+            })
+        };
+        let get_cell = |net: Net| match locate_cell(net) {
+            Ok(CellRepr::Skip(index)) => locate_cell(Net::from_cell_index(*index as usize)),
+            result => result,
+        };
+
+        let mut smt = SmtBuilder::new(self, engine);
         for (index, cell) in self.cells.iter().chain(changes.added_cells.iter()).enumerate() {
             if matches!(cell, CellRepr::Skip(_) | CellRepr::Void) {
             } else if cell.output_len() == 0 {
@@ -203,15 +217,16 @@ impl Design {
             }
         }
         for (&net, &new_net) in changes.replaced_nets.iter() {
-            if let Some(index) = net.as_cell_index() {
-                let cell = if index < self.cells.len() {
-                    &self.cells[index]
-                } else {
-                    &changes.added_cells[index - self.cells.len()]
-                };
+            if let Ok(cell) = get_cell(net) {
                 if matches!(cell, CellRepr::Void) {
                     smt.replace_void_net(net, new_net)?;
                     continue;
+                } else if matches!(&*cell.get(), Cell::Dff(_)) {
+                    if let Ok(new_cell) = get_cell(new_net) {
+                        if matches!(&*new_cell.get(), Cell::Dff(_)) {
+                            smt.replace_dff_net(net, new_net)?;
+                        }
+                    }
                 }
             }
             smt.replace_net(net, new_net)?;
@@ -225,8 +240,13 @@ impl Design {
                 } else if cell.output_len() == 0 {
                 } else {
                     let output = Value::cell(index, cell.output_len());
-                    let value = example.get_value(&output).unwrap();
-                    message.push_str(&format!("{} = {}\n", self.display_value(&output), value));
+                    let (now, was) = (example.get_past_value(&output), example.get_value(&output));
+                    message.push_str(&match (was, now) {
+                        (Some(was), Some(now)) => format!("{} = {} -> {}\n", self.display_value(&output), was, now),
+                        (None, Some(now)) => format!("{} = {}\n", self.display_value(&output), now),
+                        (Some(was), None) => format!("{} = {} -> ?\n", self.display_value(&output), was),
+                        (None, None) => unreachable!(),
+                    });
                 }
             }
             for (&net, &new_net) in changes.replaced_nets.iter() {

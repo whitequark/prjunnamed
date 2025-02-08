@@ -26,7 +26,7 @@ impl Design {
     }
 
     pub(crate) fn write_net(&self, f: &mut std::fmt::Formatter, net: Net) -> std::fmt::Result {
-        if let Some(index) = net.as_cell_index() {
+        if let Ok(index) = net.as_cell_index() {
             if !self.is_valid_cell_index(index) {
                 return write!(f, "%_{}", index);
             }

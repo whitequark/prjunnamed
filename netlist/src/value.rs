@@ -19,19 +19,6 @@ impl Net {
 
     const FIRST_CELL: u32 = 2; // Zero, One, then cells
 
-    pub(crate) fn from_cell_index(cell_index: usize) -> Net {
-        assert!(cell_index <= u32::MAX as usize - 3);
-        Net { index: cell_index as u32 + Net::FIRST_CELL }
-    }
-
-    pub(crate) fn as_cell_index(self) -> Option<usize> {
-        if self.index >= Self::FIRST_CELL && self != Self::UNDEF {
-            Some((self.index - Self::FIRST_CELL) as usize)
-        } else {
-            None
-        }
-    }
-
     pub fn as_const(self) -> Option<Trit> {
         if self == Self::UNDEF {
             Some(Trit::Undef)
@@ -41,6 +28,19 @@ impl Net {
             Some(Trit::One)
         } else {
             None
+        }
+    }
+
+    pub(crate) fn from_cell_index(cell_index: usize) -> Net {
+        assert!(cell_index <= u32::MAX as usize - 3);
+        Net { index: cell_index as u32 + Net::FIRST_CELL }
+    }
+
+    pub(crate) fn as_cell_index(self) -> Result<usize, Trit> {
+        if self.index >= Self::FIRST_CELL && self != Self::UNDEF {
+            Ok((self.index - Self::FIRST_CELL) as usize)
+        } else {
+            Err(self.as_const().unwrap())
         }
     }
 
