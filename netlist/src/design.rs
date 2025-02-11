@@ -4,6 +4,7 @@ use std::cell::RefCell;
 use std::borrow::Cow;
 use std::hash::Hash;
 use std::collections::{btree_map, BTreeMap, BTreeSet, HashMap};
+use std::rc::Rc;
 use std::sync::Arc;
 
 use crate::cell::CellRepr;
@@ -723,6 +724,21 @@ impl Display for Design {
         let removed = "-";
         let unchanged = " ";
 
+        let mut net_names = BTreeMap::new();
+        for cell_ref in self.iter_cells() {
+            match &*cell_ref.get() {
+                Cell::Output(name, value) | Cell::Name(name, value) | Cell::Debug(name, value) => {
+                    let name = Rc::new(name.clone());
+                    for (offset, net) in value.iter().enumerate() {
+                        if net.is_cell() {
+                            net_names.insert(net, (name.clone(), offset));
+                        }
+                    }
+                }
+                _ => ()
+            }
+        }
+
         if let Some(target) = self.target() {
             write!(f, "{}target ", if !diff { "" } else { unchanged })?;
             self.write_string(f, target.name())?;
@@ -747,6 +763,13 @@ impl Display for Design {
         }
 
         let write_cell = |f: &mut std::fmt::Formatter, index: usize, cell: &Cell| {
+            if cell.output_len() == 1 && !matches!(cell, Cell::Input(_, _)) {
+                if let Some((name, offset)) = net_names.get(&Net::from_cell_index(index)) {
+                    write!(f, "{}; ", if !diff { "" } else { unchanged })?;
+                    self.write_string(f, &*name)?;
+                    writeln!(f, "+{offset}")?;
+                }
+            }
             if !diff {
                 write!(f, "%{}:{} = ", index, cell.output_len())?;
                 self.write_cell(f, cell, "")?;
