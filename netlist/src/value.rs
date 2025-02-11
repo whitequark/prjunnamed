@@ -173,6 +173,10 @@ impl Value {
         self.nets.iter().copied()
     }
 
+    pub fn iter_mut(&mut self) -> impl DoubleEndedIterator<Item = &mut Net> + ExactSizeIterator + '_ {
+        self.nets.iter_mut()
+    }
+
     pub fn push(&mut self, net: impl Into<Net>) {
         self.nets.push(net.into());
     }

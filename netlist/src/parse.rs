@@ -649,6 +649,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
             "input" => Cell::Input(parse_string_arg(t)?, size),
             "output" => Cell::Output(parse_string_arg(t)?, parse_value_arg(t)?),
             "name" => Cell::Name(parse_string_arg(t)?, parse_value_arg(t)?),
+            "debug" => Cell::Debug(parse_string_arg(t)?, parse_value_arg(t)?),
             _ => return None,
         })
     }

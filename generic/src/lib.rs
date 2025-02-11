@@ -1,5 +1,6 @@
 use prjunnamed_netlist::Design;
 
+mod unname;
 mod decision;
 mod simplify;
 mod merge;
@@ -8,6 +9,7 @@ mod lower;
 mod lower_memory;
 mod iobuf_insert;
 
+pub use unname::unname;
 pub use decision::decision;
 pub use lower::lower;
 pub use iobuf_insert::iobuf_insert;

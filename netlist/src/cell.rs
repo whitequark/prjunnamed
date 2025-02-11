@@ -72,6 +72,7 @@ pub enum Cell {
     Input(String, usize),
     Output(String, Value),
     Name(String, Value),
+    Debug(String, Value),
 }
 
 impl Cell {
@@ -174,7 +175,7 @@ impl Cell {
             }
             Cell::Input(_, _) => (),
             Cell::Output(_, _) => (),
-            Cell::Name(_, _) => (),
+            Cell::Name(_, _) | Cell::Debug(_, _) => (),
         }
     }
 
@@ -340,7 +341,7 @@ impl Cell {
 
             Cell::Input(_, width) => *width,
             Cell::Output(_, _) => 0,
-            Cell::Name(_, _) => 0,
+            Cell::Name(_, _) | Cell::Debug(_, _) => 0,
         }
     }
 
@@ -357,7 +358,9 @@ impl Cell {
     pub fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
             Cell::Input(_, _) => (),
-            Cell::Buf(arg) | Cell::Not(arg) | Cell::Output(_, arg) | Cell::Name(_, arg) => arg.visit(&mut f),
+            Cell::Buf(arg) | Cell::Not(arg) | Cell::Output(_, arg) | Cell::Name(_, arg) | Cell::Debug(_, arg) => {
+                arg.visit(&mut f)
+            }
             Cell::And(arg1, arg2)
             | Cell::Or(arg1, arg2)
             | Cell::Xor(arg1, arg2)
@@ -396,7 +399,9 @@ impl Cell {
     pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
             Cell::Input(_, _) => (),
-            Cell::Buf(arg) | Cell::Not(arg) | Cell::Output(_, arg) | Cell::Name(_, arg) => arg.visit_mut(&mut f),
+            Cell::Buf(arg) | Cell::Not(arg) | Cell::Output(_, arg) | Cell::Name(_, arg) | Cell::Debug(_, arg) => {
+                arg.visit_mut(&mut f)
+            }
             Cell::And(arg1, arg2)
             | Cell::Or(arg1, arg2)
             | Cell::Xor(arg1, arg2)

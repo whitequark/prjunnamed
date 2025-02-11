@@ -553,7 +553,7 @@ impl<'a, SMT: SmtEngine> SmtBuilder<'a, SMT> {
             Cell::IoBuf(_io_buffer) => self.value(output)?, // i/en/o treated as POs/PIs
             Cell::Target(_target_cell) => unimplemented!("target cells cannot be lowered to SMT-LIB yet"),
             Cell::Other(_) => unreachable!("instances cannot be lowered to SMT-LIB"),
-            Cell::Input(_, _) | Cell::Output(_, _) | Cell::Name(_, _) => unreachable!(),
+            Cell::Input(_, _) | Cell::Output(_, _) | Cell::Name(_, _) | Cell::Debug(_, _) => unreachable!(),
         };
 
         Ok(bv_cell)

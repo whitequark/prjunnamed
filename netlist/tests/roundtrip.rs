@@ -96,6 +96,7 @@ fn test_cells() {
     roundtrip("%0:2 = input \"awa\"\n");
     roundtrip("%0:2 = buf 00\n%2:0 = output \"bite\" %0:2\n");
     roundtrip("%0:2 = buf 00\n%2:0 = name \"meow\" %0:2\n");
+    roundtrip("%0:2 = buf 00\n%2:0 = debug \"hiss\" %0:2\n");
 }
 
 #[test]

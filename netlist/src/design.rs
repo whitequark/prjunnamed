@@ -503,6 +503,8 @@ impl Design {
             Output(name.into(), value.into());
         add_name(name: impl Into<String>, value: impl Into<Value>) :
             Name(name.into(), value.into());
+        add_debug(name: impl Into<String>, value: impl Into<Value>) :
+            Debug(name.into(), value.into());
     }
 
     pub fn add_mux(&self, arg1: impl Into<ControlNet>, arg2: impl Into<Value>, arg3: impl Into<Value>) -> Value {
@@ -597,20 +599,23 @@ impl Design {
         let did_change = self.apply();
 
         let mut queue = BTreeSet::new();
-        for (index, cell) in self.cells.iter().enumerate() {
-            if matches!(cell, CellRepr::Skip(_) | CellRepr::Void) {
+        let mut debug = BTreeMap::new();
+        for (index, cell_repr) in self.cells.iter().enumerate() {
+            if matches!(cell_repr, CellRepr::Skip(_) | CellRepr::Void) {
                 continue;
             }
-            if cell.get().has_effects(self) {
+            let cell = &*cell_repr.get();
+            if cell.has_effects(self) {
                 queue.insert(index);
+            } else if let Cell::Debug(name, value) = cell {
+                debug.insert(name.clone(), value.clone());
             }
         }
 
         let mut keep = BTreeSet::new();
         while let Some(index) = queue.pop_first() {
             keep.insert(index);
-            let cell = &self.cells[index];
-            cell.visit(|net| {
+            self.cells[index].visit(|net| {
                 if let Ok((cell_ref, _offset)) = self.find_cell(net) {
                     if !keep.contains(&cell_ref.index) {
                         queue.insert(cell_ref.index);
@@ -636,10 +641,23 @@ impl Design {
 
         for cell in self.cells.iter_mut().filter(|cell| !matches!(cell, CellRepr::Skip(_))) {
             cell.visit_mut(|net| {
-                if ![Net::UNDEF, Net::ZERO, Net::ONE].contains(net) {
+                if net.is_cell() {
                     *net = net_map[net];
                 }
             });
+        }
+
+        for (name, mut value) in debug {
+            value.visit_mut(|net| {
+                if net.is_cell() {
+                    if let Some(&new_net) = net_map.get(net) {
+                        *net = new_net;
+                    } else {
+                        *net = Net::UNDEF;
+                    }
+                }
+            });
+            self.cells.push(CellRepr::Coarse(Box::new(Cell::Debug(name, value))));
         }
 
         did_change
@@ -688,7 +706,7 @@ impl Design {
                 Cell::Other(Instance { kind, .. }) => custom(format_args!("{kind}")),
                 Cell::Input(_, width) => fine("input", *width),
                 Cell::Output(_, value) => fine("output", value.len()),
-                Cell::Name(_, _) => (),
+                Cell::Name(_, _) | Cell::Debug(_, _) => (),
             }
         }
         result.into_inner()

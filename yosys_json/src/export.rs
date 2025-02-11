@@ -503,7 +503,7 @@ fn export_module(mut design: Design) -> yosys::Module {
             Cell::Output(port_name, value) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Output, indexer.value(value)))
             }
-            Cell::Name(name, value) => ys_module
+            Cell::Name(name, value) | Cell::Debug(name, value) => ys_module
                 .netnames
                 .add(&name.replace(" ", "."), NetDetails::new(indexer.value(value)).attr("hdlname", name)),
         };

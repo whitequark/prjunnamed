@@ -502,6 +502,12 @@ impl Design {
                 write!(f, " ")?;
                 self.write_value(f, value)?;
             }
+            Cell::Debug(name, value) => {
+                write!(f, "debug ")?;
+                self.write_string(f, name)?;
+                write!(f, " ")?;
+                self.write_value(f, value)?;
+            }
         }
         Ok(())
     }

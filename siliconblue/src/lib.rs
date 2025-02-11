@@ -765,6 +765,9 @@ impl SiliconBlueTarget {
     pub fn lower_luts(&self, design: &mut Design) {
         let mut use_count: HashMap<_, u32> = HashMap::new();
         for cell in design.iter_cells() {
+            if matches!(&*cell.get(), Cell::Debug(_, _)) {
+                continue;
+            }
             cell.visit(|net| *use_count.entry(net).or_default() += 1);
         }
 

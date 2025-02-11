@@ -1,10 +1,8 @@
 use std::{collections::BTreeMap, fs::File, io::Write};
 
-use prjunnamed_netlist::{Cell, Design};
+use prjunnamed_netlist::Design;
 
-fn process(name: &str, design: &mut Design) {
-    println!("; {} (initial)\n{:#}", name, design);
-
+fn process(design: &mut Design) {
     match design.target() {
         None => {
             prjunnamed_generic::decision(design);
@@ -13,22 +11,9 @@ fn process(name: &str, design: &mut Design) {
             prjunnamed_generic::canonicalize(design);
         }
         Some(ref target) => {
-            for cell_ref in design.iter_cells() {
-                if let Cell::Name(_, _) = &*cell_ref.get() {
-                    cell_ref.unalive();
-                }
-            }
-            design.apply();
+            prjunnamed_generic::unname(design);
             target.synthesize(design).expect("synthesis failed")
         }
-    }
-
-    println!("; {} (final)\n{}", name, design);
-
-    let stats = design.statistics();
-    println!("; cell counts:");
-    for (class, amount) in stats {
-        println!("; {:>7} {}", amount, class);
     }
 }
 
@@ -52,8 +37,14 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
 
     if input.ends_with(".uir") {
         let mut design = prjunnamed_netlist::parse(target, &std::fs::read_to_string(input)?)?;
-        process("top", &mut design);
-        if !output.is_empty() {
+        process(&mut design);
+        if output.is_empty() {
+            print!("{}", design);
+            println!("; cell counts:");
+            for (class, amount) in design.statistics() {
+                println!("; {:>7} {}", amount, class);
+            }
+        } else {
             if output.ends_with(".uir") {
                 write!(&mut File::create(output)?, "{design}")?;
             } else if output.ends_with(".json") {
@@ -67,15 +58,13 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
     } else if input.ends_with(".json") {
         let mut design_bundle = prjunnamed_yosys_json::import(target.clone(), &mut File::open(input)?)?;
-        for (name, design) in design_bundle.iter_mut() {
-            process(name, design);
+        for (_name, design) in design_bundle.iter_mut() {
+            process(design);
         }
-        if !output.is_empty() {
-            if output.ends_with(".json") {
-                prjunnamed_yosys_json::export(&mut File::create(output)?, design_bundle)?;
-            } else {
-                panic!("don't know what to do with output {output:?}")
-            }
+        if output.ends_with(".json") {
+            prjunnamed_yosys_json::export(&mut File::create(output)?, design_bundle)?;
+        } else {
+            panic!("don't know what to do with output {output:?}")
         }
     } else {
         panic!("don't know what to do with input {input:?}")

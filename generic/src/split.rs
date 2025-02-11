@@ -9,7 +9,7 @@ pub fn split(design: &mut Design) -> bool {
     // Find roots.
     for cell_ref in design.iter_cells() {
         let cell = cell_ref.get();
-        if cell_ref.get().has_effects(design) {
+        if cell.has_effects(design) {
             cell.visit(|net| {
                 queue.insert(net);
             })
@@ -76,6 +76,8 @@ pub fn split(design: &mut Design) -> bool {
                     queue.insert(ff.enable.net());
                 }
 
+                Cell::Debug(_, _) => (),
+
                 cell => cell.visit(|net| {
                     queue.insert(net);
                 }),
@@ -117,7 +119,7 @@ pub fn split(design: &mut Design) -> bool {
                     .map(|(offset, _out_net)| arg[offset]),
             )
         };
-        let (from_nets, to_nets) = match &*cell {
+        let (from_live_nets, to_live_nets) = match &*cell {
             Cell::Buf(arg) => (out_live_nets, design.add_buf(arg_live_nets(arg))),
             Cell::Not(arg) => (out_live_nets, design.add_not(arg_live_nets(arg))),
             Cell::And(arg1, arg2) => (out_live_nets, design.add_and(arg_live_nets(arg1), arg_live_nets(arg2))),
@@ -170,9 +172,9 @@ pub fn split(design: &mut Design) -> bool {
             _ => continue,
         };
         if cfg!(feature = "trace") {
-            eprintln!(">split {} => {}", design.display_value(&from_nets), design.display_value(&to_nets));
+            eprintln!(">split {} => {}", design.display_value(&from_live_nets), design.display_value(&to_live_nets));
         }
-        design.replace_value(from_nets, to_nets);
+        design.replace_value(from_live_nets, to_live_nets);
     }
 
     design.compact()
