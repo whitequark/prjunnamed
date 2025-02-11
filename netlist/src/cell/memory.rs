@@ -79,26 +79,83 @@ impl Memory {
         start..start + port.data_len
     }
 
+    // creates a transparency emulation mux, to be used by both sync-to-async conversion and transparency emulation.
+    // the data and mask given must be the same width as the read port.  the result is new data and mask:
+    // if the write port is writing to the same address as the read port is reading, the write data will be
+    // multiplexed onto the newly-returned data according to the write mask, and the new mask will be an OR of
+    // the input mask and the write mask.  otherwise, the returned data and mask are the same as the input.
+    // the mask can be None if the caller doesn't need to track it.
+    fn transparency_mux(
+        &self,
+        design: &Design,
+        read_port_index: usize,
+        write_port_index: usize,
+        data: Value,
+        mask: Option<Value>,
+    ) -> (Value, Option<Value>) {
+        let read_port = &self.read_ports[read_port_index];
+        let write_port = &self.write_ports[write_port_index];
+
+        // adjust write data/mask to read port width
+        let write_wide_log2 = write_port.wide_log2(self);
+        let read_wide_log2 = read_port.wide_log2(self);
+        let (write_addr, read_addr, write_data, write_mask) = match write_wide_log2.cmp(&read_wide_log2) {
+            std::cmp::Ordering::Less => {
+                // read wider than write: demux write data/mask using lower write addr bits
+                let wide_log2_diff = read_wide_log2 - write_wide_log2;
+                let select = write_port.addr.slice(..wide_log2_diff);
+                let write_addr = write_port.addr.slice(wide_log2_diff..);
+                let write_data =
+                    design.add_shl(write_port.data.zext(read_port.data_len), &select, write_port.data.len() as u32);
+                let write_mask =
+                    design.add_shl(write_port.mask.zext(read_port.data_len), &select, write_port.mask.len() as u32);
+                (write_addr, read_port.addr.clone(), write_data, write_mask)
+            }
+            std::cmp::Ordering::Equal => {
+                (write_port.addr.clone(), read_port.addr.clone(), write_port.data.clone(), write_port.mask.clone())
+            }
+            std::cmp::Ordering::Greater => {
+                // write wider than read: select write data/mask slices from wrport using lower read addr bits
+                let wide_log2_diff = write_wide_log2 - read_wide_log2;
+                let select = read_port.addr.slice(..wide_log2_diff);
+                let read_addr = read_port.addr.slice(wide_log2_diff..);
+                let write_data = design
+                    .add_ushr(&write_port.data, &select, write_port.data.len() as u32)
+                    .slice(..read_port.data_len);
+                let write_mask = design
+                    .add_ushr(&write_port.mask, &select, write_port.mask.len() as u32)
+                    .slice(..read_port.data_len);
+                (write_port.addr.clone(), read_addr, write_data, write_mask)
+            }
+        };
+
+        // compare the relevant address bits
+        let max_addr_width = std::cmp::max(read_addr.len(), write_addr.len());
+        let addr_eq = design.add_eq(read_addr.zext(max_addr_width), write_addr.zext(max_addr_width));
+
+        // perform actual muxing
+        let mut new_data = Value::EMPTY;
+        for ((data_bit, write_data_bit), mask_bit) in data.iter().zip(&write_data).zip(&write_mask) {
+            let sel_write = design.add_and1(addr_eq, mask_bit);
+            let new_data_bit = design.add_mux1(sel_write, write_data_bit, data_bit);
+            new_data.push(new_data_bit);
+        }
+        let new_mask = mask.map(|mask| design.add_mux(addr_eq, design.add_or(&mask, write_mask), mask));
+
+        (new_data, new_mask)
+    }
+
     pub fn unmap_read_dff(&mut self, design: &Design, port_index: usize, output: &mut Value) {
         let read_port = &mut self.read_ports[port_index];
         let Some(port_flip_flop) = read_port.flip_flop.take() else {
             return;
         };
+        let read_port = &self.read_ports[port_index];
         let new_port_output = design.add_void(read_port.data_len);
         let mut data = new_port_output.clone();
-        for (write_port, relation) in self.write_ports.iter().zip(port_flip_flop.relations) {
+        for (write_port_index, relation) in port_flip_flop.relations.into_iter().enumerate() {
             if relation == MemoryPortRelation::Transparent {
-                // TODO: support wide ports
-                assert_eq!(write_port.data.len(), read_port.data_len, "wide ports not currently supported");
-                let max_addr_width = std::cmp::max(read_port.addr.len(), write_port.addr.len());
-                let addr_eq = design.add_eq(read_port.addr.zext(max_addr_width), write_port.addr.zext(max_addr_width));
-                let mut new_data = Value::EMPTY;
-                for ((data_bit, write_data_bit), mask_bit) in data.iter().zip(&write_port.data).zip(&write_port.mask) {
-                    let sel_write = design.add_and1(addr_eq, mask_bit);
-                    let new_data_bit = design.add_mux1(sel_write, write_data_bit, data_bit);
-                    new_data.push(new_data_bit);
-                }
-                data = new_data;
+                (data, _) = self.transparency_mux(design, port_index, write_port_index, data, None);
             }
         }
         let q = design.add_dff(FlipFlop {
@@ -114,6 +171,79 @@ impl Memory {
         });
         let output_slice = self.read_port_output_slice(port_index);
         design.replace_value(output.slice(output_slice.clone()), q);
+        output[output_slice.clone()].copy_from_slice(&new_port_output[..]);
+    }
+
+    pub fn unmap_init_reset_transparency(
+        &mut self,
+        design: &Design,
+        port_index: usize,
+        include_transparency: bool,
+        output: &mut Value,
+    ) {
+        let read_port = &self.read_ports[port_index];
+        let port_flip_flop = read_port.flip_flop.as_ref().unwrap();
+
+        // create transparency data and mask values. data is the value that should override the read data,
+        // and mask is the validity mask corresponding to it.
+        // if not unmapping transparency, just set them to (X, 0).
+        let mut data = Value::undef(read_port.data_len);
+        let mut mask = Some(Value::zero(read_port.data_len));
+        if include_transparency {
+            for (write_port_index, &relation) in port_flip_flop.relations.iter().enumerate() {
+                if relation == MemoryPortRelation::Transparent {
+                    (data, mask) = self.transparency_mux(design, port_index, write_port_index, data, mask);
+                }
+            }
+        }
+        let mask = mask.unwrap();
+
+        // now delay the above by one cycle, and also mix in the unmapped clear/reset/init into it.
+        let read_port = &mut self.read_ports[port_index];
+        let port_flip_flop = read_port.flip_flop.as_mut().unwrap();
+        let data = design.add_dff(FlipFlop {
+            data,
+            clock: port_flip_flop.clock,
+            clear: port_flip_flop.clear,
+            reset: port_flip_flop.reset,
+            enable: port_flip_flop.enable,
+            reset_over_enable: port_flip_flop.reset_over_enable,
+            clear_value: std::mem::replace(&mut port_flip_flop.clear_value, Const::undef(read_port.data_len)),
+            reset_value: std::mem::replace(&mut port_flip_flop.reset_value, Const::undef(read_port.data_len)),
+            init_value: std::mem::replace(&mut port_flip_flop.init_value, Const::undef(read_port.data_len)),
+        });
+        let mask = design.add_dff(FlipFlop {
+            data: mask,
+            clock: port_flip_flop.clock,
+            clear: port_flip_flop.clear,
+            reset: port_flip_flop.reset,
+            enable: port_flip_flop.enable,
+            reset_over_enable: port_flip_flop.reset_over_enable,
+            clear_value: Const::ones(read_port.data_len),
+            reset_value: Const::ones(read_port.data_len),
+            init_value: Const::ones(read_port.data_len),
+        });
+        if include_transparency {
+            for relation in &mut port_flip_flop.relations {
+                if *relation == MemoryPortRelation::Transparent {
+                    *relation = MemoryPortRelation::Undefined;
+                }
+            }
+        }
+        port_flip_flop.clear = ControlNet::ZERO;
+        port_flip_flop.reset = ControlNet::ZERO;
+
+        // perform the actual muxing.
+        let new_port_output = design.add_void(read_port.data_len);
+        let mut mux = Value::EMPTY;
+        for ((new_output_bit, data_bit), mask_bit) in new_port_output.iter().zip(&data).zip(&mask) {
+            let mux_bit = design.add_mux1(mask_bit, data_bit, new_output_bit);
+            mux.push(mux_bit);
+        }
+
+        // and do the replacement.
+        let output_slice = self.read_port_output_slice(port_index);
+        design.replace_value(output.slice(output_slice.clone()), mux);
         output[output_slice.clone()].copy_from_slice(&new_port_output[..]);
     }
 }
