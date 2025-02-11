@@ -209,8 +209,8 @@ pub fn simplify(design: &mut Design) -> bool {
 // This optimization is comically general.  We are mostly interested in it for its useful special
 // cases:
 //
-// - `a + a` will get optimized into `{ 0 a }`
-// - `a + a + ci` will get optimized into `{ ci a }`
+// - `a + a` will get optimized into `{ a 0 }`
+// - `a + a + ci` will get optimized into `{ a ci }`
 // - when both operands have const LSBs, the low part is const-folded
 // - when one operand has const-0 LSBs, and the CI is 0, the low bits of output are replaced with
 //   bits of the other operand
