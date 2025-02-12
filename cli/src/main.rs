@@ -63,6 +63,10 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         }
         if output.ends_with(".json") {
             prjunnamed_yosys_json::export(&mut File::create(output)?, design_bundle)?;
+        } else if output.ends_with(".uir") {
+            assert_eq!(design_bundle.len(), 1, "can only convert single-module Yosys JSON to Unnamed IR");
+            let design = design_bundle.values().next().unwrap();
+            write!(&mut File::create(output)?, "{design}")?;
         } else {
             panic!("don't know what to do with output {output:?}")
         }
