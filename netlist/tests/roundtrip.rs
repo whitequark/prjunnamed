@@ -265,11 +265,11 @@ impl Target for TestTarget {
 #[test]
 fn test_target() {
     register_target("test", |options| Ok(TestTarget::new(options)));
-    roundtrip("target \"test\" \"device\"=\"example\"\n");
+    roundtrip("set target \"test\" \"device\"=\"example\"\n");
     onewaytrip(
-        "target \"test\"\n%0:4 = target \"QUAD_IOBUF\" {\n}\n",
+        "set target \"test\"\n%0:4 = target \"QUAD_IOBUF\" {\n}\n",
         concat!(
-            "target \"test\"\n",
+            "set target \"test\"\n",
             "%0:4 = target \"QUAD_IOBUF\" {\n",
             "  param \"OE_INVERT\" = 0\n",
             "  param \"PULLUP\" = 0000\n",
@@ -280,7 +280,7 @@ fn test_target() {
         ),
     );
     roundtrip(concat!(
-        "target \"test\"\n",
+        "set target \"test\"\n",
         "&\"pins\":3\n",
         "%0:4 = input \"O\"\n",
         "%4:4 = target \"QUAD_IOBUF\" {\n",

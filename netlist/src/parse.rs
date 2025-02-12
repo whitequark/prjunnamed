@@ -166,6 +166,15 @@ fn parse_keyword_eq(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> O
 }
 
 #[must_use]
+fn parse_keyword_expect(t: &mut WithContext<impl Tokens<Item = char>, Context>, expected: &str) -> Option<()> {
+    let keyword = parse_keyword(t)?;
+    if keyword != expected {
+        return None;
+    }
+    Some(())
+}
+
+#[must_use]
 fn parse_keyword_eq_expect(t: &mut WithContext<impl Tokens<Item = char>, Context>, expected: &str) -> Option<()> {
     let keyword = parse_keyword_eq(t)?;
     if keyword != expected {
@@ -299,10 +308,9 @@ fn parse_target_option(t: &mut WithContext<impl Tokens<Item = char>, Context>) -
 }
 
 fn parse_target(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<()> {
-    let keyword = parse_keyword(t)?;
-    if keyword != "target" {
-        return None;
-    }
+    parse_keyword_expect(t, "set")?;
+    parse_blank(t);
+    parse_keyword_expect(t, "target")?;
     parse_blank(t);
     let name = parse_string(t)?;
     let mut options = BTreeMap::new();

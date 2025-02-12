@@ -741,7 +741,7 @@ impl Display for Design {
         }
 
         if let Some(target) = self.target() {
-            write!(f, "{}target ", if !diff { "" } else { unchanged })?;
+            write!(f, "{}set target ", if !diff { "" } else { unchanged })?;
             self.write_string(f, target.name())?;
             for (name, value) in target.options() {
                 write!(f, " ")?;
