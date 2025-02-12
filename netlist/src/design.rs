@@ -707,7 +707,7 @@ impl Design {
                 Cell::Other(Instance { kind, .. }) => custom(format_args!("{kind}")),
                 Cell::Input(_, width) => fine("input", *width),
                 Cell::Output(_, value) => fine("output", value.len()),
-                Cell::Name(_, _) | Cell::Debug(_, _) => (),
+                Cell::Name(..) | Cell::Debug(..) => (),
             }
         }
         result.into_inner()
@@ -763,7 +763,7 @@ impl Display for Design {
         }
 
         let write_cell = |f: &mut std::fmt::Formatter, index: usize, cell: &Cell| {
-            if cell.output_len() == 1 && !matches!(cell, Cell::Input(_, _)) {
+            if cell.output_len() == 1 && !matches!(cell, Cell::Input(..)) {
                 if let Some((name, offset)) = net_names.get(&Net::from_cell_index(index)) {
                     write!(f, "{}; ", if !diff { "" } else { unchanged })?;
                     self.write_string(f, &*name)?;

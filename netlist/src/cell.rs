@@ -99,10 +99,10 @@ impl Cell {
                 assert!(!arg1.is_empty());
             }
 
-            Cell::Shl(_, _, _) => (),
-            Cell::UShr(_, _, _) => (),
+            Cell::Shl(..) => (),
+            Cell::UShr(..) => (),
             Cell::SShr(arg1, _, _) => assert!(!arg1.is_empty()),
-            Cell::XShr(_, _, _) => (),
+            Cell::XShr(..) => (),
 
             Cell::Match(match_cell) => {
                 for alternates in &match_cell.patterns {
@@ -173,9 +173,9 @@ impl Cell {
             Cell::Other(_instance) => {
                 // TODO
             }
-            Cell::Input(_, _) => (),
-            Cell::Output(_, _) => (),
-            Cell::Name(_, _) | Cell::Debug(_, _) => (),
+            Cell::Input(..) => (),
+            Cell::Output(..) => (),
+            Cell::Name(..) | Cell::Debug(..) => (),
         }
     }
 
@@ -247,13 +247,13 @@ impl CellRepr {
             CellRepr::Void => unreachable!("void cell"),
             CellRepr::Skip(_) => unreachable!("skip cell"),
 
-            CellRepr::Buf(_)
-            | CellRepr::Not(_)
-            | CellRepr::And(_, _)
-            | CellRepr::Or(_, _)
-            | CellRepr::Xor(_, _)
-            | CellRepr::Mux(_, _, _) => 1,
-            CellRepr::Adc(_, _, _) => 2,
+            CellRepr::Buf(..)
+            | CellRepr::Not(..)
+            | CellRepr::And(..)
+            | CellRepr::Or(..)
+            | CellRepr::Xor(..)
+            | CellRepr::Mux(..) => 1,
+            CellRepr::Adc(..) => 2,
 
             CellRepr::Coarse(coarse) => coarse.output_len(),
         }
@@ -313,7 +313,7 @@ impl Cell {
                 arg1.len() + 1
             }
 
-            Cell::Eq(_, _) | Cell::ULt(_, _) | Cell::SLt(_, _) => 1,
+            Cell::Eq(..) | Cell::ULt(..) | Cell::SLt(..) => 1,
 
             Cell::Shl(arg1, _, _) | Cell::UShr(arg1, _, _) | Cell::SShr(arg1, _, _) | Cell::XShr(arg1, _, _) => {
                 arg1.len()
@@ -340,14 +340,14 @@ impl Cell {
             Cell::Other(instance) => instance.output_len(),
 
             Cell::Input(_, width) => *width,
-            Cell::Output(_, _) => 0,
-            Cell::Name(_, _) | Cell::Debug(_, _) => 0,
+            Cell::Output(..) => 0,
+            Cell::Name(..) | Cell::Debug(..) => 0,
         }
     }
 
     pub fn has_effects(&self, design: &Design) -> bool {
         match self {
-            Cell::IoBuf(_) | Cell::Other(_) | Cell::Input(_, _) | Cell::Output(_, _) | Cell::Name(_, _) => true,
+            Cell::IoBuf(_) | Cell::Other(_) | Cell::Input(..) | Cell::Output(..) | Cell::Name(..) => true,
 
             Cell::Target(target_cell) => design.target_prototype(&target_cell).purity == TargetCellPurity::HasEffects,
 
@@ -357,7 +357,7 @@ impl Cell {
 
     pub fn visit(&self, mut f: impl FnMut(Net)) {
         match self {
-            Cell::Input(_, _) => (),
+            Cell::Input(..) => (),
             Cell::Buf(arg) | Cell::Not(arg) | Cell::Output(_, arg) | Cell::Name(_, arg) | Cell::Debug(_, arg) => {
                 arg.visit(&mut f)
             }
@@ -398,7 +398,7 @@ impl Cell {
 
     pub fn visit_mut(&mut self, mut f: impl FnMut(&mut Net)) {
         match self {
-            Cell::Input(_, _) => (),
+            Cell::Input(..) => (),
             Cell::Buf(arg) | Cell::Not(arg) | Cell::Output(_, arg) | Cell::Name(_, arg) | Cell::Debug(_, arg) => {
                 arg.visit_mut(&mut f)
             }

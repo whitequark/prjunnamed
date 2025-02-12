@@ -484,13 +484,13 @@ impl<'a, SMT: SmtEngine> SmtBuilder<'a, SMT> {
                 };
                 self.tv_extract(value.len() - 1, 0, tv_result)
             }
-            Cell::Mul(_, _) => unimplemented!("lowering of mul to SMT-LIB is not implemented"),
-            Cell::UDiv(_, _) => unimplemented!("lowering of udiv to SMT-LIB is not implemented"),
-            Cell::UMod(_, _) => unimplemented!("lowering of umod to SMT-LIB is not implemented"),
-            Cell::SDivTrunc(_, _) => unimplemented!("lowering of sdiv_trunc to SMT-LIB is not implemented"),
-            Cell::SDivFloor(_, _) => unimplemented!("lowering of sdiv_floor to SMT-LIB is not implemented"),
-            Cell::SModTrunc(_, _) => unimplemented!("lowering of smod_trunc to SMT-LIB is not implemented"),
-            Cell::SModFloor(_, _) => unimplemented!("lowering of smod_floor to SMT-LIB is not implemented"),
+            Cell::Mul(..) => unimplemented!("lowering of mul to SMT-LIB is not implemented"),
+            Cell::UDiv(..) => unimplemented!("lowering of udiv to SMT-LIB is not implemented"),
+            Cell::UMod(..) => unimplemented!("lowering of umod to SMT-LIB is not implemented"),
+            Cell::SDivTrunc(..) => unimplemented!("lowering of sdiv_trunc to SMT-LIB is not implemented"),
+            Cell::SDivFloor(..) => unimplemented!("lowering of sdiv_floor to SMT-LIB is not implemented"),
+            Cell::SModTrunc(..) => unimplemented!("lowering of smod_trunc to SMT-LIB is not implemented"),
+            Cell::SModFloor(..) => unimplemented!("lowering of smod_floor to SMT-LIB is not implemented"),
             Cell::Match(MatchCell { value, enable, patterns }) => {
                 let mut tv_matches = vec![];
                 for alternates in patterns {
@@ -553,7 +553,7 @@ impl<'a, SMT: SmtEngine> SmtBuilder<'a, SMT> {
             Cell::IoBuf(_io_buffer) => self.value(output)?, // i/en/o treated as POs/PIs
             Cell::Target(_target_cell) => unimplemented!("target cells cannot be lowered to SMT-LIB yet"),
             Cell::Other(_) => unreachable!("instances cannot be lowered to SMT-LIB"),
-            Cell::Input(_, _) | Cell::Output(_, _) | Cell::Name(_, _) | Cell::Debug(_, _) => unreachable!(),
+            Cell::Input(..) | Cell::Output(..) | Cell::Name(..) | Cell::Debug(..) => unreachable!(),
         };
 
         Ok(bv_cell)
@@ -561,7 +561,7 @@ impl<'a, SMT: SmtEngine> SmtBuilder<'a, SMT> {
 
     pub fn add_cell(&mut self, output: &Value, cell: &Cell) -> Result<(), SMT::Error> {
         // Declare the nets used by the cell so that it is present in the counterexample even if unused.
-        if let Cell::Input(_, _) = cell {
+        if let Cell::Input(..) = cell {
             self.curr_value(output)?;
             return Ok(());
         }

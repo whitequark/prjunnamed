@@ -76,7 +76,7 @@ pub fn split(design: &mut Design) -> bool {
                     queue.insert(ff.enable.net());
                 }
 
-                Cell::Debug(_, _) => (),
+                Cell::Debug(..) => (),
 
                 cell => cell.visit(|net| {
                     queue.insert(net);
