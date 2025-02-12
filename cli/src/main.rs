@@ -1,6 +1,6 @@
-use std::{collections::BTreeMap, fs::File, io::Write};
+use std::{collections::BTreeMap, error::Error, fs::File, io::Write, sync::Arc};
 
-use prjunnamed_netlist::Design;
+use prjunnamed_netlist::{Design, Target};
 
 fn process(design: &mut Design) {
     match design.target() {
@@ -17,9 +17,39 @@ fn process(design: &mut Design) {
     }
 }
 
-fn run() -> Result<(), Box<dyn std::error::Error>> {
-    prjunnamed_siliconblue::register();
+fn read_input(target: Option<Arc<dyn Target>>, name: String) -> Result<Design, Box<dyn Error>> {
+    if name.ends_with(".uir") {
+        Ok(prjunnamed_netlist::parse(target, &std::fs::read_to_string(name)?)?)
+    } else if name.ends_with(".json") {
+        let designs = prjunnamed_yosys_json::import(target, &mut File::open(name)?)?;
+        assert_eq!(designs.len(), 1, "can only convert single-module Yosys JSON to Unnamed IR");
+        Ok(designs.into_values().next().unwrap())
+    } else if name.is_empty() {
+        panic!("no input provided")
+    } else {
+        panic!("don't know what to do with input {name:?}")
+    }
+}
 
+fn write_output(design: Design, name: String) -> Result<(), Box<dyn Error>> {
+    if name.ends_with(".uir") {
+        write!(&mut File::create(name)?, "{design}")?;
+    } else if name.ends_with(".json") {
+        let designs = BTreeMap::from([("top".to_owned(), design)]);
+        prjunnamed_yosys_json::export(&mut File::create(name)?, designs)?;
+    } else if name.is_empty() {
+        print!("{design}");
+        println!("; cell counts:");
+        for (class, amount) in design.statistics() {
+            println!("; {:>7} {}", amount, class);
+        }
+    } else {
+        panic!("don't know what to do with output {name:?}")
+    }
+    Ok(())
+}
+
+fn run() -> Result<(), Box<dyn Error>> {
     let mut input = String::new();
     let mut output = String::new();
     let mut target = None::<String>;
@@ -31,49 +61,15 @@ fn run() -> Result<(), Box<dyn std::error::Error>> {
         parser.parse_args_or_exit();
     }
 
-    let target = target.map(|name| {
-        prjunnamed_netlist::create_target(name.as_str(), BTreeMap::new()).unwrap_or_else(|err| panic!("{}", err))
-    });
+    prjunnamed_siliconblue::register();
+    let target = match target {
+        Some(name) => Some(prjunnamed_netlist::create_target(name.as_str(), BTreeMap::new())?),
+        None => None,
+    };
 
-    if input.ends_with(".uir") {
-        let mut design = prjunnamed_netlist::parse(target, &std::fs::read_to_string(input)?)?;
-        process(&mut design);
-        if output.is_empty() {
-            print!("{}", design);
-            println!("; cell counts:");
-            for (class, amount) in design.statistics() {
-                println!("; {:>7} {}", amount, class);
-            }
-        } else {
-            if output.ends_with(".uir") {
-                write!(&mut File::create(output)?, "{design}")?;
-            } else if output.ends_with(".json") {
-                prjunnamed_yosys_json::export(
-                    &mut File::create(output)?,
-                    BTreeMap::from_iter([("top".to_owned(), design)]),
-                )?;
-            } else {
-                panic!("don't know what to do with output {output:?}")
-            }
-        }
-    } else if input.ends_with(".json") {
-        let mut design_bundle = prjunnamed_yosys_json::import(target.clone(), &mut File::open(input)?)?;
-        for (_name, design) in design_bundle.iter_mut() {
-            process(design);
-        }
-        if output.ends_with(".json") {
-            prjunnamed_yosys_json::export(&mut File::create(output)?, design_bundle)?;
-        } else if output.ends_with(".uir") {
-            assert_eq!(design_bundle.len(), 1, "can only convert single-module Yosys JSON to Unnamed IR");
-            let design = design_bundle.values().next().unwrap();
-            write!(&mut File::create(output)?, "{design}")?;
-        } else {
-            panic!("don't know what to do with output {output:?}")
-        }
-    } else {
-        panic!("don't know what to do with input {input:?}")
-    }
-
+    let mut design = read_input(target, input)?;
+    process(&mut design);
+    write_output(design, output)?;
     Ok(())
 }
 
