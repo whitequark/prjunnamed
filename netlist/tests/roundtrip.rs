@@ -205,11 +205,11 @@ fn test_instances() {
 
 #[test]
 fn test_instance_params() {
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=const(10X)\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=int(15)\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=int(-33)\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=string(\"x\")\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=string(\"x\\7f\")\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=10X\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=#15\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=#-33\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=\"x\"\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=\"x\\7f\"\n}\n");
 }
 
 #[derive(Debug)]
@@ -271,8 +271,8 @@ fn test_target() {
         concat!(
             "target \"test\"\n",
             "%0:4 = target \"QUAD_IOBUF\" {\n",
-            "  p@\"OE_INVERT\"=const(0)\n",
-            "  p@\"PULLUP\"=const(0000)\n",
+            "  p@\"OE_INVERT\"=0\n",
+            "  p@\"PULLUP\"=0000\n",
             "  i@\"O\"=XXXX\n",
             "  i@\"OE\"=0\n",
             "  io@\"IO\"=&_:4\n",
@@ -284,8 +284,8 @@ fn test_target() {
         "&\"pins\":3\n",
         "%0:4 = input \"O\"\n",
         "%4:4 = target \"QUAD_IOBUF\" {\n",
-        "  p@\"OE_INVERT\"=const(0)\n",
-        "  p@\"PULLUP\"=const(1010)\n",
+        "  p@\"OE_INVERT\"=0\n",
+        "  p@\"PULLUP\"=1010\n",
         "  i@\"O\"=%0:4\n",
         "  i@\"OE\"=1\n",
         "  io@\"IO\"={ &\"pins\"+0 &\"pins\"+1 &\"pins\"+2 &_ }\n",

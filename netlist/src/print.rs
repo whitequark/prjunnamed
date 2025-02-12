@@ -205,16 +205,11 @@ impl Design {
 
         let write_param_value = |f: &mut std::fmt::Formatter, value: &ParamValue| -> std::fmt::Result {
             match value {
-                ParamValue::Const(value) => write!(f, "const({})", value)?,
-                ParamValue::Int(value) => write!(f, "int({})", value)?,
-                ParamValue::Float(value) => write!(f, "float({})", value)?,
-                ParamValue::String(value) => {
-                    write!(f, "string(")?;
-                    self.write_string(f, value)?;
-                    write!(f, ")")?;
-                }
+                ParamValue::Const(value) => write!(f, "{value}"),
+                ParamValue::Int(value) => write!(f, "#{value}"),
+                ParamValue::Float(_value) => unimplemented!("float parameter"),
+                ParamValue::String(value) => self.write_string(f, value)
             }
-            Ok(())
         };
 
         let write_cell_argument = |f: &mut std::fmt::Formatter, sigil: &str, name: &str| -> std::fmt::Result {

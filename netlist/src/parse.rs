@@ -705,18 +705,11 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                     );
                 }
                 "p" => {
-                    let keyword = parse_keyword(t)?;
-                    parse_symbol(t, '(')?;
-                    parse_blank(t);
-                    let value = match keyword.as_str() {
-                        "const" => ParamValue::Const(parse_const(t)?),
-                        "int" => ParamValue::Int(parse_decimal(t)?),
-                        "string" => ParamValue::String(parse_string(t)?),
-                        "float" => todo!(),
-                        _ => return None,
-                    };
-                    parse_blank(t);
-                    parse_symbol(t, ')')?;
+                    let value = one_of!(t;
+                        parse_const(t).map(ParamValue::Const),
+                        parse_symbol(t, '#').and_then(|()| parse_decimal(t)).map(ParamValue::Int),
+                        parse_string(t).map(ParamValue::String)
+                    )?;
                     assert!(instance.params.insert(name, value).is_none(), "duplicate parameter name in instance");
                 }
                 _ => return None,

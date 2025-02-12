@@ -19,8 +19,8 @@ fn test_export_lut4_carry() {
         %0:4 = input "i"
         %4:1 = input "ci"
         %5:2 = target "SB_LUT4_CARRY" {
-            p@"LUT_INIT"=const(0001001000110100)
-            p@"IS_I3_CI"=const(0)
+            p@"LUT_INIT"=0001001000110100
+            p@"IS_I3_CI"=0
             i@"I"=%0:4
             i@"CI"=%4
         }
@@ -32,7 +32,7 @@ fn test_export_lut4_carry() {
         %0:4 = input "i"
         %4:1 = input "ci"
         %5:1 = "SB_LUT4" {
-            p@"LUT_INIT"=const(0001001000110100)
+            p@"LUT_INIT"=0001001000110100
             i@"I0"=%0+0
             i@"I1"=%0+1
             i@"I2"=%0+2
