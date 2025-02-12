@@ -565,7 +565,7 @@ impl Design {
         // as soon as we start processing it, so cycles will be automatically broken
         // by considering inputs already on the processing stack as "already emitted".
         for cell in self.iter_cells() {
-            if matches!(&*cell.get(), Cell::Output(..) | Cell::Name(..)) {
+            if matches!(&*cell.get(), Cell::Output(..) | Cell::Name(..) | Cell::Debug(..)) {
                 continue;
             }
             if visited.contains(&cell.index) {
@@ -586,7 +586,7 @@ impl Design {
                 stack.pop();
             }
         }
-        // finally, emit outputs and names
+        // finally, emit outputs, names, and debugs
         for cell in self.iter_cells() {
             if visited.contains(&cell.index) {
                 continue;
