@@ -83,6 +83,20 @@ fn parse_space(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
     t.skip_while(|c| *c == ' ' || *c == '\t') > 0
 }
 
+fn parse_comment(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
+    if !t.token(';') {
+        return false;
+    }
+    t.skip_while(|c| *c != '\n');
+    true
+}
+
+fn parse_blank(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
+    let space = parse_space(t);
+    let comment = parse_comment(t);
+    space || comment
+}
+
 fn parse_symbol(t: &mut WithContext<impl Tokens<Item = char>, Context>, symbol: char) -> Option<()> {
     if !t.token(symbol) {
         return None;
@@ -145,9 +159,9 @@ fn parse_keyword(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Opti
 
 fn parse_keyword_eq(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<String> {
     let keyword = parse_keyword(t)?;
-    parse_space(t);
+    parse_blank(t);
     parse_symbol(t, '=')?;
-    parse_space(t);
+    parse_blank(t);
     Some(keyword)
 }
 
@@ -200,7 +214,7 @@ fn parse_io_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>)
     parse_symbol(t, '{')?;
     let parts = Vec::from_iter(
         t.many(|t| {
-            parse_space(t);
+            parse_blank(t);
             parse_io_net(t)
         })
         .as_iter(),
@@ -208,7 +222,7 @@ fn parse_io_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>)
     for part in parts.into_iter().rev() {
         value.extend([part]);
     }
-    parse_space(t);
+    parse_blank(t);
     parse_symbol(t, '}')?;
     Some(value)
 }
@@ -261,7 +275,7 @@ fn parse_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) ->
     parse_symbol(t, '{')?;
     let parts = Vec::from_iter(
         t.many(|t| {
-            parse_space(t);
+            parse_blank(t);
             parse_value_part(t)
         })
         .as_iter(),
@@ -269,28 +283,27 @@ fn parse_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) ->
     for part in parts.into_iter().rev() {
         value.extend(part);
     }
-    parse_space(t);
+    parse_blank(t);
     parse_symbol(t, '}')?;
     Some(value)
 }
 
 fn parse_target_option(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(String, String)> {
-    parse_space(t);
+    parse_blank(t);
     let name = parse_string(t)?;
-    parse_space(t);
+    parse_blank(t);
     parse_symbol(t, '=')?;
-    parse_space(t);
+    parse_blank(t);
     let value = parse_string(t)?;
     Some((name, value))
 }
 
 fn parse_target(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<()> {
-    parse_space(t);
     let keyword = parse_keyword(t)?;
     if keyword != "target" {
         return None;
     }
-    parse_space(t);
+    parse_blank(t);
     let name = parse_string(t)?;
     let mut options = BTreeMap::new();
     while let Some((name, value)) = parse_target_option(t) {
@@ -298,7 +311,7 @@ fn parse_target(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Optio
             panic!("target option is specified more than once");
         }
     }
-    parse_space(t);
+    parse_blank(t);
     parse_symbol(t, '\n')?;
     let context = t.context_mut();
     if !context.is_empty {
@@ -310,9 +323,8 @@ fn parse_target(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Optio
 }
 
 fn parse_io(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
-    parse_space(t);
     let (name, size) = parse_io_name_size(t)?;
-    parse_space(t);
+    parse_blank(t);
     parse_symbol(t, '\n')?;
     let io_value = t.context_mut().add_io(name, size);
     t.context_mut().design.apply();
@@ -321,7 +333,7 @@ fn parse_io(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Io
 
 fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Value> {
     fn parse_value_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Value> {
-        parse_space(t);
+        parse_blank(t);
         one_of!(t;
             parse_value_part(t),
             parse_value_concat(t)
@@ -329,7 +341,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
     }
 
     fn parse_net_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Net> {
-        parse_space(t);
+        parse_blank(t);
         parse_value_part(t).map(|value| {
             assert_eq!(value.len(), 1, "reference should be a single net");
             value[0]
@@ -337,7 +349,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
     }
 
     fn parse_control_net_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<ControlNet> {
-        parse_space(t);
+        parse_blank(t);
         let negated = parse_symbol(t, '!').is_some();
         let net = parse_net_arg(t)?;
         if negated {
@@ -348,19 +360,19 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
     }
 
     fn parse_control_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>, name: &str) -> Option<ControlNet> {
-        parse_space(t);
+        parse_blank(t);
         parse_keyword_eq_expect(t, name)?;
         parse_control_net_arg(t)
     }
 
     fn parse_int_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<usize> {
-        parse_space(t);
+        parse_blank(t);
         parse_symbol(t, '#')?;
         parse_decimal(t)
     }
 
     fn parse_string_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<String> {
-        parse_space(t);
+        parse_blank(t);
         parse_string(t)
     }
 
@@ -370,9 +382,9 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
     ) -> Option<(ControlNet, Option<Const>)> {
         parse_control_arg(t, name).map(|control_net| {
             let init_value = t.optional(|t| {
-                parse_space(t);
+                parse_blank(t);
                 parse_symbol(t, ',')?;
-                parse_space(t);
+                parse_blank(t);
                 parse_const(t)
             });
             (control_net, init_value)
@@ -380,7 +392,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
     }
 
     fn parse_reset_over_enable_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<bool> {
-        parse_space(t);
+        parse_blank(t);
         one_of!(t;
             parse_keyword(t).filter(|kw| kw == "rst>en").map(|_| true),
             parse_keyword(t).filter(|kw| kw == "en>rst").map(|_| false),
@@ -388,7 +400,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
     }
 
     fn parse_dff_init_value_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Const> {
-        parse_space(t);
+        parse_blank(t);
         parse_keyword_eq_expect(t, "init")?;
         parse_const(t)
     }
@@ -420,44 +432,44 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
             "match" => {
                 let enable = t
                     .optional(|t| {
-                        parse_space(t);
+                        parse_blank(t);
                         parse_keyword_eq_expect(t, "en")?;
                         parse_net_arg(t)
                     })
                     .unwrap_or(Net::ONE);
                 let value = parse_value_arg(t)?;
                 let mut patterns = Vec::new();
-                parse_space(t);
+                parse_blank(t);
                 parse_symbol(t, '{');
-                parse_space(t);
+                parse_blank(t);
                 parse_symbol(t, '\n');
                 while let Some(()) = t.optional(|t| {
-                    parse_space(t);
+                    parse_blank(t);
                     let mut alternates = Vec::new();
                     if let Some(()) = parse_symbol(t, '[') {
                         while let Some(()) = t.optional(|t| {
-                            parse_space(t);
+                            parse_blank(t);
                             alternates.push(parse_const(t)?);
                             Some(())
                         }) {}
-                        parse_space(t);
+                        parse_blank(t);
                         parse_symbol(t, ']')?;
                     } else {
                         alternates.push(parse_const(t)?);
                     }
-                    parse_space(t);
+                    parse_blank(t);
                     parse_symbol(t, '\n');
                     patterns.push(alternates);
                     Some(())
                 }) {}
-                parse_space(t);
+                parse_blank(t);
                 parse_symbol(t, '}');
                 Cell::Match(MatchCell { value, enable, patterns })
             }
             "assign" => {
                 let enable = t
                     .optional(|t| {
-                        parse_space(t);
+                        parse_blank(t);
                         parse_keyword_eq_expect(t, "en")?;
                         parse_net_arg(t)
                     })
@@ -466,7 +478,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 let update = parse_value_arg(t)?;
                 let offset = t
                     .optional(|t| {
-                        parse_space(t);
+                        parse_blank(t);
                         parse_keyword_eq_expect(t, "at")?;
                         parse_symbol(t, '#')?;
                         parse_decimal(t)
@@ -500,25 +512,25 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 })
             }
             "memory" => {
-                parse_space(t);
+                parse_blank(t);
                 parse_keyword_eq_expect(t, "depth")?;
                 parse_symbol(t, '#')?;
                 let depth = parse_decimal(t)?;
-                parse_space(t);
+                parse_blank(t);
                 parse_keyword_eq_expect(t, "width")?;
                 parse_symbol(t, '#')?;
                 let width = parse_decimal(t)?;
-                parse_space(t);
+                parse_blank(t);
                 parse_symbol(t, '{')?;
-                parse_space(t);
+                parse_blank(t);
                 parse_symbol(t, '\n')?;
                 let mut init_value = Const::EMPTY;
                 let mut write_ports = Vec::new();
                 let mut read_ports = Vec::new();
                 while let Some(()) = t.optional(|t| {
-                    parse_space(t);
+                    parse_blank(t);
                     let keyword = parse_keyword(t)?;
-                    parse_space(t);
+                    parse_blank(t);
                     match keyword.as_str() {
                         "init" => {
                             init_value.extend(parse_const(t)?);
@@ -526,10 +538,10 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         "write" => {
                             parse_keyword_eq_expect(t, "addr")?;
                             let addr = parse_value_arg(t)?;
-                            parse_space(t);
+                            parse_blank(t);
                             parse_keyword_eq_expect(t, "data")?;
                             let data = parse_value_arg(t)?;
-                            parse_space(t);
+                            parse_blank(t);
                             let mask = t
                                 .optional(|t| {
                                     parse_keyword_eq_expect(t, "mask")?;
@@ -542,7 +554,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         "read" => {
                             parse_keyword_eq_expect(t, "addr")?;
                             let addr = parse_value_arg(t)?;
-                            parse_space(t);
+                            parse_blank(t);
                             parse_keyword_eq_expect(t, "width")?;
                             parse_symbol(t, '#')?;
                             let width = parse_decimal(t)?;
@@ -560,10 +572,10 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                                 let init_value =
                                     t.optional(|t| parse_dff_init_value_arg(t)).unwrap_or_else(|| Const::undef(width));
                                 let mut relations = vec![];
-                                parse_space(t);
+                                parse_blank(t);
                                 parse_symbol(t, '[');
                                 while let Some(()) = t.optional(|t| {
-                                    parse_space(t);
+                                    parse_blank(t);
                                     let keyword = parse_keyword(t)?;
                                     relations.push(match keyword.as_str() {
                                         "undef" => MemoryPortRelation::Undefined,
@@ -573,7 +585,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                                     });
                                     Some(())
                                 }) {}
-                                parse_space(t);
+                                parse_blank(t);
                                 parse_symbol(t, ']');
                                 Some(MemoryReadFlipFlop {
                                     clock,
@@ -591,11 +603,11 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         }
                         _ => return None,
                     }
-                    parse_space(t);
+                    parse_blank(t);
                     parse_symbol(t, '\n')?;
                     Some(())
                 }) {}
-                parse_space(t);
+                parse_blank(t);
                 parse_symbol(t, '}')?;
                 Cell::Memory(Memory {
                     depth,
@@ -606,16 +618,16 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 })
             }
             "iobuf" => {
-                parse_space(t);
+                parse_blank(t);
                 let io = parse_io_value(t)?;
-                parse_space(t);
+                parse_blank(t);
                 parse_keyword_eq_expect(t, "o")?;
                 let output = parse_value_arg(t)?;
                 let enable = parse_control_arg(t, "en")?;
                 Cell::IoBuf(IoBuffer { io, output, enable })
             }
             "target" => {
-                parse_space(t);
+                parse_blank(t);
                 let instance = parse_instance(t)?;
                 let target = t.context().design.target().expect("no target specified");
                 let prototype = target.prototype(&instance.kind).expect("no prototype for target cell");
@@ -662,18 +674,18 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
             outputs: BTreeMap::new(),
             ios: BTreeMap::new(),
         };
-        parse_space(t);
+        parse_blank(t);
         parse_symbol(t, '{')?;
-        parse_space(t);
+        parse_blank(t);
         parse_symbol(t, '\n')?;
         while let Some(()) = t.optional(|t| {
-            parse_space(t);
+            parse_blank(t);
             let keyword = parse_keyword(t)?;
             parse_symbol(t, '@')?;
             let name = parse_string(t)?;
-            parse_space(t);
+            parse_blank(t);
             parse_symbol(t, '=')?;
-            parse_space(t);
+            parse_blank(t);
             match keyword.as_str() {
                 "io" => {
                     let io_value = parse_io_value(t)?;
@@ -695,7 +707,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 "p" => {
                     let keyword = parse_keyword(t)?;
                     parse_symbol(t, '(')?;
-                    parse_space(t);
+                    parse_blank(t);
                     let value = match keyword.as_str() {
                         "const" => ParamValue::Const(parse_const(t)?),
                         "int" => ParamValue::Int(parse_decimal(t)?),
@@ -703,46 +715,42 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         "float" => todo!(),
                         _ => return None,
                     };
-                    parse_space(t);
+                    parse_blank(t);
                     parse_symbol(t, ')')?;
                     assert!(instance.params.insert(name, value).is_none(), "duplicate parameter name in instance");
                 }
                 _ => return None,
             }
-            parse_space(t);
+            parse_blank(t);
             parse_symbol(t, '\n')?;
             Some(())
         }) {}
-        parse_space(t);
+        parse_blank(t);
         parse_symbol(t, '}')?;
         Some(instance)
     }
 
-    parse_space(t);
     let (index, size) = parse_cell_index_size(t)?;
-    parse_space(t);
+    parse_blank(t);
     parse_symbol(t, '=')?;
-    parse_space(t);
+    parse_blank(t);
     let cell = one_of!(t;
         parse_builtin(t, size),
         parse_instance(t).map(Cell::Other),
     )?;
-    parse_space(t);
+    parse_blank(t);
     parse_symbol(t, '\n')?;
     Some(t.context_mut().add_cell(index, size, cell))
 }
 
 fn parse_line(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
-    if one_of!(t;
+    parse_blank(t);
+    one_of!(t;
         parse_target(t).is_some(),
         parse_io(t).is_some(),
         parse_cell(t).is_some(),
-        { parse_space(t); t.token('\n') }
-    ) {
-        true
-    } else {
-        false
-    }
+        t.token('\n')
+    )
 }
 
 #[derive(Debug)]
@@ -763,7 +771,7 @@ pub fn parse(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, Pa
     let context = Context::new(target);
     let mut tokens = source.into_tokens().with_context(context);
     while parse_line(&mut tokens) {}
-    parse_space(&mut tokens);
+    parse_blank(&mut tokens);
     let (mut tokens, context) = tokens.into_parts();
     if !tokens.eof() {
         return Err(ParseError { source: String::from(source), offset: tokens.location().offset() });

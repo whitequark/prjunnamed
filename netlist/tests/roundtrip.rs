@@ -19,8 +19,18 @@ fn roundtrip(text: &str) {
 
 #[test]
 fn test_empty() {
+    parse(None, "").unwrap();
     parse(None, "\n").unwrap();
     parse(None, "\n  ").unwrap();
+}
+
+#[test]
+fn test_comment() {
+    parse(None, ";\n").unwrap();
+    parse(None, "; foo\n").unwrap();
+    parse(None, "  ; meow\n").unwrap();
+    let design = parse(None, "; meow\n%0:1 = buf 0\n").unwrap();
+    assert_eq!(design.iter_cells().count(), 1);
 }
 
 #[test]
