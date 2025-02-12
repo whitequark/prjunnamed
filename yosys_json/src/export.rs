@@ -508,12 +508,15 @@ fn export_module(mut design: Design) -> yosys::Module {
                 .add(&name.replace(" ", "."), NetDetails::new(indexer.value(value)).attr("hdlname", name)),
         };
 
-        NetDetails::new(indexer.value(&output)).add_to(&format!("{}$out", ys_cell_name), &mut ys_module);
+        if output.len() > 0 {
+            NetDetails::new(indexer.value(&output)).add_to(&format!("{}$out", ys_cell_name), &mut ys_module);
+        }
     }
 
     ys_module
 }
 
+// Exporting a design to Yosys JSON can require modifying it if it has target cells that must be mapped to instances.
 pub fn export(writer: &mut impl std::io::Write, designs: BTreeMap<String, Design>) -> std::io::Result<()> {
     let mut ys_modules = BTreeMap::new();
     for (name, design) in designs {
