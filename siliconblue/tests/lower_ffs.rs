@@ -26,13 +26,13 @@ fn test_lower_ff_simple() {
         %0:1 = input "d"
         %1:1 = input "c"
         %2:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=X
-            p@"IS_RESET_ASYNC"=0
-            p@"IS_C_INVERTED"=0
-            i@"D"=%0
-            i@"C"=%1
-            i@"R"=0
-            i@"E"=1
+            param "RESET_VALUE" = X
+            param "IS_RESET_ASYNC" = 0
+            param "IS_C_INVERTED" = 0
+            input "D" = %0
+            input "C" = %1
+            input "R" = 0
+            input "E" = 1
         }
         %3:0 = output "q" %2
     "#};
@@ -56,22 +56,22 @@ fn test_lower_ff_sync() {
         %3:1 = input "r"
         %4:1 = input "e"
         %5:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=0
-            p@"IS_RESET_ASYNC"=0
-            p@"IS_C_INVERTED"=0
-            i@"D"=%0+0
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%4
+            param "RESET_VALUE" = 0
+            param "IS_RESET_ASYNC" = 0
+            param "IS_C_INVERTED" = 0
+            input "D" = %0+0
+            input "C" = %2
+            input "R" = %3
+            input "E" = %4
         }
         %6:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=1
-            p@"IS_RESET_ASYNC"=0
-            p@"IS_C_INVERTED"=0
-            i@"D"=%0+1
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%4
+            param "RESET_VALUE" = 1
+            param "IS_RESET_ASYNC" = 0
+            param "IS_C_INVERTED" = 0
+            input "D" = %0+1
+            input "C" = %2
+            input "R" = %3
+            input "E" = %4
         }
         %7:0 = output "q" { %6 %5 }
     "#};
@@ -97,22 +97,22 @@ fn test_lower_ff_sync_neg() {
         %5:1 = not %3
         %6:1 = not %4
         %7:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=0
-            p@"IS_RESET_ASYNC"=0
-            p@"IS_C_INVERTED"=1
-            i@"D"=%0+0
-            i@"C"=%2
-            i@"R"=%5
-            i@"E"=%6
+            param "RESET_VALUE" = 0
+            param "IS_RESET_ASYNC" = 0
+            param "IS_C_INVERTED" = 1
+            input "D" = %0+0
+            input "C" = %2
+            input "R" = %5
+            input "E" = %6
         }
         %8:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=1
-            p@"IS_RESET_ASYNC"=0
-            p@"IS_C_INVERTED"=1
-            i@"D"=%0+1
-            i@"C"=%2
-            i@"R"=%5
-            i@"E"=%6
+            param "RESET_VALUE" = 1
+            param "IS_RESET_ASYNC" = 0
+            param "IS_C_INVERTED" = 1
+            input "D" = %0+1
+            input "C" = %2
+            input "R" = %5
+            input "E" = %6
         }
         %9:0 = output "q" { %8 %7 }
     "#};
@@ -137,22 +137,22 @@ fn test_lower_ff_sync_remap() {
         %4:1 = input "e"
         %5:1 = or %3 %4
         %6:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=0
-            p@"IS_RESET_ASYNC"=0
-            p@"IS_C_INVERTED"=0
-            i@"D"=%0+0
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%5
+            param "RESET_VALUE" = 0
+            param "IS_RESET_ASYNC" = 0
+            param "IS_C_INVERTED" = 0
+            input "D" = %0+0
+            input "C" = %2
+            input "R" = %3
+            input "E" = %5
         }
         %7:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=1
-            p@"IS_RESET_ASYNC"=0
-            p@"IS_C_INVERTED"=0
-            i@"D"=%0+1
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%5
+            param "RESET_VALUE" = 1
+            param "IS_RESET_ASYNC" = 0
+            param "IS_C_INVERTED" = 0
+            input "D" = %0+1
+            input "C" = %2
+            input "R" = %3
+            input "E" = %5
         }
         %8:0 = output "q" { %7 %6 }
     "#};
@@ -178,22 +178,22 @@ fn test_lower_ff_sync_inv() {
         %5:1 = not %0+0
         %6:1 = not %0+1
         %7:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=1
-            p@"IS_RESET_ASYNC"=0
-            p@"IS_C_INVERTED"=0
-            i@"D"=%5
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%4
+            param "RESET_VALUE" = 1
+            param "IS_RESET_ASYNC" = 0
+            param "IS_C_INVERTED" = 0
+            input "D" = %5
+            input "C" = %2
+            input "R" = %3
+            input "E" = %4
         }
         %8:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=0
-            p@"IS_RESET_ASYNC"=0
-            p@"IS_C_INVERTED"=0
-            i@"D"=%6
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%4
+            param "RESET_VALUE" = 0
+            param "IS_RESET_ASYNC" = 0
+            param "IS_C_INVERTED" = 0
+            input "D" = %6
+            input "C" = %2
+            input "R" = %3
+            input "E" = %4
         }
         %9:1 = not %7
         %10:1 = not %8
@@ -219,22 +219,22 @@ fn test_lower_ff_async() {
         %3:1 = input "r"
         %4:1 = input "e"
         %5:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=0
-            p@"IS_RESET_ASYNC"=1
-            p@"IS_C_INVERTED"=0
-            i@"D"=%0+0
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%4
+            param "RESET_VALUE" = 0
+            param "IS_RESET_ASYNC" = 1
+            param "IS_C_INVERTED" = 0
+            input "D" = %0+0
+            input "C" = %2
+            input "R" = %3
+            input "E" = %4
         }
         %6:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=1
-            p@"IS_RESET_ASYNC"=1
-            p@"IS_C_INVERTED"=0
-            i@"D"=%0+1
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%4
+            param "RESET_VALUE" = 1
+            param "IS_RESET_ASYNC" = 1
+            param "IS_C_INVERTED" = 0
+            input "D" = %0+1
+            input "C" = %2
+            input "R" = %3
+            input "E" = %4
         }
         %7:0 = output "q" { %6 %5 }
     "#};
@@ -260,22 +260,22 @@ fn test_lower_ff_async_neg() {
         %5:1 = not %3
         %6:1 = not %4
         %7:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=0
-            p@"IS_RESET_ASYNC"=1
-            p@"IS_C_INVERTED"=1
-            i@"D"=%0+0
-            i@"C"=%2
-            i@"R"=%5
-            i@"E"=%6
+            param "RESET_VALUE" = 0
+            param "IS_RESET_ASYNC" = 1
+            param "IS_C_INVERTED" = 1
+            input "D" = %0+0
+            input "C" = %2
+            input "R" = %5
+            input "E" = %6
         }
         %8:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=1
-            p@"IS_RESET_ASYNC"=1
-            p@"IS_C_INVERTED"=1
-            i@"D"=%0+1
-            i@"C"=%2
-            i@"R"=%5
-            i@"E"=%6
+            param "RESET_VALUE" = 1
+            param "IS_RESET_ASYNC" = 1
+            param "IS_C_INVERTED" = 1
+            input "D" = %0+1
+            input "C" = %2
+            input "R" = %5
+            input "E" = %6
         }
         %9:0 = output "q" { %8 %7 }
     "#};
@@ -301,22 +301,22 @@ fn test_lower_ff_async_inv() {
         %5:1 = not %0+0
         %6:1 = not %0+1
         %7:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=1
-            p@"IS_RESET_ASYNC"=1
-            p@"IS_C_INVERTED"=0
-            i@"D"=%5
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%4
+            param "RESET_VALUE" = 1
+            param "IS_RESET_ASYNC" = 1
+            param "IS_C_INVERTED" = 0
+            input "D" = %5
+            input "C" = %2
+            input "R" = %3
+            input "E" = %4
         }
         %8:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=0
-            p@"IS_RESET_ASYNC"=1
-            p@"IS_C_INVERTED"=0
-            i@"D"=%6
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%4
+            param "RESET_VALUE" = 0
+            param "IS_RESET_ASYNC" = 1
+            param "IS_C_INVERTED" = 0
+            input "D" = %6
+            input "C" = %2
+            input "R" = %3
+            input "E" = %4
         }
         %9:1 = not %7
         %10:1 = not %8
@@ -345,22 +345,22 @@ fn test_lower_ff_unmap_reset() {
         %5:1 = input "e"
         %6:2 = mux %4 01 %0:2
         %8:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=0
-            p@"IS_RESET_ASYNC"=1
-            p@"IS_C_INVERTED"=0
-            i@"D"=%6+0
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%5
+            param "RESET_VALUE" = 0
+            param "IS_RESET_ASYNC" = 1
+            param "IS_C_INVERTED" = 0
+            input "D" = %6+0
+            input "C" = %2
+            input "R" = %3
+            input "E" = %5
         }
         %9:1 = target "SB_DFF" {
-            p@"RESET_VALUE"=1
-            p@"IS_RESET_ASYNC"=1
-            p@"IS_C_INVERTED"=0
-            i@"D"=%6+1
-            i@"C"=%2
-            i@"R"=%3
-            i@"E"=%5
+            param "RESET_VALUE" = 1
+            param "IS_RESET_ASYNC" = 1
+            param "IS_C_INVERTED" = 0
+            input "D" = %6+1
+            input "C" = %2
+            input "R" = %3
+            input "E" = %5
         }
         %10:0 = output "q" { %9 %8 }
     "#};

@@ -196,20 +196,20 @@ fn test_memories() {
 
 #[test]
 fn test_instances() {
-    roundtrip("%0:1 = buf 0\n%1:0 = \"TBUF\" {\n  i@\"EN\"=%0\n}\n");
-    roundtrip("%0:2 = \"TBUF\" {\n  o@\"I\"=0:2\n}\n");
-    roundtrip("&\"pin\":1\n%0:0 = \"TBUF\" {\n  io@\"PIN\"=&\"pin\"\n}\n");
-    roundtrip("%0:0 = \"TBUF\" {\n  io@\"PIN\"=&_\n}\n");
-    roundtrip("%0:0 = \"TBUF\" {\n  io@\"PIN\"=&_:4\n}\n");
+    roundtrip("%0:1 = buf 0\n%1:0 = \"TBUF\" {\n  input \"EN\" = %0\n}\n");
+    roundtrip("%0:2 = \"TBUF\" {\n  output \"I\" = 0:2\n}\n");
+    roundtrip("&\"pin\":1\n%0:0 = \"TBUF\" {\n  io \"PIN\" = &\"pin\"\n}\n");
+    roundtrip("%0:0 = \"TBUF\" {\n  io \"PIN\" = &_\n}\n");
+    roundtrip("%0:0 = \"TBUF\" {\n  io \"PIN\" = &_:4\n}\n");
 }
 
 #[test]
 fn test_instance_params() {
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=10X\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=#15\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=#-33\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=\"x\"\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  p@\"A\"=\"x\\7f\"\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = 10X\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = #15\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = #-33\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = \"x\"\n}\n");
+    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = \"x\\7f\"\n}\n");
 }
 
 #[derive(Debug)]
@@ -271,11 +271,11 @@ fn test_target() {
         concat!(
             "target \"test\"\n",
             "%0:4 = target \"QUAD_IOBUF\" {\n",
-            "  p@\"OE_INVERT\"=0\n",
-            "  p@\"PULLUP\"=0000\n",
-            "  i@\"O\"=XXXX\n",
-            "  i@\"OE\"=0\n",
-            "  io@\"IO\"=&_:4\n",
+            "  param \"OE_INVERT\" = 0\n",
+            "  param \"PULLUP\" = 0000\n",
+            "  input \"O\" = XXXX\n",
+            "  input \"OE\" = 0\n",
+            "  io \"IO\" = &_:4\n",
             "}\n"
         ),
     );
@@ -284,11 +284,11 @@ fn test_target() {
         "&\"pins\":3\n",
         "%0:4 = input \"O\"\n",
         "%4:4 = target \"QUAD_IOBUF\" {\n",
-        "  p@\"OE_INVERT\"=0\n",
-        "  p@\"PULLUP\"=1010\n",
-        "  i@\"O\"=%0:4\n",
-        "  i@\"OE\"=1\n",
-        "  io@\"IO\"={ &\"pins\"+0 &\"pins\"+1 &\"pins\"+2 &_ }\n",
+        "  param \"OE_INVERT\" = 0\n",
+        "  param \"PULLUP\" = 1010\n",
+        "  input \"O\" = %0:4\n",
+        "  input \"OE\" = 1\n",
+        "  io \"IO\" = { &\"pins\"+0 &\"pins\"+1 &\"pins\"+2 &_ }\n",
         "}\n"
     ));
 }

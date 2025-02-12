@@ -212,10 +212,10 @@ impl Design {
             }
         };
 
-        let write_cell_argument = |f: &mut std::fmt::Formatter, sigil: &str, name: &str| -> std::fmt::Result {
-            write!(f, "  {sigil}@")?;
+        let write_cell_argument = |f: &mut std::fmt::Formatter, keyword: &str, name: &str| -> std::fmt::Result {
+            write!(f, "  {keyword} ")?;
             self.write_string(f, name)?;
-            write!(f, "=")?;
+            write!(f, " = ")?;
             Ok(())
         };
 
@@ -438,17 +438,17 @@ impl Design {
                 self.write_string(f, instance.kind.as_str())?;
                 write!(f, " {{{newline}")?;
                 for (name, value) in instance.params.iter() {
-                    write_cell_argument(f, "p", name)?;
+                    write_cell_argument(f, "param", name)?;
                     write_param_value(f, value)?;
                     write!(f, "{newline}")?;
                 }
                 for (name, value) in instance.inputs.iter() {
-                    write_cell_argument(f, "i", name)?;
+                    write_cell_argument(f, "input", name)?;
                     self.write_value(f, value)?;
                     write!(f, "{newline}")?;
                 }
                 for (name, range) in instance.outputs.iter() {
-                    write_cell_argument(f, "o", name)?;
+                    write_cell_argument(f, "output", name)?;
                     write!(f, "{}:{}{newline}", range.start, range.len())?;
                 }
                 for (name, value) in instance.ios.iter() {
@@ -464,12 +464,12 @@ impl Design {
                 self.write_string(f, &target_cell.kind)?;
                 write!(f, " {{{newline}")?;
                 for (param, value) in prototype.params.iter().zip(target_cell.params.iter()) {
-                    write_cell_argument(f, "p", &param.name)?;
+                    write_cell_argument(f, "param", &param.name)?;
                     write_param_value(f, value)?;
                     write!(f, "{newline}")?;
                 }
                 for input in &prototype.inputs {
-                    write_cell_argument(f, "i", &input.name)?;
+                    write_cell_argument(f, "input", &input.name)?;
                     self.write_value(f, &target_cell.inputs.slice(input.range.clone()))?;
                     write!(f, "{newline}")?;
                 }

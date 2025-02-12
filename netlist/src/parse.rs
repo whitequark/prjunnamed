@@ -681,7 +681,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
         while let Some(()) = t.optional(|t| {
             parse_blank(t);
             let keyword = parse_keyword(t)?;
-            parse_symbol(t, '@')?;
+            parse_blank(t);
             let name = parse_string(t)?;
             parse_blank(t);
             parse_symbol(t, '=')?;
@@ -691,11 +691,11 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                     let io_value = parse_io_value(t)?;
                     assert!(instance.ios.insert(name, io_value).is_none(), "duplicate IO name in instance");
                 }
-                "i" => {
+                "input" => {
                     let value = parse_value_arg(t)?;
                     assert!(instance.inputs.insert(name, value).is_none(), "duplicate input name in instance");
                 }
-                "o" => {
+                "output" => {
                     let start: usize = parse_decimal(t)?;
                     parse_symbol(t, ':')?;
                     let end: usize = parse_decimal(t)?;
@@ -704,7 +704,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                         "duplicate output name in instance"
                     );
                 }
-                "p" => {
+                "param" => {
                     let value = one_of!(t;
                         parse_const(t).map(ParamValue::Const),
                         parse_symbol(t, '#').and_then(|()| parse_decimal(t)).map(ParamValue::Int),
