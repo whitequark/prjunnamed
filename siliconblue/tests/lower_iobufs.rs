@@ -162,7 +162,7 @@ fn test_lower_iobuf_tristate_wide() {
         &"io":4
         %0:4 = input "o"
         %4:1 = input "oe"
-        %5:0 = output "i" {%15+0 %12+0 %9+0 %6+0}
+        %5:0 = output "i" [ %15+0 %12+0 %9+0 %6+0 ]
         %6:3 = target "SB_IO" {
             param "PIN_TYPE" = 101001
             param "PULLUP" = 0

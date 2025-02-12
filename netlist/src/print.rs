@@ -25,6 +25,49 @@ impl Design {
         Ok(())
     }
 
+    pub(crate) fn write_io_net(&self, f: &mut std::fmt::Formatter, io_net: IoNet) -> std::fmt::Result {
+        if io_net.is_floating() {
+            write!(f, "&_")
+        } else {
+            write!(f, "&")?;
+            match self.find_io(io_net) {
+                Some((name, offset)) => {
+                    self.write_string(f, name)?;
+                    if self.get_io(name).unwrap().len() > 1 {
+                        write!(f, "+{}", offset)?;
+                    }
+                    Ok(())
+                }
+                None => write!(f, "??"),
+            }
+        }
+    }
+
+    pub(crate) fn write_io_value(&self, f: &mut std::fmt::Formatter, io_value: &IoValue) -> std::fmt::Result {
+        if io_value.is_empty() {
+            write!(f, "[]")
+        } else if io_value.len() == 1 {
+            self.write_io_net(f, io_value[0])
+        } else if io_value.iter().all(IoNet::is_floating) {
+            write!(f, "&_:{}", io_value.len())
+        } else {
+            if let Some((name, _offset)) = self.find_io(io_value[0]) {
+                if self.get_io(name).unwrap() == *io_value {
+                    write!(f, "&")?;
+                    self.write_string(f, name)?;
+                    write!(f, ":{}", io_value.len())?;
+                    return Ok(());
+                }
+            }
+            write!(f, "[")?;
+            for io_net in io_value.iter().rev() {
+                write!(f, " ")?;
+                self.write_io_net(f, io_net)?;
+            }
+            write!(f, " ]")
+        }
+    }
+
     pub(crate) fn write_net(&self, f: &mut std::fmt::Formatter, net: Net) -> std::fmt::Result {
         if let Ok(index) = net.as_cell_index() {
             if !self.is_valid_cell_index(index) {
@@ -45,7 +88,7 @@ impl Design {
 
     pub(crate) fn write_value(&self, f: &mut std::fmt::Formatter, value: &Value) -> std::fmt::Result {
         if value.is_empty() {
-            return write!(f, "{{}}");
+            return write!(f, "[]");
         } else if value.len() == 1 {
             return self.write_net(f, value[0]);
         } else if let Some(value) = value.as_const() {
@@ -56,12 +99,12 @@ impl Design {
         {
             // Value contains newly added cells that we can't look up. Don't try to make
             // the display nicer, just make sure it doesn't panic.
-            write!(f, "{{")?;
+            write!(f, "[")?;
             for net in value.iter().rev() {
                 write!(f, " ")?;
                 self.write_net(f, net)?;
             }
-            write!(f, " }}")?;
+            write!(f, " ]")?;
             return Ok(());
         } else if let Ok((cell_ref, _offset)) = self.find_cell(value[0]) {
             if *value == cell_ref.output() {
@@ -77,7 +120,7 @@ impl Design {
             Slice { cell_index: usize, output_len: usize, count: usize },
             Net(Net),
         }
-        write!(f, "{{")?;
+        write!(f, "[")?;
         let mut index = 0;
         let mut chunks = vec![];
         while index < value.len() {
@@ -123,50 +166,7 @@ impl Design {
                 }
             }
         }
-        write!(f, " }}")
-    }
-
-    pub(crate) fn write_io_net(&self, f: &mut std::fmt::Formatter, io_net: IoNet) -> std::fmt::Result {
-        if io_net.is_floating() {
-            write!(f, "&_")
-        } else {
-            write!(f, "&")?;
-            match self.find_io(io_net) {
-                Some((name, offset)) => {
-                    self.write_string(f, name)?;
-                    if self.get_io(name).unwrap().len() > 1 {
-                        write!(f, "+{}", offset)?;
-                    }
-                    Ok(())
-                }
-                None => write!(f, "??"),
-            }
-        }
-    }
-
-    pub(crate) fn write_io_value(&self, f: &mut std::fmt::Formatter, io_value: &IoValue) -> std::fmt::Result {
-        if io_value.is_empty() {
-            write!(f, "{{}}")
-        } else if io_value.len() == 1 {
-            self.write_io_net(f, io_value[0])
-        } else if io_value.iter().all(IoNet::is_floating) {
-            write!(f, "&_:{}", io_value.len())
-        } else {
-            if let Some((name, _offset)) = self.find_io(io_value[0]) {
-                if self.get_io(name).unwrap() == *io_value {
-                    write!(f, "&")?;
-                    self.write_string(f, name)?;
-                    write!(f, ":{}", io_value.len())?;
-                    return Ok(());
-                }
-            }
-            write!(f, "{{")?;
-            for io_net in io_value.iter().rev() {
-                write!(f, " ")?;
-                self.write_io_net(f, io_net)?;
-            }
-            write!(f, " }}")
-        }
+        write!(f, " ]")
     }
 
     pub(crate) fn write_cell(&self, f: &mut std::fmt::Formatter, cell: &Cell, prefix: &str) -> std::fmt::Result {
@@ -287,14 +287,14 @@ impl Design {
                         let pattern = &alternates[0];
                         write!(f, "{pattern}")?;
                     } else {
-                        write!(f, "[")?;
+                        write!(f, "(")?;
                         for (index, pattern) in alternates.iter().enumerate() {
                             if index > 0 {
                                 write!(f, " ")?;
                             }
                             write!(f, "{pattern}")?;
                         }
-                        write!(f, "]")?;
+                        write!(f, ")")?;
                     }
                     if multiline {
                         write!(f, "{newline}")?;

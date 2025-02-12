@@ -211,7 +211,7 @@ fn parse_io_value_floating(t: &mut WithContext<impl Tokens<Item = char>, Context
 
 fn parse_io_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
     let mut value = IoValue::EMPTY;
-    parse_symbol(t, '{')?;
+    parse_symbol(t, '[')?;
     let parts = Vec::from_iter(
         t.many(|t| {
             parse_blank(t);
@@ -223,7 +223,7 @@ fn parse_io_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>)
         value.extend([part]);
     }
     parse_blank(t);
-    parse_symbol(t, '}')?;
+    parse_symbol(t, ']')?;
     Some(value)
 }
 
@@ -272,7 +272,7 @@ fn parse_value_part(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> O
 
 fn parse_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Value> {
     let mut value = Value::EMPTY;
-    parse_symbol(t, '{')?;
+    parse_symbol(t, '[')?;
     let parts = Vec::from_iter(
         t.many(|t| {
             parse_blank(t);
@@ -284,7 +284,7 @@ fn parse_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) ->
         value.extend(part);
     }
     parse_blank(t);
-    parse_symbol(t, '}')?;
+    parse_symbol(t, ']')?;
     Some(value)
 }
 
@@ -446,14 +446,14 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 while let Some(()) = t.optional(|t| {
                     parse_blank(t);
                     let mut alternates = Vec::new();
-                    if let Some(()) = parse_symbol(t, '[') {
+                    if let Some(()) = parse_symbol(t, '(') {
                         while let Some(()) = t.optional(|t| {
                             parse_blank(t);
                             alternates.push(parse_const(t)?);
                             Some(())
                         }) {}
                         parse_blank(t);
-                        parse_symbol(t, ']')?;
+                        parse_symbol(t, ')')?;
                     } else {
                         alternates.push(parse_const(t)?);
                     }
@@ -760,6 +760,7 @@ impl Display for ParseError {
 
 impl std::error::Error for ParseError {}
 
+// Primarily used for testing, since an unregistered target can be provided directly.
 pub fn parse(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, ParseError> {
     let context = Context::new(target);
     let mut tokens = source.into_tokens().with_context(context);

@@ -73,7 +73,7 @@ fn test_lower_ff_sync() {
             input "R" = %3
             input "E" = %4
         }
-        %7:0 = output "q" { %6 %5 }
+        %7:0 = output "q" [ %6 %5 ]
     "#};
     assert_isomorphic!(design, gold);
 }
@@ -114,7 +114,7 @@ fn test_lower_ff_sync_neg() {
             input "R" = %5
             input "E" = %6
         }
-        %9:0 = output "q" { %8 %7 }
+        %9:0 = output "q" [ %8 %7 ]
     "#};
     assert_isomorphic!(design, gold);
 }
@@ -154,7 +154,7 @@ fn test_lower_ff_sync_remap() {
             input "R" = %3
             input "E" = %5
         }
-        %8:0 = output "q" { %7 %6 }
+        %8:0 = output "q" [ %7 %6 ]
     "#};
     assert_isomorphic!(design, gold);
 }
@@ -197,7 +197,7 @@ fn test_lower_ff_sync_inv() {
         }
         %9:1 = not %7
         %10:1 = not %8
-        %11:0 = output "q" { %10 %9 }
+        %11:0 = output "q" [ %10 %9 ]
     "#};
     assert_isomorphic!(design, gold);
 }
@@ -236,7 +236,7 @@ fn test_lower_ff_async() {
             input "R" = %3
             input "E" = %4
         }
-        %7:0 = output "q" { %6 %5 }
+        %7:0 = output "q" [ %6 %5 ]
     "#};
     assert_isomorphic!(design, gold);
 }
@@ -277,7 +277,7 @@ fn test_lower_ff_async_neg() {
             input "R" = %5
             input "E" = %6
         }
-        %9:0 = output "q" { %8 %7 }
+        %9:0 = output "q" [ %8 %7 ]
     "#};
     assert_isomorphic!(design, gold);
 }
@@ -320,7 +320,7 @@ fn test_lower_ff_async_inv() {
         }
         %9:1 = not %7
         %10:1 = not %8
-        %11:0 = output "q" { %10 %9 }
+        %11:0 = output "q" [ %10 %9 ]
     "#};
     assert_isomorphic!(design, gold);
 }
@@ -362,7 +362,7 @@ fn test_lower_ff_unmap_reset() {
             input "R" = %3
             input "E" = %5
         }
-        %10:0 = output "q" { %9 %8 }
+        %10:0 = output "q" [ %9 %8 ]
     "#};
     assert_isomorphic!(design, gold);
 }
