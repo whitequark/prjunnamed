@@ -7,7 +7,7 @@ fn process(design: &mut Design) {
         None => {
             prjunnamed_generic::decision(design);
             prjunnamed_generic::canonicalize(design);
-            prjunnamed_generic::lower(design);
+            prjunnamed_generic::lower_arith(design);
             prjunnamed_generic::canonicalize(design);
         }
         Some(ref target) => {

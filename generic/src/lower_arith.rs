@@ -38,7 +38,7 @@ fn lower_shift(
     Cell::Buf(value)
 }
 
-pub fn lower(design: &mut Design) {
+pub fn lower_arith(design: &mut Design) {
     for cell_ref in design.iter_cells() {
         let new_cell = match &*cell_ref.get() {
             Cell::Eq(a, b) => {
