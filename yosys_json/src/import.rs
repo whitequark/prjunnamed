@@ -744,9 +744,6 @@ impl ModuleImporter<'_> {
 
     fn finalize(&mut self) {
         self.design.compact();
-        if let Some(target) = self.design.target() {
-            target.import(&mut self.design).unwrap_or_else(|err| panic!("{}", err));
-        }
     }
 }
 

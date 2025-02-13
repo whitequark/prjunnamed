@@ -74,6 +74,9 @@ fn run() -> Result<(), Box<dyn Error>> {
     };
 
     let mut design = read_input(target, input)?;
+    if let Some(target) = design.target() {
+        target.import(&mut design)?;
+    }
     process(&mut design);
     write_output(design, output)?;
     Ok(())
