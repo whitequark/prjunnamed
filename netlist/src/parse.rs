@@ -11,16 +11,16 @@ use crate::{
 #[derive(Debug)]
 struct Context {
     design: Design,
-    cell_map: BTreeMap<usize, Value>,        // source cell index -> value
-    late_map: BTreeMap<(usize, usize), Net>, // source cell index + net offset -> buffer
+    def_map: BTreeMap<usize, Value>,        // definition: index -> value
+    use_map: BTreeMap<(usize, usize), Net>, // reference:  index + offset -> void (only if above definition)
 }
 
 impl Context {
     fn new(target: Option<Arc<dyn Target>>) -> Context {
         Context {
             design: Design::with_target(target),
-            cell_map: BTreeMap::new(),
-            late_map: BTreeMap::new(),
+            def_map: BTreeMap::new(),
+            use_map: BTreeMap::new(),
         }
     }
 
@@ -32,42 +32,40 @@ impl Context {
         self.design.get_io(name).expect("name should reference an IO")
     }
 
-    fn get_io_with_width(&self, name: impl AsRef<str>, width: usize) -> IoValue {
+    fn get_io1(&self, name: impl AsRef<str>) -> IoNet {
         let value = self.get_io(name);
-        assert_eq!(value.len(), width, "IO width should match reference width");
-        value
+        assert_eq!(value.len(), 1, "IO width should be 1");
+        value[0]
     }
 
-    fn add_cell(&mut self, index: usize, width: usize, cell: Cell) -> Value {
-        let value = self.design.add_cell(cell);
+    fn add_def(&mut self, index: usize, width: usize, value: Value) {
         assert_eq!(value.len(), width, "cell width should match declaration width");
-        assert_eq!(self.cell_map.insert(index, value.clone()), None, "cell indices cannot be reused");
-        value
+        assert_eq!(self.def_map.insert(index, value.clone()), None, "cell indices cannot be reused");
     }
 
-    fn get_cell(&mut self, index: usize, offsets: Range<usize>) -> Value {
-        if let Some(value) = self.cell_map.get(&index) {
+    fn get_use(&mut self, index: usize, offsets: Range<usize>) -> Value {
+        if let Some(value) = self.def_map.get(&index) {
             value.slice(offsets)
         } else {
             let mut nets = vec![];
             for offset in offsets {
-                let net = self.late_map.entry((index, offset)).or_insert_with(|| self.design.add_void(1).unwrap_net());
+                let net = self.use_map.entry((index, offset)).or_insert_with(|| self.design.add_void(1).unwrap_net());
                 nets.push(*net);
             }
             Value::from(nets)
         }
     }
 
-    fn finalize(mut self) -> Design {
-        for ((index, offset), net) in self.late_map.into_iter() {
-            if let Some(output) = self.cell_map.get(&index) {
+    fn into(mut self) -> Design {
+        for ((index, offset), net) in self.use_map.into_iter() {
+            if let Some(output) = self.def_map.get(&index) {
                 if offset < output.len() {
                     self.design.replace_net(net, output[offset]);
                 } else {
-                    panic!("late cell reference %{}+{} out of bounds for %{}:{}", index, offset, index, output.len());
+                    panic!("reference %{}+{} out of bounds for definition %{}:{}", index, offset, index, output.len());
                 }
             } else {
-                panic!("unresolved late cell index %{}", index)
+                panic!("unresolved reference %{}", index)
             }
         }
         self.design.apply();
@@ -202,7 +200,7 @@ fn parse_io_net(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Optio
     one_of!(t;
         parse_symbol(t, '&').and_then(|()| parse_symbol(t, '_')).map(|()| IoNet::FLOATING),
         parse_io_name_offset(t).map(|(name, offset)| t.context().get_io(name)[offset]),
-        parse_io_name(t).map(|name| t.context().get_io_with_width(name, 1)[0])
+        parse_io_name(t).map(|name| t.context().get_io1(name))
     )
 }
 
@@ -264,13 +262,13 @@ fn parse_value_part(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> O
     one_of!(t;
         parse_const(t).map(Value::from),
         parse_cell_index_offset(t).and_then(|(cell_index, net_offset)| {
-            Some(Value::from(t.context_mut().get_cell(cell_index, net_offset..net_offset+1)))
+            Some(t.context_mut().get_use(cell_index, net_offset..net_offset+1))
         }),
         parse_cell_index_size(t).and_then(|(cell_index, net_count)| {
-            Some(t.context_mut().get_cell(cell_index, 0..net_count))
+            Some(t.context_mut().get_use(cell_index, 0..net_count))
         }),
         parse_cell_index(t).and_then(|cell_index| {
-            Some(t.context_mut().get_cell(cell_index, 0..1))
+            Some(t.context_mut().get_use(cell_index, 0..1))
         }),
     )
 }
@@ -736,7 +734,9 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
     )?;
     parse_blank(t);
     parse_symbol(t, '\n')?;
-    Some(t.context_mut().add_cell(index, size, cell))
+    let value = t.context_mut().design.add_cell(cell);
+    t.context_mut().add_def(index, size, value.clone());
+    Some(value)
 }
 
 fn parse_line(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
@@ -773,7 +773,7 @@ pub fn parse(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, Pa
     if !tokens.eof() {
         return Err(ParseError { source: String::from(source), offset: tokens.location().offset() });
     }
-    Ok(context.finalize())
+    Ok(context.into())
 }
 
 impl FromStr for Design {
