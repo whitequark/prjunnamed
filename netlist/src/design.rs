@@ -182,6 +182,10 @@ impl Design {
         value
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.ios.len() + self.cells.len() == 0 && !self.is_changed() && self.target.is_none()
+    }
+
     pub fn is_changed(&self) -> bool {
         let changes = self.changes.borrow();
         changes.added_ios.len()

@@ -11,7 +11,6 @@ use crate::{
 #[derive(Debug)]
 struct Context {
     design: Design,
-    is_empty: bool,
     cell_map: BTreeMap<usize, Value>,        // source cell index -> value
     late_map: BTreeMap<(usize, usize), Net>, // source cell index + net offset -> buffer
 }
@@ -20,14 +19,12 @@ impl Context {
     fn new(target: Option<Arc<dyn Target>>) -> Context {
         Context {
             design: Design::with_target(target),
-            is_empty: true,
             cell_map: BTreeMap::new(),
             late_map: BTreeMap::new(),
         }
     }
 
     fn add_io(&mut self, name: String, width: usize) -> IoValue {
-        self.is_empty = false;
         self.design.add_io(name, width)
     }
 
@@ -42,7 +39,6 @@ impl Context {
     }
 
     fn add_cell(&mut self, index: usize, width: usize, cell: Cell) -> Value {
-        self.is_empty = false;
         let value = self.design.add_cell(cell);
         assert_eq!(value.len(), width, "cell width should match declaration width");
         assert_eq!(self.cell_map.insert(index, value.clone()), None, "cell indices cannot be reused");
@@ -315,18 +311,17 @@ fn parse_target(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Optio
     let name = parse_string(t)?;
     let mut options = BTreeMap::new();
     while let Some((name, value)) = parse_target_option(t) {
-        if options.insert(name, value).is_some() {
-            panic!("target option is specified more than once");
+        if options.insert(name.clone(), value).is_some() {
+            panic!("target option {name} is specified more than once");
         }
     }
     parse_blank(t);
     parse_symbol(t, '\n')?;
     let context = t.context_mut();
-    if !context.is_empty {
-        panic!("target specification must be the first line of the design");
+    if !context.design.is_empty() {
+        panic!("target specification must come before any definitions");
     }
     context.design = Design::with_target(Some(create_target(&name, options).unwrap()));
-    context.is_empty = false;
     Some(())
 }
 
