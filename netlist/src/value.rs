@@ -7,8 +7,8 @@ use std::{
 
 use crate::{Const, Design, Trit};
 
-/// A one-bit wide wire, identified by either the [`Cell`] that drives it
-/// and the bit position in its output, or the constant [`Trit`] it is set to.
+/// A net is a driver in the design; either a constant (a [`Trit`]) or a reference to a single position from
+/// the output of a [`Cell`].
 ///
 /// [`Cell`]: crate::Cell
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -21,7 +21,7 @@ impl Net {
     pub const ZERO: Net = Net { index: 0 };
     pub const ONE: Net = Net { index: 1 };
 
-    const FIRST_CELL: u32 = 2; // Zero, One, then cells
+    const FIRST_CELL: u32 = 2; // ZERO, ONE, then cells
 
     pub fn as_const(self) -> Option<Trit> {
         if self == Self::UNDEF {
@@ -122,10 +122,7 @@ impl Display for Net {
     }
 }
 
-/// A wide bundle of [`Net`]s, possibly driven by a variety of [`Cell`]s.
-/// This is where swizzles happen.
-///
-/// [`Cell`]: crate::Cell
+/// A value is a (possibly empty) sequence of [`Net`]s.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Value {
     nets: Vec<Net>,
@@ -133,37 +130,41 @@ pub struct Value {
 
 fn shift_count(val: &Const, stride: u32) -> usize {
     let stride = stride as usize;
-    let mut res: usize = 0;
-    for (i, trit) in val.iter().enumerate() {
+    let mut result: usize = 0;
+    for (index, trit) in val.iter().enumerate() {
         if trit == Trit::One {
-            if i >= usize::BITS as usize {
+            if index >= usize::BITS as usize {
                 return usize::MAX;
             } else {
-                res |= 1 << i;
+                result |= 1 << index;
             }
         }
     }
-    res.checked_mul(stride).unwrap_or(usize::MAX)
+    result.checked_mul(stride).unwrap_or(usize::MAX)
 }
 
 impl Value {
-    /// A value of width zero.
-    pub const EMPTY: Value = Value { nets: vec![] };
+    /// Creates an empty value.
+    pub fn new() -> Self {
+        Self { nets: vec![] }
+    }
 
+    /// Creates an all-`0` value of given width.
     pub fn zero(width: usize) -> Self {
         Self::from_iter(std::iter::repeat_n(Net::ZERO, width))
     }
 
+    /// Creates an all-`1` value of given width.
     pub fn ones(width: usize) -> Self {
         Self::from_iter(std::iter::repeat_n(Net::ONE, width))
     }
 
+    /// Creates an all-`X` value of given width.
     pub fn undef(width: usize) -> Self {
         Self::from_iter(std::iter::repeat_n(Net::UNDEF, width))
     }
 
-    /// Creates a `Value` representing the `count`-wide output
-    /// of cell `cell_index`.
+    /// Creates a reference to `count` outputs of cell at position `cell_index` in their natural order.
     pub(crate) fn cell(cell_index: usize, count: usize) -> Value {
         let mut nets = vec![];
         for net_index in 0..count {
@@ -480,6 +481,7 @@ impl IntoIterator for Value {
     }
 }
 
+/// A control net is a [`Net`] that can be negated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum ControlNet {
     Pos(Net),

@@ -323,7 +323,7 @@ impl Target for SiliconBlueTarget {
                     continue;
                 }
                 "SB_LUT4" => {
-                    let mut input = Value::EMPTY;
+                    let mut input = Value::new();
                     for index in 0..4 {
                         let name = format!("I{index}");
                         if let Some(input_bit) = instance.inputs.remove(&name) {
@@ -685,7 +685,7 @@ impl SiliconBlueTarget {
         for cell_ref in design.iter_cells() {
             if let Cell::IoBuf(io_buffer) = &*cell_ref.get() {
                 let enable = io_buffer.enable.into_pos(design);
-                let mut output_value = Value::EMPTY;
+                let mut output_value = Value::new();
                 for bit_index in 0..io_buffer.output.len() {
                     let mut target_cell = TargetCell::new(SB_IO, prototype);
                     if io_buffer.enable.is_always(false) {

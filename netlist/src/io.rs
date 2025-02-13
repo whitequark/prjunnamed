@@ -40,7 +40,9 @@ pub struct IoValue {
 }
 
 impl IoValue {
-    pub const EMPTY: IoValue = IoValue { nets: vec![] };
+    pub const fn new() -> Self {
+        IoValue { nets: vec![] }
+    }
 
     pub fn from_range(range: Range<u32>) -> Self {
         Self { nets: range.map(|i| IoNet { index: i }).collect() }

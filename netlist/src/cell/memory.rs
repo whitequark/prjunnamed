@@ -134,7 +134,7 @@ impl Memory {
         let addr_eq = design.add_eq(read_addr.zext(max_addr_width), write_addr.zext(max_addr_width));
 
         // perform actual muxing
-        let mut new_data = Value::EMPTY;
+        let mut new_data = Value::new();
         for ((data_bit, write_data_bit), mask_bit) in data.iter().zip(&write_data).zip(&write_mask) {
             let sel_write = design.add_and1(addr_eq, mask_bit);
             let new_data_bit = design.add_mux1(sel_write, write_data_bit, data_bit);
@@ -235,7 +235,7 @@ impl Memory {
 
         // perform the actual muxing.
         let new_port_output = design.add_void(read_port.data_len);
-        let mut mux = Value::EMPTY;
+        let mut mux = Value::new();
         for ((new_output_bit, data_bit), mask_bit) in new_port_output.iter().zip(&data).zip(&mask) {
             let mux_bit = design.add_mux1(mask_bit, data_bit, new_output_bit);
             mux.push(mux_bit);

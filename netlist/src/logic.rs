@@ -8,8 +8,11 @@ use std::{
 
 use crate::Net;
 
-/// Zero, one, or undef (`X`). Undef may be replaced by any other value
-/// during optimization.
+/// An extended binary value.
+///
+/// In addition to the usual `0` and `1`, the `X` value (also known as "undef") means that either `0` and `1`
+/// may be encountered. The undef value is used in both optimization and simulation, and its exact semantics
+/// depends on the context where it is used.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Trit {
     Undef = -1,
@@ -155,36 +158,40 @@ impl std::ops::BitXor<Trit> for Trit {
     }
 }
 
-/// A constant with some bits potentially set to `X`.
+/// A constant is a (possibly empty) sequence of [`Trit`]s.
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct Const {
     trits: Vec<Trit>,
 }
 
 impl Const {
-    pub const EMPTY: Const = Const { trits: vec![] };
-
+    /// Creates an empty constant.
     pub const fn new() -> Self {
         Self { trits: vec![] }
     }
 
+    /// Creates an all-`0` constant of given width.
     pub fn zero(width: usize) -> Self {
         Self::from_iter(std::iter::repeat_n(Trit::Zero, width))
     }
 
+    /// Creates an all-`1` constant of given width.
     pub fn ones(width: usize) -> Self {
         Self::from_iter(std::iter::repeat_n(Trit::One, width))
     }
 
+    /// Creates an all-`X` constant of given width.
     pub fn undef(width: usize) -> Self {
         Self::from_iter(std::iter::repeat_n(Trit::Undef, width))
     }
 
+    /// Creates a constant of given width that has a `1` at position `hot_at` and `0` elsewhere.
     pub fn one_hot(width: usize, hot_at: usize) -> Self {
         assert!(hot_at < width);
         Self::from_iter((0..width).map(|index| if index == hot_at { Trit::One } else { Trit::Zero }))
     }
 
+    /// Expands the constant by a single position with the given value.
     pub fn push(&mut self, trit: impl Into<Trit>) {
         self.trits.push(trit.into());
     }

@@ -128,7 +128,7 @@ impl Lut {
 
     pub fn simplify(&mut self) {
         let mut old_inputs = vec![];
-        let mut new_inputs = Value::EMPTY;
+        let mut new_inputs = Value::new();
         let mut new_inputs_index = HashMap::new();
         for input in &self.inputs {
             if input == Net::ZERO {

@@ -16,7 +16,7 @@ impl TargetCell {
         let mut result = Self {
             kind: kind.into(),
             params: vec![],
-            inputs: Value::EMPTY,
+            inputs: Value::new(),
             output_len: prototype.output_len,
             ios: IoValue::floating(prototype.io_len),
         };

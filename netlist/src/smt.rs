@@ -634,7 +634,7 @@ impl SmtExample {
     }
 
     pub fn get_value<'a>(&self, value: impl Into<Cow<'a, Value>>) -> Option<Const> {
-        let mut result = Const::EMPTY;
+        let mut result = Const::new();
         for net in &*value.into() {
             result.push(self.get_net(net)?);
         }
@@ -646,7 +646,7 @@ impl SmtExample {
     }
 
     pub fn get_past_value<'a>(&self, value: impl Into<Cow<'a, Value>>) -> Option<Const> {
-        let mut result = Const::EMPTY;
+        let mut result = Const::new();
         for net in &*value.into() {
             result.push(self.get_past_net(net)?);
         }

@@ -306,7 +306,7 @@ impl ModuleImporter<'_> {
                 };
                 let mut value = Value::from(net);
                 if width == 0 {
-                    value = Value::EMPTY;
+                    value = Value::new();
                 } else if width > 1 {
                     value = value.zext(width);
                 }
@@ -438,7 +438,7 @@ impl ModuleImporter<'_> {
                 }
                 let mut value = Value::from(net);
                 if y_width == 0 {
-                    value = Value::EMPTY;
+                    value = Value::new();
                 } else if y_width > 1 {
                     value = value.zext(width);
                 }
@@ -458,7 +458,7 @@ impl ModuleImporter<'_> {
                     _ => unreachable!(),
                 };
                 if y_width == 0 {
-                    value = Value::EMPTY;
+                    value = Value::new();
                 } else if y_width > 1 {
                     value = value.zext(y_width);
                 }

@@ -306,10 +306,10 @@ fn export_module(mut design: Design) -> yosys::Module {
                 let mut wr_ports = 0;
                 let mut wr_clk_polarity = Const::new();
                 let mut wr_wide_continuation = Const::new();
-                let mut wr_addr = Value::EMPTY;
-                let mut wr_data = Value::EMPTY;
-                let mut wr_clk = Value::EMPTY;
-                let mut wr_en = Value::EMPTY;
+                let mut wr_addr = Value::new();
+                let mut wr_data = Value::new();
+                let mut wr_clk = Value::new();
+                let mut wr_en = Value::new();
                 let mut write_port_indices = vec![];
                 for (port_index, port) in memory.write_ports.iter().enumerate() {
                     let wide_log2 = port.wide_log2(memory);
@@ -340,11 +340,11 @@ fn export_module(mut design: Design) -> yosys::Module {
                 let mut rd_arst_value = Const::new();
                 let mut rd_srst_value = Const::new();
                 let mut rd_init_value = Const::new();
-                let mut rd_clk = Value::EMPTY;
+                let mut rd_clk = Value::new();
                 let mut rd_en = yosys::BitVector(vec![]);
                 let mut rd_arst = yosys::BitVector(vec![]);
                 let mut rd_srst = yosys::BitVector(vec![]);
-                let mut rd_addr = Value::EMPTY;
+                let mut rd_addr = Value::new();
                 for (port_index, port) in memory.read_ports.iter().enumerate() {
                     let wide_log2 = port.wide_log2(memory);
                     for index in 0..(1 << wide_log2) {

@@ -222,7 +222,7 @@ pub fn simplify(design: &mut Design) -> bool {
 /// - when both operands have redundant 0 bits at MSBs, the high bits of output are replaced with 0
 fn adc_split(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
     let mut ci = c;
-    let mut result = Value::EMPTY;
+    let mut result = Value::new();
     for (offset, (a_bit, b_bit)) in a.iter().zip(b.iter()).enumerate() {
         // Note that the following cases are enough to do constant-folding as
         // well: either the two bits are the same, or they are different.
@@ -289,7 +289,7 @@ fn adc_split(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
 fn adc_unsext(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
     let mut ci = c;
     let mut offset = 0;
-    let mut result = Value::EMPTY;
+    let mut result = Value::new();
     while offset + 2 < a.len() {
         let a_bit = a[offset];
         let b_bit = b[offset];

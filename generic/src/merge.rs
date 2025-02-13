@@ -17,7 +17,7 @@ impl Numberer {
     where
         F: Fn(Value) -> Cell,
     {
-        let mut result = Value::EMPTY;
+        let mut result = Value::new();
         for (out_net, arg_net) in out.iter().zip(arg.iter()) {
             let bit_cell = rebuild(Value::from(arg_net));
             result.extend(self.find_or_insert(bit_cell, out_net));
@@ -29,7 +29,7 @@ impl Numberer {
     where
         F: Fn(Value, Value) -> Cell,
     {
-        let mut result = Value::EMPTY;
+        let mut result = Value::new();
         for (out_net, (arg1_net, arg2_net)) in out.iter().zip(arg1.iter().zip(arg2.iter())) {
             let (arg1_net, arg2_net) = if arg1_net <= arg2_net { (arg1_net, arg2_net) } else { (arg2_net, arg1_net) };
             let bit_cell = rebuild(Value::from(arg1_net), Value::from(arg2_net));
@@ -42,7 +42,7 @@ impl Numberer {
     where
         F: Fn(Value, Value) -> Cell,
     {
-        let mut result = Value::EMPTY;
+        let mut result = Value::new();
         for (out_net, (arg1_net, arg2_net)) in out.iter().zip(arg1.iter().zip(arg2.iter())) {
             let bit_cell = rebuild(Value::from(arg1_net), Value::from(arg2_net));
             result.extend(self.find_or_insert(bit_cell, out_net));

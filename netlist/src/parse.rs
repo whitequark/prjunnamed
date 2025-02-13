@@ -219,7 +219,7 @@ fn parse_io_value_floating(t: &mut WithContext<impl Tokens<Item = char>, Context
 }
 
 fn parse_io_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<IoValue> {
-    let mut value = IoValue::EMPTY;
+    let mut value = IoValue::new();
     parse_symbol(t, '[')?;
     let parts = Vec::from_iter(
         t.many(|t| {
@@ -280,7 +280,7 @@ fn parse_value_part(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> O
 }
 
 fn parse_value_concat(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Value> {
-    let mut value = Value::EMPTY;
+    let mut value = Value::new();
     parse_symbol(t, '[')?;
     let parts = Vec::from_iter(
         t.many(|t| {
@@ -532,7 +532,7 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 parse_symbol(t, '{')?;
                 parse_blank(t);
                 parse_symbol(t, '\n')?;
-                let mut init_value = Const::EMPTY;
+                let mut init_value = Const::new();
                 let mut write_ports = Vec::new();
                 let mut read_ports = Vec::new();
                 while let Some(()) = t.optional(|t| {
