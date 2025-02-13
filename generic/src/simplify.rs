@@ -385,17 +385,15 @@ fn fold_controls(design: &Design, cell_ref: CellRef) {
             let mut target_cell = target_cell.clone();
             let prototype = design.target_prototype(&target_cell);
             for input in prototype.inputs.iter() {
-                if let Some(invert_param_index) = input.invert_param {
-                    let ParamValue::Const(ref mut invert_const) = target_cell.params[invert_param_index] else {
-                        unreachable!()
-                    };
-                    for offset in input.range.clone() {
-                        let const_offset = offset - input.range.start;
-                        if let Some(net) = uninvert(target_cell.inputs[offset]) {
-                            target_cell.inputs[offset] = net;
-                            invert_const[const_offset] = !invert_const[const_offset];
-                        }
-                    }
+                let Some(invert_param_index) = input.invert_param else { continue };
+                let ParamValue::Const(ref mut invert_const) = target_cell.params[invert_param_index] else {
+                    unreachable!()
+                };
+                for offset in input.range.clone() {
+                    let const_offset = offset - input.range.start;
+                    let Some(net) = uninvert(target_cell.inputs[offset]) else { continue };
+                    target_cell.inputs[offset] = net;
+                    invert_const[const_offset] = !invert_const[const_offset];
                 }
             }
             cell_ref.replace(Cell::Target(target_cell));
