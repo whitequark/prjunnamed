@@ -593,7 +593,7 @@ impl<'a, SMT: SmtEngine> SmtBuilder<'a, SMT> {
     }
 
     pub fn check(&mut self) -> Result<Option<SmtExample>, SMT::Error> {
-        if self.eqs.borrow().len() == 0 {
+        if self.eqs.borrow().is_empty() {
             return Ok(None);
         }
         let not_and_eqs = self.engine.build_not(self.engine.build_and(&self.eqs.borrow()[..]));

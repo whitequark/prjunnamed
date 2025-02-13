@@ -96,7 +96,7 @@ macro_rules! arithmetic_patterns {
             type Capture = (Value, P1::Capture, P2::Capture);
 
             fn execute(&self, design: &dyn DesignDyn, target: &Value) -> Option<Self::Capture> {
-                if target.len() == 0 { return None }
+                if target.is_empty() { return None }
                 let (cap1, cap2);
                 if let Ok((cell_ref, 0)) = design.find_cell(target.iter().next().unwrap()) {
                     if let Cell::$cstr(arg1, arg2) = &*cell_ref.get() {

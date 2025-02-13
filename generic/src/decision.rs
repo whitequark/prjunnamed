@@ -514,7 +514,7 @@ impl Display for MatchRow {
             write!(f, "{trit}")?;
         }
         write!(f, " =>")?;
-        if self.rules.len() == 0 {
+        if self.rules.is_empty() {
             return write!(f, " (empty)");
         }
         for rule in &self.rules {

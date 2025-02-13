@@ -102,7 +102,7 @@ impl<T: NetOrValue> Pattern<T> for POnes {
 
     fn execute(&self, _design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         match target.as_const() {
-            Some(value) if value.len() == 0 => None,
+            Some(value) if value.is_empty() => None,
             Some(value) if value.iter().all(|net| net == Trit::One) => Some(((),)),
             _ => None,
         }
@@ -122,7 +122,7 @@ impl<T: NetOrValue> Pattern<T> for PUndef {
 
     fn execute(&self, _design: &dyn DesignDyn, target: &T) -> Option<Self::Capture> {
         match target.as_const() {
-            Some(value) if value.len() == 0 => None,
+            Some(value) if value.is_empty() => None,
             Some(value) if value.iter().all(|net| net == Trit::Undef) => Some(((),)),
             _ => None,
         }
@@ -222,7 +222,7 @@ impl<P: Pattern<Value>> Pattern<Value> for PSExt<P> {
     type Capture = (Value, P::Capture);
 
     fn execute(&self, design: &dyn DesignDyn, target: &Value) -> Option<Self::Capture> {
-        if target.len() < 1 {
+        if target.is_empty() {
             return None;
         }
         let sext_count = target.iter().rev().take_while(|net| *net == target.msb()).count() - 1;

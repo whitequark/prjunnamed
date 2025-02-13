@@ -183,17 +183,16 @@ impl Design {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.ios.len() + self.cells.len() == 0 && !self.is_changed() && self.target.is_none()
+        self.ios.is_empty() && self.cells.is_empty() && !self.is_changed() && self.target.is_none()
     }
 
     pub fn is_changed(&self) -> bool {
         let changes = self.changes.borrow();
-        changes.added_ios.len()
-            + changes.added_cells.len()
-            + changes.replaced_cells.len()
-            + changes.unalived_cells.len()
-            + changes.replaced_nets.len()
-            > 0
+        !changes.added_ios.is_empty()
+            || !changes.added_cells.is_empty()
+            || !changes.replaced_cells.is_empty()
+            || !changes.unalived_cells.is_empty()
+            || !changes.replaced_nets.is_empty()
     }
 
     pub fn verify<SMT: SmtEngine>(&self, engine: SMT) -> Result<(), SMT::Error> {

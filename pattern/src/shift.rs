@@ -18,7 +18,7 @@ macro_rules! shift_patterns {
             type Capture = (Value, P1::Capture, P2::Capture, P3::Capture);
 
             fn execute(&self, design: &dyn DesignDyn, target: &Value) -> Option<Self::Capture> {
-                if target.len() == 0 {
+                if target.is_empty() {
                     return None;
                 }
                 let (cap1, cap2, cap3);
