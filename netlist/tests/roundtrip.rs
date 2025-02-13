@@ -102,7 +102,7 @@ fn test_cells() {
     roundtrip("%0:0 = memory depth=#256 width=#16 {\n}\n");
     roundtrip("&\"purr\":1\n%0:2 = buf 00\n%2:1 = iobuf &\"purr\" o=%0+0 en=%0+1\n");
     roundtrip("&\"purr\":2\n%0:2 = buf 00\n%2:2 = iobuf &\"purr\":2 o=%0:2 en=%0+1\n");
-    roundtrip("%0:0 = \"instance\" {\n}\n");
+    roundtrip("%0:_ = \"instance\" {\n}\n");
     roundtrip("%0:2 = input \"awa\"\n");
     roundtrip("%0:2 = buf 00\n%2:0 = output \"bite\" %0:2\n");
     roundtrip("%0:2 = buf 00\n%2:0 = name \"meow\" %0:2\n");
@@ -196,20 +196,27 @@ fn test_memories() {
 
 #[test]
 fn test_instances() {
-    roundtrip("%0:1 = buf 0\n%1:0 = \"TBUF\" {\n  input \"EN\" = %0\n}\n");
-    roundtrip("%0:2 = \"TBUF\" {\n  output \"I\" = 0:2\n}\n");
-    roundtrip("&\"pin\":1\n%0:0 = \"TBUF\" {\n  io \"PIN\" = &\"pin\"\n}\n");
-    roundtrip("%0:0 = \"TBUF\" {\n  io \"PIN\" = &_\n}\n");
-    roundtrip("%0:0 = \"TBUF\" {\n  io \"PIN\" = &_:4\n}\n");
+    roundtrip("%0:1 = buf 0\n%1:_ = \"TBUF\" {\n  input \"EN\" = %0\n}\n");
+    roundtrip("%2:_ = \"TBUF\" {\n  %2:2 = output \"I\"\n}\n");
+    roundtrip("&\"pin\":1\n%0:_ = \"TBUF\" {\n  io \"PIN\" = &\"pin\"\n}\n");
+    roundtrip("%0:_ = \"TBUF\" {\n  io \"PIN\" = &_\n}\n");
+    roundtrip("%0:_ = \"TBUF\" {\n  io \"PIN\" = &_:4\n}\n");
+    roundtrip(concat!(
+        "%2:_ = \"DFF\" {\n",
+        "  %2:1 = output \"Q\"\n",
+        "  %3:1 = output \"QN\"\n}\n",
+        "%4:0 = output \"q\" %2\n",
+        "%5:0 = output \"qn\" %3\n"
+    ));
 }
 
 #[test]
 fn test_instance_params() {
-    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = 10X\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = #15\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = #-33\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = \"x\"\n}\n");
-    roundtrip("%0:0 = \"CONFIG\" {\n  param \"A\" = \"x\\7f\"\n}\n");
+    roundtrip("%0:_ = \"CONFIG\" {\n  param \"A\" = 10X\n}\n");
+    roundtrip("%0:_ = \"CONFIG\" {\n  param \"A\" = #15\n}\n");
+    roundtrip("%0:_ = \"CONFIG\" {\n  param \"A\" = #-33\n}\n");
+    roundtrip("%0:_ = \"CONFIG\" {\n  param \"A\" = \"x\"\n}\n");
+    roundtrip("%0:_ = \"CONFIG\" {\n  param \"A\" = \"x\\7f\"\n}\n");
 }
 
 #[derive(Debug)]
@@ -222,16 +229,26 @@ impl TestTarget {
     fn new(options: BTreeMap<String, String>) -> Arc<Self> {
         Arc::new(TestTarget {
             options,
-            prototypes: BTreeMap::from_iter([(
-                "QUAD_IOBUF".into(),
-                TargetPrototype::new_has_effects()
-                    .add_param_bool("OE_INVERT", false)
-                    .add_param_bits("PULLUP", Const::zero(4))
-                    .add_input("O", Const::undef(4))
-                    .add_input_invertible("OE", Const::zero(1), "OE_INVERT")
-                    .add_output("I", 4)
-                    .add_io("IO", 4),
-            )]),
+            prototypes: BTreeMap::from([
+                (
+                    "QUAD_IOBUF".into(),
+                    TargetPrototype::new_has_effects()
+                        .add_param_bool("OE_INVERT", false)
+                        .add_param_bits("PULLUP", Const::zero(4))
+                        .add_input("O", Const::undef(4))
+                        .add_input_invertible("OE", Const::zero(1), "OE_INVERT")
+                        .add_output("I", 4)
+                        .add_io("IO", 4),
+                ),
+                (
+                    "ADD".into(),
+                    TargetPrototype::new_pure()
+                        .add_input("A", Const::undef(1))
+                        .add_input("B", Const::undef(1))
+                        .add_output("O", 1)
+                        .add_output("CO", 1),
+                ),
+            ]),
         })
     }
 }
@@ -290,5 +307,20 @@ fn test_target() {
         "  input \"OE\" = 1\n",
         "  io \"IO\" = [ &\"pins\"+0 &\"pins\"+1 &\"pins\"+2 &_ ]\n",
         "}\n"
+    ));
+    roundtrip(concat!(
+        "set target \"test\"\n",
+        "%0:1 = input \"A\"\n",
+        "%1:1 = input \"B\"\n",
+        "; \"co\"+0\n",
+        "; \"o\"+0\n",
+        "%4:_ = target \"ADD\" {\n",
+        "  input \"A\" = %0\n",
+        "  input \"B\" = %1\n",
+        "  %4:1 = output \"O\"\n",
+        "  %5:1 = output \"CO\"\n",
+        "}\n",
+        "%6:0 = output \"o\" %4\n",
+        "%7:0 = output \"co\" %5\n",
     ));
 }

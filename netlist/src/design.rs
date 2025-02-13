@@ -105,7 +105,7 @@ impl Design {
         for _ in 0..output_len.checked_sub(1).unwrap_or(0) {
             changes.added_cells.push(CellRepr::Skip(index.try_into().expect("cell index too large")))
         }
-        let output = Value::cell(index, output_len);
+        let output = Value::from_cell_range(index, output_len);
         if !cell.has_effects(self) {
             changes.cell_cache.insert(cell, output.clone());
         }
@@ -118,7 +118,7 @@ impl Design {
         for _ in 0..width {
             changes.added_cells.push(CellRepr::Void);
         }
-        Value::cell(index, width)
+        Value::from_cell_range(index, width)
     }
 
     fn locate_cell(&self, net: Net) -> Result<(usize, usize), Trit> {
@@ -216,9 +216,9 @@ impl Design {
             if matches!(cell, CellRepr::Skip(_) | CellRepr::Void) {
             } else if cell.output_len() == 0 {
             } else if let Some(new_cell) = changes.replaced_cells.get(&index) {
-                smt.replace_cell(&Value::cell(index, cell.output_len()), &*cell.get(), new_cell)?;
+                smt.replace_cell(&Value::from_cell_range(index, cell.output_len()), &*cell.get(), new_cell)?;
             } else {
-                smt.add_cell(&Value::cell(index, cell.output_len()), &*cell.get())?;
+                smt.add_cell(&Value::from_cell_range(index, cell.output_len()), &*cell.get())?;
             }
         }
         for (&net, &new_net) in changes.replaced_nets.iter() {
@@ -244,7 +244,7 @@ impl Design {
                 if matches!(cell, CellRepr::Skip(_) | CellRepr::Void) {
                 } else if cell.output_len() == 0 {
                 } else {
-                    let output = Value::cell(index, cell.output_len());
+                    let output = Value::from_cell_range(index, cell.output_len());
                     let (was, now) = (example.get_past_value(&output), example.get_value(&output));
                     message.push_str(&match (was, now) {
                         (Some(was), Some(now)) => format!("{} = {} -> {}\n", self.display_value(&output), was, now),
@@ -311,7 +311,11 @@ impl Design {
     }
 
     pub fn target_prototype(&self, target_cell: &TargetCell) -> &TargetPrototype {
-        self.target.as_ref().unwrap().prototype(&target_cell.kind).unwrap()
+        self.target
+            .as_ref()
+            .expect("design has no target")
+            .prototype(&target_cell.kind)
+            .expect("target prototype not defined")
     }
 }
 
@@ -360,7 +364,7 @@ impl<'a> CellRef<'a> {
     }
 
     pub fn output(&self) -> Value {
-        Value::cell(self.index, self.output_len())
+        Value::from_cell_range(self.index, self.output_len())
     }
 
     pub fn visit(&self, f: impl FnMut(Net)) {
@@ -739,7 +743,7 @@ impl Display for Design {
                         }
                     }
                 }
-                _ => ()
+                _ => (),
             }
         }
 
@@ -777,13 +781,9 @@ impl Display for Design {
                 }
             }
             if !diff {
-                write!(f, "%{}:{} = ", index, cell.output_len())?;
-                self.write_cell(f, cell, "")?;
-                writeln!(f)
+                self.write_cell(f, "", index, cell)?;
             } else if changes.unalived_cells.contains(&index) {
-                write!(f, "{removed}%{}:{} = ", index, cell.output_len())?;
-                self.write_cell(f, cell, "")?;
-                writeln!(f)
+                self.write_cell(f, removed, index, cell)?;
             } else {
                 let mut mapped_cell;
                 if let Some(replaced_cell) = changes.replaced_cells.get(&index) {
@@ -797,22 +797,17 @@ impl Display for Design {
                     }
                 });
                 if index >= self.cells.len() {
-                    write!(f, "{added}%_{}:{} = ", index, mapped_cell.output_len())?;
-                    self.write_cell(f, &mapped_cell, added)?;
-                    writeln!(f)
+                    self.write_cell(f, added, index, &mapped_cell)?;
                 } else if mapped_cell != *cell {
-                    write!(f, "{removed}%{}:{} = ", index, cell.output_len())?;
-                    self.write_cell(f, cell, removed)?;
+                    self.write_cell(f, removed, index, cell)?;
                     writeln!(f)?;
-                    write!(f, "{added}%{}:{} = ", index, mapped_cell.output_len())?;
-                    self.write_cell(f, &mapped_cell, added)?;
-                    writeln!(f)
+                    self.write_cell(f, added, index, &mapped_cell)?;
                 } else {
-                    write!(f, "{unchanged}%{}:{} = ", index, cell.output_len())?;
-                    self.write_cell(f, cell, unchanged)?;
-                    writeln!(f)
+                    self.write_cell(f, unchanged, index, cell)?;
                 }
             }
+            writeln!(f)?;
+            Ok(())
         };
 
         if f.alternate() {

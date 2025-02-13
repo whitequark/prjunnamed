@@ -165,7 +165,7 @@ impl Value {
     }
 
     /// Creates a reference to `count` outputs of cell at position `cell_index` in their natural order.
-    pub(crate) fn cell(cell_index: usize, count: usize) -> Value {
+    pub(crate) fn from_cell_range(cell_index: usize, count: usize) -> Value {
         let mut nets = vec![];
         for net_index in 0..count {
             nets.push(Net::from_cell_index(cell_index + net_index));

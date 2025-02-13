@@ -17,11 +17,7 @@ struct Context {
 
 impl Context {
     fn new(target: Option<Arc<dyn Target>>) -> Context {
-        Context {
-            design: Design::with_target(target),
-            def_map: BTreeMap::new(),
-            use_map: BTreeMap::new(),
-        }
+        Context { design: Design::with_target(target), def_map: BTreeMap::new(), use_map: BTreeMap::new() }
     }
 
     fn add_io(&mut self, name: String, width: usize) -> IoValue {
@@ -56,7 +52,7 @@ impl Context {
         }
     }
 
-    fn into(mut self) -> Design {
+    fn apply(mut self) -> Design {
         for ((index, offset), net) in self.use_map.into_iter() {
             if let Some(output) = self.def_map.get(&index) {
                 if offset < output.len() {
@@ -244,28 +240,35 @@ fn parse_cell_index(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> O
     parse_decimal(t)
 }
 
-fn parse_cell_index_size(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(usize, usize)> {
+fn parse_cell_index_placeholder(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<usize> {
     let cell_index = parse_cell_index(t)?;
     parse_symbol(t, ':')?;
-    let net_count = parse_decimal(t)?;
-    Some((cell_index, net_count))
+    parse_symbol(t, '_')?;
+    Some(cell_index)
+}
+
+fn parse_cell_index_width(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(usize, usize)> {
+    let cell_index = parse_cell_index(t)?;
+    parse_symbol(t, ':')?;
+    let width = parse_decimal(t)?;
+    Some((cell_index, width))
 }
 
 fn parse_cell_index_offset(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(usize, usize)> {
     let cell_index = parse_cell_index(t)?;
     parse_symbol(t, '+')?;
-    let net_offset = parse_decimal(t)?;
-    Some((cell_index, net_offset))
+    let offset = parse_decimal(t)?;
+    Some((cell_index, offset))
 }
 
 fn parse_value_part(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Value> {
     one_of!(t;
         parse_const(t).map(Value::from),
-        parse_cell_index_offset(t).and_then(|(cell_index, net_offset)| {
-            Some(t.context_mut().get_use(cell_index, net_offset..net_offset+1))
+        parse_cell_index_offset(t).and_then(|(cell_index, offset)| {
+            Some(t.context_mut().get_use(cell_index, offset..offset+1))
         }),
-        parse_cell_index_size(t).and_then(|(cell_index, net_count)| {
-            Some(t.context_mut().get_use(cell_index, 0..net_count))
+        parse_cell_index_width(t).and_then(|(cell_index, width)| {
+            Some(t.context_mut().get_use(cell_index, 0..width))
         }),
         parse_cell_index(t).and_then(|cell_index| {
             Some(t.context_mut().get_use(cell_index, 0..1))
@@ -332,7 +335,7 @@ fn parse_io(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Io
     Some(io_value)
 }
 
-fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Value> {
+fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<()> {
     fn parse_value_arg(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Value> {
         parse_blank(t);
         one_of!(t;
@@ -406,9 +409,103 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
         parse_const(t)
     }
 
-    fn parse_builtin(t: &mut WithContext<impl Tokens<Item = char>, Context>, size: usize) -> Option<Cell> {
-        let name = parse_keyword(t)?;
-        Some(match name.as_ref() {
+    fn parse_instance_param(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(String, ParamValue)> {
+        parse_keyword_expect(t, "param")?;
+        parse_blank(t);
+        let name = parse_string(t)?;
+        parse_blank(t);
+        parse_symbol(t, '=')?;
+        parse_blank(t);
+        let value = one_of!(t;
+            parse_const(t).map(ParamValue::Const),
+            parse_symbol(t, '#').and_then(|()| parse_decimal(t)).map(ParamValue::Int),
+            parse_string(t).map(ParamValue::String)
+        )?;
+        Some((name, value))
+    }
+
+    fn parse_instance_input(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(String, Value)> {
+        parse_keyword_expect(t, "input")?;
+        parse_blank(t);
+        let name = parse_string(t)?;
+        parse_blank(t);
+        parse_symbol(t, '=')?;
+        let value = parse_value_arg(t)?;
+        Some((name, value))
+    }
+
+    fn parse_instance_output(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(String, usize, usize)> {
+        let (cell_index, width) = parse_cell_index_width(t)?;
+        parse_blank(t);
+        parse_symbol(t, '=')?;
+        parse_blank(t);
+        parse_keyword_expect(t, "output")?;
+        parse_blank(t);
+        let name = parse_string(t)?;
+        Some((name, cell_index, width))
+    }
+
+    fn parse_instance_io(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(String, IoValue)> {
+        parse_keyword_expect(t, "io")?;
+        parse_blank(t);
+        let name = parse_string(t)?;
+        parse_blank(t);
+        parse_symbol(t, '=')?;
+        parse_blank(t);
+        let io_value = parse_io_value(t)?;
+        Some((name, io_value))
+    }
+
+    fn parse_instance(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<(Instance, Value)> {
+        let mut instance = Instance {
+            kind: parse_string(t)?,
+            params: BTreeMap::new(),
+            inputs: BTreeMap::new(),
+            outputs: BTreeMap::new(),
+            ios: BTreeMap::new(),
+        };
+        let mut output = Value::new();
+        parse_blank(t);
+        parse_symbol(t, '{')?;
+        parse_blank(t);
+        parse_symbol(t, '\n')?;
+        while let Some(()) = t.optional(|t| {
+            parse_blank(t);
+            one_of!(t;
+                parse_instance_param(t).map(|(name, value)|
+                    assert!(instance.params.insert(name, value).is_none(), "duplicate parameter name in instance")),
+                parse_instance_input(t).map(|(name, value)|
+                    assert!(instance.inputs.insert(name, value).is_none(), "duplicate input name in instance")),
+                parse_instance_output(t).map(|(name, index, width)| {
+                    let start = instance.output_len();
+                    assert!(
+                        instance.outputs.insert(name, start..start + width).is_none(),
+                        "duplicate output name in instance"
+                    );
+                    let ctx = t.context_mut();
+                    let value = ctx.design.add_void(width);
+                    ctx.add_def(index, width, value.clone());
+                    output = output.concat(value);
+                }),
+                parse_instance_io(t).map(|(name, io_value)|
+                    assert!(instance.ios.insert(name, io_value).is_none(), "duplicate IO name in instance"))
+            );
+            parse_blank(t);
+            parse_symbol(t, '\n')?;
+            Some(())
+        }) {}
+        parse_blank(t);
+        parse_symbol(t, '}')?;
+        Some((instance, output))
+    }
+
+    fn parse_builtin(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<()> {
+        let (index, width) = parse_cell_index_width(t)?;
+        parse_blank(t);
+        parse_symbol(t, '=')?;
+        parse_blank(t);
+        let keyword = parse_keyword(t)?;
+        let cell = match keyword.as_ref() {
             "buf" => Cell::Buf(parse_value_arg(t)?),
             "not" => Cell::Not(parse_value_arg(t)?),
             "and" => Cell::And(parse_value_arg(t)?, parse_value_arg(t)?),
@@ -627,116 +724,95 @@ fn parse_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<
                 let enable = parse_control_arg(t, "en")?;
                 Cell::IoBuf(IoBuffer { io, output, enable })
             }
-            "target" => {
-                parse_blank(t);
-                let instance = parse_instance(t)?;
-                let target = t.context().design.target().expect("no target specified");
-                let prototype = target.prototype(&instance.kind).expect("no prototype for target cell");
-                let mut target_cell = TargetCell::new(instance.kind.clone(), prototype);
-                for (name, value) in instance.params {
-                    let param = prototype.get_param(&name).expect("unknown parameter");
-                    if !param.kind.is_valid(&value) {
-                        panic!("invalid value for parameter {name}");
-                    }
-                    target_cell.params[param.index] = value;
-                }
-                for (name, value) in instance.inputs {
-                    let input = prototype.get_input(&name).expect("unknown input");
-                    if value.len() != input.len() {
-                        panic!("width mismatch for input {name}");
-                    }
-                    target_cell.inputs[input.range.clone()].copy_from_slice(&value[..]);
-                }
-                for (name, value) in instance.ios {
-                    let io = prototype.get_io(&name).expect("unknown io");
-                    if value.len() != io.len() {
-                        panic!("width mismatch for io {name}");
-                    }
-                    target_cell.ios[io.range.clone()].copy_from_slice(&value[..]);
-                }
-                if !instance.outputs.is_empty() {
-                    panic!("target instance should not have explicit outputs");
-                }
-                Cell::Target(target_cell)
-            }
-            "input" => Cell::Input(parse_string_arg(t)?, size),
+            "input" => Cell::Input(parse_string_arg(t)?, width),
             "output" => Cell::Output(parse_string_arg(t)?, parse_value_arg(t)?),
             "name" => Cell::Name(parse_string_arg(t)?, parse_value_arg(t)?),
             "debug" => Cell::Debug(parse_string_arg(t)?, parse_value_arg(t)?),
             _ => return None,
-        })
-    }
-
-    fn parse_instance(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Instance> {
-        let mut instance = Instance {
-            kind: parse_string(t)?,
-            params: BTreeMap::new(),
-            inputs: BTreeMap::new(),
-            outputs: BTreeMap::new(),
-            ios: BTreeMap::new(),
         };
-        parse_blank(t);
-        parse_symbol(t, '{')?;
-        parse_blank(t);
-        parse_symbol(t, '\n')?;
-        while let Some(()) = t.optional(|t| {
-            parse_blank(t);
-            let keyword = parse_keyword(t)?;
-            parse_blank(t);
-            let name = parse_string(t)?;
-            parse_blank(t);
-            parse_symbol(t, '=')?;
-            parse_blank(t);
-            match keyword.as_str() {
-                "io" => {
-                    let io_value = parse_io_value(t)?;
-                    assert!(instance.ios.insert(name, io_value).is_none(), "duplicate IO name in instance");
-                }
-                "input" => {
-                    let value = parse_value_arg(t)?;
-                    assert!(instance.inputs.insert(name, value).is_none(), "duplicate input name in instance");
-                }
-                "output" => {
-                    let start: usize = parse_decimal(t)?;
-                    parse_symbol(t, ':')?;
-                    let end: usize = parse_decimal(t)?;
-                    assert!(
-                        instance.outputs.insert(name, start..start + end).is_none(),
-                        "duplicate output name in instance"
-                    );
-                }
-                "param" => {
-                    let value = one_of!(t;
-                        parse_const(t).map(ParamValue::Const),
-                        parse_symbol(t, '#').and_then(|()| parse_decimal(t)).map(ParamValue::Int),
-                        parse_string(t).map(ParamValue::String)
-                    )?;
-                    assert!(instance.params.insert(name, value).is_none(), "duplicate parameter name in instance");
-                }
-                _ => return None,
-            }
-            parse_blank(t);
-            parse_symbol(t, '\n')?;
-            Some(())
-        }) {}
-        parse_blank(t);
-        parse_symbol(t, '}')?;
-        Some(instance)
+        let ctx = t.context_mut();
+        let output = ctx.design.add_cell(cell);
+        assert_eq!(output.len(), width, "cell output width must match declaration width");
+        ctx.add_def(index, width, output);
+        Some(())
     }
 
-    let (index, size) = parse_cell_index_size(t)?;
-    parse_blank(t);
-    parse_symbol(t, '=')?;
-    parse_blank(t);
-    let cell = one_of!(t;
-        parse_builtin(t, size),
-        parse_instance(t).map(Cell::Other),
+    fn parse_target_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<()> {
+        let (index, width) = one_of!(t;
+            parse_cell_index_width(t).map(|(index, width)| (index, Some(width))),
+            parse_cell_index_placeholder(t).map(|index| (index, None))
+        )?;
+        parse_blank(t);
+        parse_symbol(t, '=')?;
+        parse_blank(t);
+        parse_keyword_expect(t, "target")?;
+        parse_blank(t);
+        let (instance, output) = parse_instance(t)?;
+        let target = t.context().design.target().expect("no target specified");
+        let prototype = target.prototype(&instance.kind).expect("no prototype for target cell");
+        let mut target_cell = TargetCell::new(instance.kind.clone(), prototype);
+        for (name, value) in instance.params {
+            let target_param = prototype.get_param(&name).expect("unknown parameter");
+            if !target_param.kind.is_valid(&value) {
+                panic!("invalid value for parameter {name}");
+            }
+            target_cell.params[target_param.index] = value;
+        }
+        for (name, value) in instance.inputs {
+            let target_input = prototype.get_input(&name).expect("unknown input");
+            if value.len() != target_input.len() {
+                panic!("width mismatch for input {name}");
+            }
+            target_cell.inputs[target_input.range.clone()].copy_from_slice(&value[..]);
+        }
+        for (name, value) in instance.ios {
+            let target_io = prototype.get_io(&name).expect("unknown io");
+            if value.len() != target_io.len() {
+                panic!("width mismatch for io {name}");
+            }
+            target_cell.ios[target_io.range.clone()].copy_from_slice(&value[..]);
+        }
+        let ctx = t.context_mut();
+        if let Some(width) = width {
+            // %0:1 = target "SB_LUT" { .. }
+            if !(instance.outputs.is_empty() && prototype.outputs.len() == 1 && prototype.output_len == width) {
+                panic!("target instance should have a single implicit output of the right size")
+            }
+            ctx.add_def(index, width, ctx.design.add_target(target_cell));
+        } else {
+            // %0:_ = target "SB_LUT" { %0:1 = output "Y" .. }
+            let target_cell_output = ctx.design.add_target(target_cell);
+            for (name, range) in instance.outputs {
+                let target_output = prototype.get_output(&name).expect("unknown output");
+                if range.len() != target_output.len() {
+                    panic!("width mismatch for output {name}");
+                }
+                ctx.design
+                    .replace_value(output.slice(range.clone()), target_cell_output.slice(target_output.range.clone()));
+            }
+        }
+        Some(())
+    }
+
+    fn parse_other_cell(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<()> {
+        parse_cell_index_placeholder(t)?;
+        parse_blank(t);
+        parse_symbol(t, '=')?;
+        parse_blank(t);
+        let (instance, output) = parse_instance(t)?;
+        let ctx = t.context_mut();
+        ctx.design.replace_value(output, ctx.design.add_other(instance));
+        Some(())
+    }
+
+    one_of!(t;
+        parse_builtin(t),
+        parse_target_cell(t),
+        parse_other_cell(t),
     )?;
     parse_blank(t);
     parse_symbol(t, '\n')?;
-    let value = t.context_mut().design.add_cell(cell);
-    t.context_mut().add_def(index, size, value.clone());
-    Some(value)
+    Some(())
 }
 
 fn parse_line(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> bool {
@@ -773,7 +849,7 @@ pub fn parse(target: Option<Arc<dyn Target>>, source: &str) -> Result<Design, Pa
     if !tokens.eof() {
         return Err(ParseError { source: String::from(source), offset: tokens.location().offset() });
     }
-    Ok(context.into())
+    Ok(context.apply())
 }
 
 impl FromStr for Design {

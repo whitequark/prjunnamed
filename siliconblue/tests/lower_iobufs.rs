@@ -24,7 +24,7 @@ fn test_lower_iobuf_input() {
     let (_, mut gold) = parse! {r#"
         &"io":1
         %0:0 = output "x" %1+0
-        %1:3 = target "SB_IO" {
+        %1:_ = target "SB_IO" {
             param "PIN_TYPE" = 000001
             param "PULLUP" = 0
             param "NEG_TRIGGER" = 0
@@ -37,6 +37,9 @@ fn test_lower_iobuf_input() {
             input "INPUT_CLK" = X
             input "OUTPUT_CLK" = X
             input "LATCH_INPUT_VALUE" = X
+            %1:1 = output "D_IN_0"
+            %2:1 = output "D_IN_1"
+            %3:1 = output "GLOBAL_BUFFER_OUTPUT"
             io "PACKAGE_PIN" = &"io"
             io "PACKAGE_PIN_B" = &_
         }
@@ -56,7 +59,7 @@ fn test_lower_iobuf_output() {
     let (_, mut gold) = parse! {r#"
         &"io":1
         %0:1 = input "o"
-        %1:3 = target "SB_IO" {
+        %1:_ = target "SB_IO" {
             param "PIN_TYPE" = 011001
             param "PULLUP" = 0
             param "NEG_TRIGGER" = 0
@@ -69,10 +72,13 @@ fn test_lower_iobuf_output() {
             input "INPUT_CLK" = X
             input "OUTPUT_CLK" = X
             input "LATCH_INPUT_VALUE" = X
+            %1:1 = output "D_IN_0"
+            %2:1 = output "D_IN_1"
+            %3:1 = output "GLOBAL_BUFFER_OUTPUT"
             io "PACKAGE_PIN" = &"io"
             io "PACKAGE_PIN_B" = &_
         }
-        %4:0 = output "i" %1+0
+        %4:0 = output "i" %1
     "#};
     assert_isomorphic!(design, gold);
 }
@@ -91,8 +97,8 @@ fn test_lower_iobuf_tristate() {
         &"io":1
         %0:1 = input "o"
         %1:1 = input "oe"
-        %2:0 = output "i" %3+0
-        %3:3 = target "SB_IO" {
+        %2:0 = output "i" %3
+        %3:_ = target "SB_IO" {
             param "PIN_TYPE" = 101001
             param "PULLUP" = 0
             param "NEG_TRIGGER" = 0
@@ -105,6 +111,9 @@ fn test_lower_iobuf_tristate() {
             input "INPUT_CLK" = X
             input "OUTPUT_CLK" = X
             input "LATCH_INPUT_VALUE" = X
+            %3:1 = output "D_IN_0"
+            %4:1 = output "D_IN_1"
+            %5:1 = output "GLOBAL_BUFFER_OUTPUT"
             io "PACKAGE_PIN" = &"io"
             io "PACKAGE_PIN_B" = &_
         }
@@ -126,9 +135,9 @@ fn test_lower_iobuf_tristate_inv() {
         &"io":1
         %0:1 = input "o"
         %1:1 = input "t"
-        %2:0 = output "i" %4+0
+        %2:0 = output "i" %4
         %3:1 = not %1
-        %4:3 = target "SB_IO" {
+        %4:_ = target "SB_IO" {
             param "PIN_TYPE" = 101001
             param "PULLUP" = 0
             param "NEG_TRIGGER" = 0
@@ -141,6 +150,9 @@ fn test_lower_iobuf_tristate_inv() {
             input "INPUT_CLK" = X
             input "OUTPUT_CLK" = X
             input "LATCH_INPUT_VALUE" = X
+            %4:1 = output "D_IN_0"
+            %5:1 = output "D_IN_1"
+            %6:1 = output "GLOBAL_BUFFER_OUTPUT"
             io "PACKAGE_PIN" = &"io"
             io "PACKAGE_PIN_B" = &_
         }
@@ -162,8 +174,8 @@ fn test_lower_iobuf_tristate_wide() {
         &"io":4
         %0:4 = input "o"
         %4:1 = input "oe"
-        %5:0 = output "i" [ %15+0 %12+0 %9+0 %6+0 ]
-        %6:3 = target "SB_IO" {
+        %5:0 = output "i" [ %15 %12 %9 %6 ]
+        %6:_ = target "SB_IO" {
             param "PIN_TYPE" = 101001
             param "PULLUP" = 0
             param "NEG_TRIGGER" = 0
@@ -176,10 +188,13 @@ fn test_lower_iobuf_tristate_wide() {
             input "INPUT_CLK" = X
             input "OUTPUT_CLK" = X
             input "LATCH_INPUT_VALUE" = X
+            %6:1 = output "D_IN_0"
+            %7:1 = output "D_IN_1"
+            %8:1 = output "GLOBAL_BUFFER_OUTPUT"
             io "PACKAGE_PIN" = &"io"+0
             io "PACKAGE_PIN_B" = &_
         }
-        %9:3 = target "SB_IO" {
+        %9:_ = target "SB_IO" {
             param "PIN_TYPE" = 101001
             param "PULLUP" = 0
             param "NEG_TRIGGER" = 0
@@ -192,10 +207,13 @@ fn test_lower_iobuf_tristate_wide() {
             input "INPUT_CLK" = X
             input "OUTPUT_CLK" = X
             input "LATCH_INPUT_VALUE" = X
+            %9:1 = output "D_IN_0"
+            %10:1 = output "D_IN_1"
+            %11:1 = output "GLOBAL_BUFFER_OUTPUT"
             io "PACKAGE_PIN" = &"io"+1
             io "PACKAGE_PIN_B" = &_
         }
-        %12:3 = target "SB_IO" {
+        %12:_ = target "SB_IO" {
             param "PIN_TYPE" = 101001
             param "PULLUP" = 0
             param "NEG_TRIGGER" = 0
@@ -208,10 +226,13 @@ fn test_lower_iobuf_tristate_wide() {
             input "INPUT_CLK" = X
             input "OUTPUT_CLK" = X
             input "LATCH_INPUT_VALUE" = X
+            %12:1 = output "D_IN_0"
+            %13:1 = output "D_IN_1"
+            %14:1 = output "GLOBAL_BUFFER_OUTPUT"
             io "PACKAGE_PIN" = &"io"+2
             io "PACKAGE_PIN_B" = &_
         }
-        %15:3 = target "SB_IO" {
+        %15:_ = target "SB_IO" {
             param "PIN_TYPE" = 101001
             param "PULLUP" = 0
             param "NEG_TRIGGER" = 0
@@ -224,6 +245,9 @@ fn test_lower_iobuf_tristate_wide() {
             input "INPUT_CLK" = X
             input "OUTPUT_CLK" = X
             input "LATCH_INPUT_VALUE" = X
+            %15:1 = output "D_IN_0"
+            %16:1 = output "D_IN_1"
+            %17:1 = output "GLOBAL_BUFFER_OUTPUT"
             io "PACKAGE_PIN" = &"io"+3
             io "PACKAGE_PIN_B" = &_
         }

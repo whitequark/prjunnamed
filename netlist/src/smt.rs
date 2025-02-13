@@ -375,13 +375,16 @@ impl<'a, SMT: SmtEngine> SmtBuilder<'a, SMT> {
                     let mut bv_x = vec![];
                     let mut bv_carry_x = tv_c.x;
                     for index in 0..a.len() {
-                        bv_carry_x = self.bv_bind(self.engine.build_bvor(
-                            bv_carry_x,
+                        bv_carry_x = self.bv_bind(
                             self.engine.build_bvor(
-                                self.engine.build_extract(index, index, tv_a.x.clone()),
-                                self.engine.build_extract(index, index, tv_b.x.clone()),
+                                bv_carry_x,
+                                self.engine.build_bvor(
+                                    self.engine.build_extract(index, index, tv_a.x.clone()),
+                                    self.engine.build_extract(index, index, tv_b.x.clone()),
+                                ),
                             ),
-                        ), 1)?;
+                            1,
+                        )?;
                         bv_x.push(bv_carry_x.clone());
                     }
                     bv_x.push(bv_carry_x.clone());

@@ -1,6 +1,9 @@
 use std::{borrow::Cow, fmt::Display};
 
-use crate::{Cell, CellRef, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, ParamValue, Trit, Value};
+use crate::{
+    Cell, CellRef, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, ParamValue, TargetOutput, Trit,
+    Value,
+};
 
 struct DisplayFn<'a, F: for<'b> Fn(&Design, &mut std::fmt::Formatter<'b>) -> std::fmt::Result>(&'a Design, F);
 
@@ -11,6 +14,41 @@ impl<F: Fn(&Design, &mut std::fmt::Formatter) -> std::fmt::Result> Display for D
 }
 
 impl Design {
+    // For display purposes only: go from a net to a `%x:y`, taking into account that the range may have
+    // to designate only a part of a multi-output cell's combined output.
+    fn find_cell_output(&self, net: Net) -> Result<(Value, usize, usize), Trit> {
+        let (cell_ref, offset) = self.find_cell(net)?;
+        let cell_index = cell_ref.debug_index();
+        match &*cell_ref.get() {
+            Cell::Other(instance) => {
+                for (_name, range) in &instance.outputs {
+                    if range.contains(&offset) {
+                        return Ok((
+                            cell_ref.output().slice(range.clone()),
+                            cell_index + range.start,
+                            offset - range.start,
+                        ));
+                    }
+                }
+                unreachable!()
+            }
+            Cell::Target(target_cell) => {
+                let prototype = self.target_prototype(target_cell);
+                for TargetOutput { range, .. } in &prototype.outputs {
+                    if range.contains(&offset) {
+                        return Ok((
+                            cell_ref.output().slice(range.clone()),
+                            cell_index + range.start,
+                            offset - range.start,
+                        ));
+                    }
+                }
+                unreachable!()
+            }
+            _ => Ok((cell_ref.output(), cell_index, offset)),
+        }
+    }
+
     pub(crate) fn write_string(&self, f: &mut std::fmt::Formatter, str: &str) -> std::fmt::Result {
         write!(f, "\"")?;
         for byte in str.as_bytes() {
@@ -71,18 +109,18 @@ impl Design {
     pub(crate) fn write_net(&self, f: &mut std::fmt::Formatter, net: Net) -> std::fmt::Result {
         if let Ok(index) = net.as_cell_index() {
             if !self.is_valid_cell_index(index) {
-                return write!(f, "%_{}", index);
+                return write!(f, "%_{index}");
             }
         }
-        match self.find_cell(net) {
-            Ok((cell_ref, offset)) => {
-                if cell_ref.output().len() == 1 {
-                    write!(f, "%{}", cell_ref.debug_index())
+        match self.find_cell_output(net) {
+            Ok((output, index, offset)) => {
+                if output.len() == 1 {
+                    write!(f, "%{index}")
                 } else {
-                    write!(f, "%{}+{}", cell_ref.debug_index(), offset)
+                    write!(f, "%{index}+{offset}")
                 }
             }
-            Err(trit) => write!(f, "{}", trit),
+            Err(trit) => write!(f, "{trit}"),
         }
     }
 
@@ -106,12 +144,12 @@ impl Design {
             }
             write!(f, " ]")?;
             return Ok(());
-        } else if let Ok((cell_ref, _offset)) = self.find_cell(value[0]) {
-            if *value == cell_ref.output() {
+        } else if let Ok((output, index, _offset)) = self.find_cell_output(value[0]) {
+            if *value == output {
                 if value.len() == 1 {
-                    return write!(f, "%{}", cell_ref.debug_index());
+                    return write!(f, "%{index}");
                 } else {
-                    return write!(f, "%{}:{}", cell_ref.debug_index(), value.len());
+                    return write!(f, "%{index}:{}", value.len());
                 }
             }
         }
@@ -124,24 +162,20 @@ impl Design {
         let mut index = 0;
         let mut chunks = vec![];
         while index < value.len() {
-            if let Ok((cell_ref_a, 0)) = self.find_cell(value[index]) {
+            if let Ok((output_a, index_a, 0)) = self.find_cell_output(value[index]) {
                 let count = value[index..]
                     .iter()
                     .enumerate()
                     .take_while(|(addend, net)| {
-                        if let Ok((cell_ref_b, offset_b)) = self.find_cell(**net) {
-                            cell_ref_a == cell_ref_b && *addend == offset_b
+                        if let Ok((output_b, _, offset_b)) = self.find_cell_output(**net) {
+                            output_a == output_b && *addend == offset_b
                         } else {
                             false
                         }
                     })
                     .count();
                 if count > 0 {
-                    chunks.push(Chunk::Slice {
-                        cell_index: cell_ref_a.debug_index(),
-                        output_len: cell_ref_a.output_len(),
-                        count,
-                    });
+                    chunks.push(Chunk::Slice { cell_index: index_a, output_len: output_a.len(), count });
                     index += count;
                     continue;
                 }
@@ -154,11 +188,11 @@ impl Design {
             match chunk {
                 Chunk::Slice { cell_index, output_len, count } => {
                     if output_len == 1 && count == 1 {
-                        write!(f, "%{}", cell_index)?;
+                        write!(f, "%{cell_index}")?;
                     } else if count == 1 {
-                        write!(f, "%{}+0", cell_index)?;
+                        write!(f, "%{cell_index}+0")?;
                     } else {
-                        write!(f, "%{}:{}", cell_index, count)?;
+                        write!(f, "%{cell_index}:{count}")?;
                     }
                 }
                 Chunk::Net(net) => {
@@ -169,7 +203,13 @@ impl Design {
         write!(f, " ]")
     }
 
-    pub(crate) fn write_cell(&self, f: &mut std::fmt::Formatter, cell: &Cell, prefix: &str) -> std::fmt::Result {
+    pub(crate) fn write_cell(
+        &self,
+        f: &mut std::fmt::Formatter,
+        prefix: &str,
+        index: usize,
+        cell: &Cell,
+    ) -> std::fmt::Result {
         let newline = &format!("\n{prefix}");
 
         let write_control_net = |f: &mut std::fmt::Formatter, control_net: ControlNet| -> std::fmt::Result {
@@ -208,7 +248,7 @@ impl Design {
                 ParamValue::Const(value) => write!(f, "{value}"),
                 ParamValue::Int(value) => write!(f, "#{value}"),
                 ParamValue::Float(_value) => unimplemented!("float parameter"),
-                ParamValue::String(value) => self.write_string(f, value)
+                ParamValue::String(value) => self.write_string(f, value),
             }
         };
 
@@ -219,6 +259,16 @@ impl Design {
             Ok(())
         };
 
+        let single_output = match &cell {
+            Cell::Other(..) => false,
+            Cell::Target(target_cell) if self.target_prototype(target_cell).outputs.len() > 1 => false,
+            _ => true,
+        };
+        if single_output {
+            write!(f, "{prefix}%{}:{} = ", index, cell.output_len())?;
+        } else {
+            write!(f, "{prefix}%{}:_ = ", index)?; // to be able to find any cell by its index
+        }
         match &cell {
             Cell::Buf(arg) => write_common(f, "buf", &[arg])?,
             Cell::Not(arg) => write_common(f, "not", &[arg])?,
@@ -448,8 +498,9 @@ impl Design {
                     write!(f, "{newline}")?;
                 }
                 for (name, range) in instance.outputs.iter() {
-                    write_cell_argument(f, "output", name)?;
-                    write!(f, "{}:{}{newline}", range.start, range.len())?;
+                    write!(f, "  %{}:{} = output ", index + range.start, range.len())?;
+                    self.write_string(f, &name)?;
+                    write!(f, "{newline}")?;
                 }
                 for (name, value) in instance.ios.iter() {
                     write_cell_argument(f, "io", name)?;
@@ -468,14 +519,21 @@ impl Design {
                     write_param_value(f, value)?;
                     write!(f, "{newline}")?;
                 }
-                for input in &prototype.inputs {
-                    write_cell_argument(f, "input", &input.name)?;
-                    self.write_value(f, &target_cell.inputs.slice(input.range.clone()))?;
+                for target_input in &prototype.inputs {
+                    write_cell_argument(f, "input", &target_input.name)?;
+                    self.write_value(f, &target_cell.inputs.slice(target_input.range.clone()))?;
                     write!(f, "{newline}")?;
                 }
-                for io in &prototype.ios {
-                    write_cell_argument(f, "io", &io.name)?;
-                    self.write_io_value(f, &target_cell.ios.slice(io.range.clone()))?;
+                if prototype.outputs.len() > 1 {
+                    for target_output in &prototype.outputs {
+                        write!(f, "  %{}:{} = output ", index + target_output.range.start, target_output.range.len())?;
+                        self.write_string(f, &target_output.name)?;
+                        write!(f, "{newline}")?;
+                    }
+                }
+                for target_io in &prototype.ios {
+                    write_cell_argument(f, "io", &target_io.name)?;
+                    self.write_io_value(f, &target_cell.ios.slice(target_io.range.clone()))?;
                     write!(f, "{newline}")?;
                 }
                 write!(f, "}}")?;
@@ -520,7 +578,7 @@ impl Design {
     pub fn display_cell<'a>(&'a self, cell_ref: CellRef<'a>) -> impl Display + 'a {
         DisplayFn(self, move |design: &Design, f| {
             write!(f, "%{}:{} = ", cell_ref.debug_index(), cell_ref.output_len())?;
-            design.write_cell(f, &*cell_ref.get(), "")
+            design.write_cell(f, "", cell_ref.debug_index(), &*cell_ref.get())
         })
     }
 }

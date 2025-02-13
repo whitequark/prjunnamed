@@ -293,9 +293,8 @@ fn adc_unsext(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
     while offset + 2 < a.len() {
         let a_bit = a[offset];
         let b_bit = b[offset];
-        let same_count = a[offset + 1..].iter().zip(&b[offset + 1..])
-            .take_while(|&pair| pair == (&a_bit, &b_bit))
-            .count() + 1;
+        let same_count =
+            a[offset + 1..].iter().zip(&b[offset + 1..]).take_while(|&pair| pair == (&a_bit, &b_bit)).count() + 1;
 
         if same_count < 3 {
             offset += same_count;
