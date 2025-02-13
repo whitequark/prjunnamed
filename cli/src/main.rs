@@ -50,18 +50,24 @@ fn write_output(design: Design, name: String) -> Result<(), Box<dyn Error>> {
 }
 
 fn run() -> Result<(), Box<dyn Error>> {
+    let mut version = false;
     let mut input = String::new();
     let mut output = String::new();
     let mut target = None::<String>;
     {
         let mut parser = argparse::ArgumentParser::new();
+        parser.refer(&mut version).add_option(&["--version"], argparse::StoreTrue, "Display version");
         parser.refer(&mut target).add_option(&["-t", "--target"], argparse::StoreOption, "Target platform");
         parser.refer(&mut input).add_argument("INPUT", argparse::Store, "Input file");
         parser.refer(&mut output).add_argument("OUTPUT", argparse::Store, "Output file");
         parser.parse_args_or_exit();
     }
 
-    prjunnamed_siliconblue::register();
+    if version {
+        println!("prjunnamed git-{}", env!("GIT_HASH"));
+        return Ok(())
+    }
+
     let target = match target {
         Some(name) => Some(prjunnamed_netlist::create_target(name.as_str(), BTreeMap::new())?),
         None => None,
@@ -75,6 +81,7 @@ fn run() -> Result<(), Box<dyn Error>> {
 
 fn main() {
     env_logger::init();
+    prjunnamed_siliconblue::register();
     if let Err(error) = run() {
         eprintln!("error: {}", error);
         std::process::exit(1)
