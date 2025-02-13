@@ -13,7 +13,7 @@ use crate::yosys;
 #[derive(Debug)]
 pub enum Error {
     Io(std::io::Error),
-    Json(json::Error),
+    Json(jzon::Error),
     Syntax(yosys::SyntaxError),
     MetaDataType(yosys::MetadataTypeError),
     Semantic,
@@ -26,8 +26,8 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl From<json::Error> for Error {
-    fn from(error: json::Error) -> Self {
+impl From<jzon::Error> for Error {
+    fn from(error: jzon::Error) -> Self {
         Self::Json(error)
     }
 }
@@ -809,7 +809,7 @@ pub fn import(
 ) -> Result<BTreeMap<String, Design>, Error> {
     let mut text = String::new();
     reader.read_to_string(&mut text)?;
-    let json = json::parse(text.as_str())?;
+    let json = jzon::parse(text.as_str())?;
     let yosys_design = yosys::Design::try_from(json)?;
 
     let io_ports = index_io_ports(&yosys_design)?;

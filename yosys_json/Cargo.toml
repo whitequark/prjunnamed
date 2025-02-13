@@ -11,4 +11,4 @@ doctest = false
 
 [dependencies]
 prjunnamed-netlist.workspace = true
-json.workspace = true
+jzon.workspace = true

@@ -1,4 +1,4 @@
-use json::{object, JsonValue};
+use jzon::{object, JsonValue};
 use std::collections::{btree_map, BTreeMap};
 
 use prjunnamed_netlist::{Const, ParamValue, Trit};

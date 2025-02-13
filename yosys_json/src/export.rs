@@ -1,4 +1,4 @@
-use json::JsonValue;
+use jzon::JsonValue;
 use std::{cell::RefCell, collections::BTreeMap, io::BufWriter};
 
 use crate::yosys::{self, CellDetails, NetDetails, PortDetails};
