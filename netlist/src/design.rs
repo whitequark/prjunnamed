@@ -767,11 +767,13 @@ impl Display for Design {
         }
 
         let write_cell = |f: &mut std::fmt::Formatter, index: usize, cell: &Cell| {
-            if cell.output_len() == 1 && !matches!(cell, Cell::Input(..)) {
-                if let Some((name, offset)) = net_names.get(&Net::from_cell_index(index)) {
-                    write!(f, "{}; ", if !diff { "" } else { unchanged })?;
-                    self.write_string(f, &*name)?;
-                    writeln!(f, "+{offset}")?;
+            if matches!(cell, Cell::Target(..)) {
+                for index in (index..index + cell.output_len()).rev() {
+                    if let Some((name, offset)) = net_names.get(&Net::from_cell_index(index)) {
+                        write!(f, "{}; ", if !diff { "" } else { unchanged })?;
+                        self.write_string(f, &*name)?;
+                        writeln!(f, "+{offset}")?;
+                    }
                 }
             }
             if !diff {
