@@ -62,7 +62,7 @@ impl Numberer {
 
 pub fn merge(design: &mut Design) -> bool {
     let mut numberer = Numberer::new();
-    for cell_ref in design.iter_cells_topo().filter(|cell_ref| cell_ref.get().has_effects(design)) {
+    for cell_ref in design.iter_cells_topo().filter(|cell_ref| !cell_ref.get().has_effects(design)) {
         let mut cell = cell_ref.get().into_owned();
         cell.visit_mut(|net| *net = design.map_net(*net));
         let output = cell_ref.output();
@@ -90,4 +90,34 @@ pub fn merge(design: &mut Design) -> bool {
         design.replace_value(output, canon);
     }
     design.compact()
+}
+
+#[cfg(test)]
+mod test {
+    use prjunnamed_netlist::{assert_isomorphic, Design, Value};
+
+    use crate::merge::merge;
+
+    #[test]
+    fn test_merge_commutative_xor() {
+        let mut dl = Design::new();
+        let a = dl.add_input("a", 2);
+        let b = dl.add_input("b", 2);
+        let x1 = dl.add_xor1(a[0], b[0]);
+        let x2 = dl.add_xor1(a[1], b[1]);
+        let x3 = dl.add_xor(b, a);
+        dl.add_output("y", Value::from(x1).concat(x2).concat(x3));
+        dl.apply();
+        merge(&mut dl);
+
+        let mut dr = Design::new();
+        let a = dr.add_input("a", 2);
+        let b = dr.add_input("b", 2);
+        let x1 = dr.add_xor1(a[0], b[0]);
+        let x2 = dr.add_xor1(a[1], b[1]);
+        dr.add_output("y", Value::from(x1).concat(x2).concat(x1).concat(x2));
+        dr.apply();
+
+        assert_isomorphic!(dl, dr);
+    }
 }
