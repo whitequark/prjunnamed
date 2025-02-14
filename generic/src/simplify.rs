@@ -423,13 +423,13 @@ mod test {
         assert_isomorphic, Const, ControlNet, Design, FlipFlop, IoBuffer, Net, Target, TargetCell, TargetImportError,
         TargetPrototype, Trit, Value,
     };
-    use prjunnamed_pattern::{assert_netlist, netlist_matches, patterns::*};
+    use prjunnamed_pattern::{assert_netlist, netlist_match, patterns::*};
 
     use super::simplify;
 
     macro_rules! assert_simplify {
         ( $( |$design:ident| $build:expr ),+ ; $( $match:tt )+ ) => {
-            let rules = netlist_matches! { $( $match )+ };
+            let rules = netlist_match! { $( $match )+ };
             $(
                 let mut $design = Design::new();
                 $design.add_output("y", $build);
@@ -1397,7 +1397,7 @@ mod test {
             design.add_output("q", design.add_dff(flip_flop));
             design.apply();
             simplify(&mut design);
-            assert_netlist!(design, netlist_matches! { [PConst@c] => c == *init; });
+            assert_netlist!(design, netlist_match! { [PConst@c] => c == *init; });
         }
     }
 
