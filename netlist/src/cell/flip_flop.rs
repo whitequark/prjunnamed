@@ -1,16 +1,39 @@
 use crate::{Const, ControlNet, Design, Net, Value};
 
+/// A flip-flop cell.
+///
+/// The output is determined by the following rules:
+///
+/// - at the beginning of time, the output is set to `init_value`
+/// - whenever `clear` as active, the output is set to `clear_value`
+/// - whenever `clear` is not active, and an active edge happens on `clock`:
+///   - if `reset_over_enable` is true:
+///     - if `reset` is active, the output is set to `reset_value`
+///     - if `enable` is false, output value is unchanged
+///   - if `reset_over_enable` is false:
+///     - if `enable` is false, output value is unchanged
+///     - if `reset` is active, the output is set to `reset_value`
+///   - otherwise, the output is set to `data`
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct FlipFlop {
     pub data: Value,
+    /// The clock.  The active edge is rising if it is a [`ControlNet::Pos`], and falling if it is
+    /// a [`ControlNet::Neg`].
     pub clock: ControlNet,
-    pub clear: ControlNet, // async reset
-    pub reset: ControlNet, // sync reset
+    /// Asynchronous reset.
+    pub clear: ControlNet,
+    /// Synchronous reset.
+    pub reset: ControlNet,
+    /// Clock enable.
     pub enable: ControlNet,
+    /// If true, `reset` has priority over `enable`.  Otherwise, `enable` has priority over `reset`.
     pub reset_over_enable: bool,
 
+    /// Must have the same width as `data`.
     pub clear_value: Const,
+    /// Must have the same width as `data`.
     pub reset_value: Const,
+    /// Must have the same width as `data`.
     pub init_value: Const,
 }
 
