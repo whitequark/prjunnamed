@@ -576,6 +576,17 @@ impl ControlNet {
     }
 }
 
+impl std::ops::Not for ControlNet {
+    type Output = ControlNet;
+
+    fn not(self) -> Self::Output {
+        match self {
+            ControlNet::Pos(net) => ControlNet::Neg(net),
+            ControlNet::Neg(net) => ControlNet::Pos(net),
+        }
+    }
+}
+
 impl From<Net> for ControlNet {
     fn from(net: Net) -> Self {
         ControlNet::Pos(net)

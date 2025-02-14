@@ -13,3 +13,4 @@ doctest = false
 prjunnamed-netlist.workspace = true
 prjunnamed-generic.workspace = true
 prjunnamed-lut.workspace = true
+prjunnamed-memory.workspace = true

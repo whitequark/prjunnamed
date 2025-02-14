@@ -6,13 +6,11 @@ mod simplify;
 mod merge;
 mod split;
 mod lower_arith;
-mod lower_memory;
 mod iobuf_insert;
 
 pub use unname::unname;
 pub use decision::decision;
 pub use lower_arith::lower_arith;
-pub use lower_memory::lower_memory;
 pub use iobuf_insert::iobuf_insert;
 
 pub fn canonicalize(design: &mut Design) {

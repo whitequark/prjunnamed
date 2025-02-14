@@ -1,4 +1,5 @@
-/// This library covers the Lattice iCE65 and iCE40 FPGA families (acquired with SiliconBlue).
+//! This library covers the Lattice iCE65 and iCE40 FPGA families (acquired with SiliconBlue).
+
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
     sync::Arc,
@@ -667,7 +668,7 @@ impl Target for SiliconBlueTarget {
     fn synthesize(&self, design: &mut Design) -> Result<(), ()> {
         prjunnamed_generic::decision(design);
         prjunnamed_generic::canonicalize(design);
-        prjunnamed_generic::lower_memory(design);
+        prjunnamed_memory::lower_memory(design);
         prjunnamed_generic::lower_arith(design);
         prjunnamed_generic::canonicalize(design);
         self.lower_ffs(design);

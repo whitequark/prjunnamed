@@ -5,6 +5,7 @@ members = [
     "pattern",
     "generic",
     "lut",
+    "memory",
     "yosys_json",
     "siliconblue",
     "cli",
@@ -15,6 +16,7 @@ prjunnamed-netlist.path = "netlist"
 prjunnamed-pattern.path = "pattern"
 prjunnamed-generic.path = "generic"
 prjunnamed-lut.path = "lut"
+prjunnamed-memory.path = "memory"
 prjunnamed-yosys_json.path = "yosys_json"
 prjunnamed-siliconblue.path = "siliconblue"
 yap = "0.12.0"
