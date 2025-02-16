@@ -206,6 +206,55 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }
             }
+            (Cell::Memory(memory_l), Cell::Memory(memory_r)) => {
+                if memory_l.depth != memory_r.depth
+                    || memory_l.width != memory_r.width
+                    || memory_l.init_value != memory_r.init_value
+                    || memory_l.write_ports.len() != memory_r.write_ports.len()
+                    || memory_l.read_ports.len() != memory_r.write_ports.len()
+                {
+                    return Err(NotIsomorphic::NetMismatch(net_l, net_r));
+                }
+                for (write_port_l, write_port_r) in memory_l.write_ports.iter().zip(memory_r.write_ports.iter()) {
+                    queue_vals(&mut queue, &write_port_l.addr, &write_port_r.addr)?;
+                    queue_vals(&mut queue, &write_port_l.data, &write_port_r.data)?;
+                    queue_vals(&mut queue, &write_port_l.mask, &write_port_r.mask)?;
+                    queue.insert((write_port_l.clock.net(), write_port_r.clock.net()));
+                    if write_port_l.clock.is_positive() != write_port_r.clock.is_positive() {
+                        return Err(NotIsomorphic::NetMismatch(net_l, net_r));
+                    }
+                }
+                for (read_port_l, read_port_r) in memory_l.read_ports.iter().zip(memory_r.read_ports.iter()) {
+                    queue_vals(&mut queue, &read_port_l.addr, &read_port_r.addr)?;
+                    if read_port_l.data_len != read_port_r.data_len {
+                        return Err(NotIsomorphic::NetMismatch(net_l, net_r));
+                    }
+                    match (&read_port_l.flip_flop, &read_port_r.flip_flop) {
+                        (None, None) => (),
+                        (Some(ff_l), Some(ff_r)) => {
+                            queue.insert((ff_l.clock.net(), ff_r.clock.net()));
+                            queue.insert((ff_l.clear.net(), ff_r.clear.net()));
+                            queue.insert((ff_l.reset.net(), ff_r.reset.net()));
+                            queue.insert((ff_l.enable.net(), ff_r.enable.net()));
+                            if ff_l.clock.is_positive() != ff_r.clock.is_positive()
+                                || ff_l.clear.is_positive() != ff_r.clear.is_positive()
+                                || ff_l.reset.is_positive() != ff_r.reset.is_positive()
+                                || ff_l.enable.is_positive() != ff_r.enable.is_positive()
+                                || (ff_l.reset_over_enable != ff_r.reset_over_enable
+                                    && !ff_l.reset.is_always(false)
+                                    && !ff_l.enable.is_always(true))
+                                || ff_l.clear_value != ff_r.clear_value
+                                || ff_l.reset_value != ff_r.reset_value
+                                || ff_l.init_value != ff_r.init_value
+                                || ff_l.relations != ff_r.relations
+                            {
+                                return Err(NotIsomorphic::NetMismatch(net_l, net_r));
+                            }
+                        }
+                        _ => return Err(NotIsomorphic::NetMismatch(net_l, net_r)),
+                    }
+                }
+            }
             (Cell::Target(target_cell_l), Cell::Target(target_cell_r)) => {
                 for (io_net_l, io_net_r) in target_cell_l.ios.iter().zip(target_cell_r.ios.iter()) {
                     if !ios.contains(&(io_net_l, io_net_r)) {
