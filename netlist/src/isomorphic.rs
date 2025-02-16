@@ -211,7 +211,7 @@ pub fn isomorphic(lft: &Design, rgt: &Design) -> Result<(), NotIsomorphic> {
                     || memory_l.width != memory_r.width
                     || memory_l.init_value != memory_r.init_value
                     || memory_l.write_ports.len() != memory_r.write_ports.len()
-                    || memory_l.read_ports.len() != memory_r.write_ports.len()
+                    || memory_l.read_ports.len() != memory_r.read_ports.len()
                 {
                     return Err(NotIsomorphic::NetMismatch(net_l, net_r));
                 }
