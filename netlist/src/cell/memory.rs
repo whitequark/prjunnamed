@@ -159,6 +159,9 @@ impl Memory {
 
 impl MemoryWritePort {
     pub fn wide_log2(&self, memory: &Memory) -> usize {
+        if memory.width == 0 {
+            return 0;
+        }
         (self.data.len() / memory.width).ilog2() as usize
     }
 
@@ -201,6 +204,9 @@ impl MemoryReadPort {
     }
 
     pub fn wide_log2(&self, memory: &Memory) -> usize {
+        if memory.width == 0 {
+            return 0;
+        }
         (self.data_len / memory.width).ilog2() as usize
     }
 
