@@ -96,7 +96,7 @@ impl MatchMatrix {
         self
     }
 
-    fn iter_rules(&self) -> impl Iterator<Item = Net> {
+    fn iter_outputs(&self) -> impl Iterator<Item = Net> {
         BTreeSet::from_iter(self.rows.iter().flat_map(|row| row.rules.iter()).cloned()).into_iter()
     }
 
@@ -374,6 +374,8 @@ impl<'a> MatchTrees<'a> {
         matrix
     }
 
+    /// For each tree of `match` cells, return a corresponding `MatchMatrix`
+    /// and a list of `match` cells that this matrix implements.
     fn iter_matrices<'b>(&'b self) -> impl Iterator<Item = (MatchMatrix, Vec<CellRef<'b>>)> + 'b {
         self.roots.iter().map(|&cell_ref| {
             let Cell::Match(MatchCell { enable, .. }) = &*cell_ref.get() else { unreachable!() };
@@ -472,7 +474,7 @@ pub fn decision(design: &mut Design) {
     let mut decisions: BTreeMap<Net, Rc<Decision>> = BTreeMap::new();
     let mut disjoint_sets: DisjointSets<Net> = DisjointSets::new();
     for (matrix, matches) in match_trees.iter_matrices() {
-        let all_rules = BTreeSet::from_iter(matrix.iter_rules());
+        let all_outputs = BTreeSet::from_iter(matrix.iter_outputs());
         if cfg!(feature = "trace") {
             eprint!(">matrix:\n{matrix}");
         }
@@ -483,12 +485,12 @@ pub fn decision(design: &mut Design) {
         }
 
         decision.disjoint(&mut disjoint_sets);
-        for &rule in &all_rules {
-            decisions.insert(rule, decision.clone());
+        for &output in &all_outputs {
+            decisions.insert(output, decision.clone());
         }
 
         let _guard = design.use_metadata_from(&matches[..]);
-        let nets = Value::from_iter(all_rules);
+        let nets = Value::from_iter(all_outputs);
         design.replace_value(&nets, decision.emit_one_hot_mux(design, &nets));
     }
 
