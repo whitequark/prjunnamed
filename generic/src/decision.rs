@@ -98,7 +98,7 @@ impl MatchMatrix {
 
     fn iter_outputs(&self) -> impl Iterator<Item = Net> {
         let mut outputs: Vec<Net> = self.rows.iter()
-            .flat_map(|row| row.rules.iter())
+            .flat_map(|row| row.rules.iter().copied())
             .collect();
         outputs.sort();
         outputs.dedup();
@@ -111,6 +111,7 @@ impl MatchMatrix {
         self
     }
 
+    /// Remove redundant rows and columns
     fn normalize(mut self) -> Self {
         let mut remove_cols = BTreeSet::new();
         let mut remove_rows = BTreeSet::new();
