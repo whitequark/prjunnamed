@@ -1,15 +1,15 @@
-/// Decision tree lowering.
-///
-/// The `decision` pass implements decision tree lowering based on the well-known heuristic
-/// algorithm developed for ML from the paper "Tree pattern matching for ML" by Marianne Baudinet
-/// and David MacQueen (unpublished, 1985) the extended abstract of which is available from:
-/// *  https://smlfamily.github.io/history/Baudinet-DM-tree-pat-match-12-85.pdf (scan)
-/// *  https://www.classes.cs.uchicago.edu/archive/2011/spring/22620-1/papers/macqueen-baudinet85.pdf (OCR)
-///
-/// The algorithm is described in §4 "Decision trees and the dispatching problem". Only two
-/// of the heuristics described apply here: the relevance heuristic and the branching factor
-/// heuristic.
-///
+//! Decision tree lowering.
+//!
+//! The `decision` pass implements decision tree lowering based on the well-known heuristic
+//! algorithm developed for ML from the paper "Tree pattern matching for ML" by Marianne Baudinet
+//! and David MacQueen (unpublished, 1985) the extended abstract of which is available from:
+//! *  https://smlfamily.github.io/history/Baudinet-DM-tree-pat-match-12-85.pdf (scan)
+//! *  https://www.classes.cs.uchicago.edu/archive/2011/spring/22620-1/papers/macqueen-baudinet85.pdf (OCR)
+//!
+//! The algorithm is described in §4 "Decision trees and the dispatching problem". Only two
+//! of the heuristics described apply here: the relevance heuristic and the branching factor
+//! heuristic.
+
 use std::fmt::Display;
 use std::collections::{BTreeMap, BTreeSet};
 use std::rc::Rc;
@@ -38,7 +38,9 @@ struct MatchMatrix {
 /// from a match matrix) until a specific row is reached.
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum Decision {
+    /// Drive a set of nets to 1.
     Result { rules: BTreeSet<Net> },
+    /// Branch on the value of a particular net.
     Branch { test: Net, if0: Box<Decision>, if1: Box<Decision> },
 }
 
@@ -79,6 +81,8 @@ impl MatchMatrix {
         }
     }
 
+    /// Merge in a `MatchMatrix` describing a child `match` cell whose `enable`
+    /// input is being driven by `at`.
     fn merge(mut self, at: Net, other: &MatchMatrix) -> Self {
         self.value.extend(&other.value);
         for self_row in std::mem::take(&mut self.rows) {
@@ -294,12 +298,18 @@ impl Decision {
 
 struct MatchTrees<'a> {
     design: &'a Design,
+    /// Set of all `match` cells that aren't children. A `match` cell is a root
+    /// when its `enable` input is being driven by something other than a
+    /// `match` cell, or when it wouldn't be the unique child for a particular
+    /// output of its parent `match` cell.
     roots: BTreeSet<CellRef<'a>>,
+    /// Maps a particular output of a `match` cell to the child `match` cell
+    /// whose `enable` inputs it is driving.
     subtrees: BTreeMap<(CellRef<'a>, usize), CellRef<'a>>,
 }
 
 impl<'a> MatchTrees<'a> {
-    // Recognize a tree of `match` cells, connected by their enable inputs.
+    /// Recognize a tree of `match` cells, connected by their enable inputs.
     fn build(design: &'a Design) -> MatchTrees<'a> {
         let mut roots: BTreeSet<CellRef> = BTreeSet::new();
         let mut subtrees: BTreeMap<(CellRef, usize), BTreeSet<CellRef>> = BTreeMap::new();
@@ -318,20 +328,25 @@ impl<'a> MatchTrees<'a> {
 
         // Whenever multiple subtrees are connected to the same one-hot output, it is not possible
         // to merge all of them into the same matrix. Turn all of these subtrees into roots.
-        let subtrees = BTreeMap::from_iter(subtrees.into_iter().filter_map(|(key, subtrees)| {
+        let subtrees = subtrees.into_iter().filter_map(|(key, subtrees)| {
             if subtrees.len() == 1 {
                 Some((key, subtrees.into_iter().next().unwrap()))
             } else {
                 roots.extend(subtrees);
                 None
             }
-        }));
+        }).collect();
 
         Self { design, roots, subtrees }
     }
 
-    // Convert a tree of `match` cells into a matrix.
-    // The output of the cell is replaced with a newly conjured void.
+    /// Convert a tree of `match` cells into a matrix.
+    ///
+    /// Collects a list of all the cells being lifted into the matrix into
+    /// `all_cell_refs`.
+    ///
+    /// Replaces outputs that don't have any patterns at all with `Net::ZERO`,
+    /// but otherwise doesn't modify the design.
     fn cell_into_matrix(&self, cell_ref: CellRef<'a>, all_cell_refs: &mut Vec<CellRef<'a>>) -> MatchMatrix {
         let Cell::Match(match_cell) = &*cell_ref.get() else { unreachable!() };
         let output = cell_ref.output();
