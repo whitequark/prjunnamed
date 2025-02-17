@@ -413,21 +413,24 @@ impl<'a> AssignChains<'a> {
         &'b self,
         decisions: &'a BTreeMap<Net, Rc<Decision>>,
         disjoint_sets: &'a DisjointSets<Net>,
-    ) -> impl Iterator<Item = (Rc<Decision>, &'b Vec<CellRef<'a>>)> {
+    ) -> impl Iterator<Item = (Rc<Decision>, &'b [CellRef<'a>])> {
         fn enable_of(cell_ref: CellRef) -> Net {
             let Cell::Assign(AssignCell { enable, .. }) = &*cell_ref.get() else { unreachable!() };
             *enable
         }
 
-        self.chains.iter().filter_map(move |chain| {
+        self.chains.iter().filter_map(|chain| {
             // Check if the enables belong to the same decision tree.
             let Some(decision) = decisions.get(&enable_of(chain[0])) else { return None };
-            for &other_cell in chain[1..].iter() {
+            let mut end_index = chain.len();
+            'chain: for (index, &other_cell) in chain.iter().enumerate().skip(1) {
                 let Some(other_decision) = decisions.get(&enable_of(other_cell)) else { return None };
                 if !std::ptr::eq(&**decision, &**other_decision) {
-                    return None;
+                    end_index = index;
+                    break 'chain
                 }
             }
+            let chain = &chain[..end_index];
 
             // Check if the enables are disjoint (like in a SystemVerilog "unique" or "unique0" statement).
             let enables = BTreeSet::from_iter(chain.iter().map(|&cell_ref| enable_of(cell_ref)));
@@ -1336,9 +1339,8 @@ mod test {
         let mut dr = Design::new();
         let c1 = dr.add_input1("c1");
         let c2 = dr.add_input1("c2");
-        let mc1 = dr.add_mux(c1, Const::lit("0"), Const::lit("1"));
         let mc2 = dr.add_mux(c2, Const::lit("0"), Const::lit("1"));
-        let m1 = dr.add_mux(mc1[0], dr.add_input("x1", 4), Value::zero(4));
+        let m1 = dr.add_mux(c1, Value::zero(4), dr.add_input("x1", 4));
         let m2 = dr.add_mux(mc2[0], dr.add_input("x2", 4), m1);
         dr.add_output("y", m2);
 
