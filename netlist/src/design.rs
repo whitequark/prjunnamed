@@ -388,12 +388,6 @@ impl Into<AnnotatedCell> for CellRepr {
     }
 }
 
-impl Into<AnnotatedCell> for Cell {
-    fn into(self) -> AnnotatedCell {
-        AnnotatedCell { repr: self.into(), meta: MetaItemIndex::NONE }
-    }
-}
-
 pub struct WithMetadataGuard<'a> {
     design: &'a Design,
     restore: MetaItemIndex,
