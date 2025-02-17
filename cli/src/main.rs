@@ -31,7 +31,12 @@ fn read_input(target: Option<Arc<dyn Target>>, name: String) -> Result<Design, B
     }
 }
 
-fn write_output(design: Design, name: String) -> Result<(), Box<dyn Error>> {
+fn write_output(mut design: Design, name: String, export: bool) -> Result<(), Box<dyn Error>> {
+    if export || name.ends_with(".json") {
+        if let Some(target) = design.target() {
+            target.export(&mut design);
+        }
+    }
     if name.ends_with(".uir") {
         write!(&mut File::create(name)?, "{design}")?;
     } else if name.ends_with(".json") {
@@ -54,10 +59,12 @@ fn run() -> Result<(), Box<dyn Error>> {
     let mut input = String::new();
     let mut output = String::new();
     let mut target = None::<String>;
+    let mut export = false;
     {
         let mut parser = argparse::ArgumentParser::new();
         parser.refer(&mut version).add_option(&["--version"], argparse::StoreTrue, "Display version");
         parser.refer(&mut target).add_option(&["-t", "--target"], argparse::StoreOption, "Target platform");
+        parser.refer(&mut export).add_option(&["-e", "--export"], argparse::StoreTrue, "Export target cells");
         parser.refer(&mut input).add_argument("INPUT", argparse::Store, "Input file");
         parser.refer(&mut output).add_argument("OUTPUT", argparse::Store, "Output file");
         parser.parse_args_or_exit();
@@ -78,7 +85,7 @@ fn run() -> Result<(), Box<dyn Error>> {
         target.import(&mut design)?;
     }
     process(&mut design);
-    write_output(design, output)?;
+    write_output(design, output, export)?;
     Ok(())
 }
 

@@ -98,10 +98,6 @@ fn export_module(mut design: Design) -> yosys::Module {
     let indexer = NetlistIndexer::new();
     let mut ys_module = yosys::Module::new();
 
-    if let Some(target) = design.target() {
-        target.export(&mut design);
-    }
-
     // Yosys IR cannot express DFFs with both asynchronous and synchronous reset.
     for cell_ref in design.iter_cells() {
         if let Cell::Dff(flip_flop) = &*cell_ref.get() {
