@@ -466,7 +466,7 @@ pub fn decision(design: &mut Design) {
             decisions.insert(rule, decision.clone());
         }
 
-        let _guard = design.with_metadata_from(&matches[..]);
+        let _guard = design.use_metadata_from(&matches[..]);
         let nets = Value::from_iter(all_rules);
         design.replace_value(&nets, decision.emit_one_hot_mux(design, &nets));
     }
@@ -490,7 +490,7 @@ pub fn decision(design: &mut Design) {
             values.insert(*enable, update.clone());
         }
 
-        let _guard = design.with_metadata_from(&chain[..]);
+        let _guard = design.use_metadata_from(&chain[..]);
         design.replace_value(last_assign.output(), decision.emit_disjoint_mux(design, &values, default));
         used_assigns.insert(*last_assign);
     }
@@ -498,7 +498,7 @@ pub fn decision(design: &mut Design) {
     // Lower other `assign` cells.
     for cell_ref in design.iter_cells().filter(|cell_ref| !used_assigns.contains(cell_ref)) {
         let Cell::Assign(assign_cell) = &*cell_ref.get() else { continue };
-        let _guard = design.with_metadata_from(&[cell_ref]);
+        let _guard = design.use_metadata_from(&[cell_ref]);
         let mut nets = Vec::from_iter(assign_cell.value.iter());
         let slice = assign_cell.offset..(assign_cell.offset + assign_cell.update.len());
         nets[slice.clone()].copy_from_slice(

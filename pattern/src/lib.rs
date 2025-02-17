@@ -35,7 +35,7 @@ macro_rules! netlist_match {
                                 $design.inner().display_value(&*$target)
                             );
                         }
-                        let _guard = $design.inner().with_metadata_from(&collector.into_cells()[..]);
+                        let _guard = $design.inner().use_metadata_from(&collector.into_cells()[..]);
                         break 'block Some($result.into())
                     }
                     _ => ()
@@ -58,7 +58,7 @@ macro_rules! netlist_match {
                                     $design.inner().display_value(&*$target)
                                 );
                             }
-                            let _guard = $design.inner().with_metadata_from(&collector.into_cells()[..]);
+                            let _guard = $design.inner().use_metadata_from(&collector.into_cells()[..]);
                             break 'block Some($result.into())
                         }
                     }

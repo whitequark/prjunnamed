@@ -313,7 +313,7 @@ impl Target for SiliconBlueTarget {
     fn import(&self, design: &mut Design) -> Result<(), TargetImportError> {
         for cell_ref in design.iter_cells() {
             let Cell::Other(instance) = &*cell_ref.get() else { continue };
-            let _guard = design.with_metadata_from(&[cell_ref]);
+            let _guard = design.use_metadata_from(&[cell_ref]);
             let orig_kind = &instance.kind[..];
             let mut instance = instance.clone();
             match orig_kind {
@@ -509,7 +509,7 @@ impl Target for SiliconBlueTarget {
 
         for cell_ref in design.iter_cells() {
             let Cell::Target(target_cell) = &*cell_ref.get() else { continue };
-            let _guard = design.with_metadata_from(&[cell_ref]);
+            let _guard = design.use_metadata_from(&[cell_ref]);
             let prototype = design.target_prototype(target_cell);
             let mut instance = prototype.target_cell_to_instance(target_cell);
             let mut removed_outputs = BTreeSet::new();
@@ -695,7 +695,7 @@ impl SiliconBlueTarget {
         let prototype = self.prototype(SB_IO).unwrap();
         for cell_ref in design.iter_cells() {
             let Cell::IoBuf(io_buffer) = &*cell_ref.get() else { continue };
-            let _guard = design.with_metadata_from(&[cell_ref]);
+            let _guard = design.use_metadata_from(&[cell_ref]);
             let enable = io_buffer.enable.into_pos(design);
             let mut output_value = Value::new();
             for bit_index in 0..io_buffer.output.len() {
@@ -727,7 +727,7 @@ impl SiliconBlueTarget {
         let prototype = self.prototype(SB_DFF).unwrap();
         for cell_ref in design.iter_cells() {
             let Cell::Dff(flip_flop) = &*cell_ref.get() else { continue };
-            let _guard = design.with_metadata_from(&[cell_ref]);
+            let _guard = design.use_metadata_from(&[cell_ref]);
             let mut flip_flop = flip_flop.clone();
             if !flip_flop.reset.is_always(false) && !flip_flop.clear.is_always(false) {
                 flip_flop.unmap_reset(design);

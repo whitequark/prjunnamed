@@ -1,3 +1,9 @@
+//! Metadata storage.
+//!
+//! This module is intentionally tightly coupled to `crate::design`, and intentionally avoids exporting any APIs that
+//! expose indices. The exported APIs are based on [`MetaStringRef`] and [`MetaItemRef`], which parallel [`CellRef`].
+//!
+//! [`CellRef`]: crate::CellRef
 use std::{
     borrow::Cow,
     cell::Ref,
@@ -112,7 +118,7 @@ enum MetaItemRepr {
     Attr {
         name: MetaStringIndex,
         value: ParamValue,
-    }
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -173,10 +179,7 @@ impl MetaItem<'_> {
             MetaItem::Ident { name, scope } => {
                 assert!(!name.get().is_empty(), "Ident must have a name");
                 assert!(
-                    matches!(
-                        &*scope.get_repr(),
-                        MetaItemRepr::NamedScope { .. } | MetaItemRepr::IndexedScope { .. }
-                    ),
+                    matches!(&*scope.get_repr(), MetaItemRepr::NamedScope { .. } | MetaItemRepr::IndexedScope { .. }),
                     "scope of an Ident must be NamedScope, or IndexedScope"
                 );
             }
@@ -229,7 +232,6 @@ impl MetadataStore {
             }
             MetaItem::Ident { name, scope } => MetaItemRepr::Ident { scope: scope.index, name: name.index },
             MetaItem::Attr { name, value } => MetaItemRepr::Attr { name: name.index, value: value.clone() },
-
         };
         MetaItemIndex(self.items.insert_full(repr).0)
     }
@@ -294,16 +296,42 @@ impl<'a> MetaItemRef<'a> {
                 name: MetaStringRef { index: *name, design },
                 scope: MetaItemRef { index: *scope, design },
             },
-            MetaItemRepr::Attr { name, value } => MetaItem::Attr {
-                name: MetaStringRef { index: *name, design },
-                value: value.clone()
-            },
-
+            MetaItemRepr::Attr { name, value } => {
+                MetaItem::Attr { name: MetaStringRef { index: *name, design }, value: value.clone() }
+            }
         }
     }
 
     pub fn iter(&self) -> impl Iterator<Item = MetaItemRef<'a>> {
         MetaItemIterator { item: *self, offset: 0 }
+    }
+
+    pub fn from_iter(design: &'a Design, iter: impl IntoIterator<Item = MetaItemRef<'a>>) -> Self {
+        let items = BTreeSet::from_iter(iter);
+        if items.len() == 0 {
+            MetaItemRef { design, index: MetaItemIndex::NONE }
+        } else if items.len() == 1 {
+            *items.first().unwrap()
+        } else {
+            MetaItemRef { design, index: design.add_metadata_item(&MetaItem::Set(items)) }
+        }
+    }
+
+    pub fn from_merge(design: &'a Design, iter: impl IntoIterator<Item = MetaItemRef<'a>>) -> Self {
+        Self::from_iter(
+            design,
+            iter.into_iter().flat_map(|item| item.iter()).filter(|item| match &*item.get_repr() {
+                MetaItemRepr::Source { .. }
+                | MetaItemRepr::NamedScope { .. }
+                | MetaItemRepr::IndexedScope { .. }
+                | MetaItemRepr::Ident { .. } => true,
+                _ => false,
+            }),
+        )
+    }
+
+    pub fn merge(&self, other: MetaItemRef<'a>) -> Self {
+        Self::from_merge(&self.design, [*self, other])
     }
 }
 

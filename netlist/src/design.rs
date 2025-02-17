@@ -117,31 +117,10 @@ impl Design {
         self.add_cell_with_metadata_index(cell, metadata)
     }
 
-    pub fn with_metadata_from(&self, cell_refs: &[CellRef]) -> WithMetadataGuard {
-        let mut items = BTreeSet::new();
-        for cell_ref in cell_refs {
-            for item in cell_ref.metadata().iter() {
-                match item.get() {
-                    MetaItem::Source { .. }
-                    | MetaItem::NamedScope { .. }
-                    | MetaItem::IndexedScope { .. }
-                    | MetaItem::Ident { .. } => {
-                        items.insert(item);
-                    }
-                    _ => (),
-                }
-            }
-        }
-        let new_cell_metadata = if items.len() == 0 {
-            MetaItemIndex::NONE
-        } else if items.len() == 1 {
-            items.first().unwrap().index()
-        } else {
-            self.add_metadata_item(&MetaItem::Set(items.into_iter().collect()))
-        };
+    pub fn use_metadata_from(&self, cell_refs: &[CellRef]) -> WithMetadataGuard {
         let mut changes = self.changes.borrow_mut();
         let guard = WithMetadataGuard { design: self, restore: changes.cell_metadata };
-        changes.cell_metadata = new_cell_metadata;
+        changes.cell_metadata = MetaItemRef::from_merge(self, cell_refs.iter().map(CellRef::metadata)).index();
         guard
     }
 
@@ -336,19 +315,9 @@ impl Design {
 
         let mut did_change = !changes.added_ios.is_empty() || !changes.added_cells.is_empty();
         for (cell_index, new_items) in changes.appended_metadata {
-            let mut all_items = BTreeSet::new();
-            all_items.extend(self.ref_metadata_item(self.cells[cell_index].meta).iter());
-            for new_item in new_items {
-                all_items.extend(self.ref_metadata_item(new_item).iter());
-            }
-            let new_cell_metadata = if all_items.len() == 0 {
-                MetaItemIndex::NONE
-            } else if all_items.len() == 1 {
-                all_items.first().unwrap().index()
-            } else {
-                self.add_metadata_item(&MetaItem::Set(all_items.into_iter().collect()))
-            };
-            self.cells[cell_index].meta = new_cell_metadata
+            let cell_meta_iter = self.ref_metadata_item(self.cells[cell_index].meta).iter();
+            let new_items_iter = new_items.into_iter().flat_map(|new_item| self.ref_metadata_item(new_item).iter());
+            self.cells[cell_index].meta = MetaItemRef::from_iter(self, cell_meta_iter.chain(new_items_iter)).index();
         }
         for cell_index in changes.unalived_cells {
             let output_len = self.cells[cell_index].output_len().max(1);
@@ -797,8 +766,7 @@ impl Design {
                     }
                 }
             });
-            self.cells
-                .push(AnnotatedCell { repr: CellRepr::Coarse(Box::new(Cell::Debug(name, value))), meta });
+            self.cells.push(AnnotatedCell { repr: CellRepr::Coarse(Box::new(Cell::Debug(name, value))), meta });
         }
 
         did_change
