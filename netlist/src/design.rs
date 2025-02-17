@@ -928,22 +928,30 @@ impl Display for Design {
 
         let write_cell = |f: &mut std::fmt::Formatter, index: usize, cell: &Cell, metadata: MetaItemIndex| {
             for item in self.ref_metadata_item(metadata).iter() {
-                let mut scope_names = Vec::new();
-                let mut scope = item;
-                while !scope.is_none() {
-                    let MetaItem::NamedScope { name, parent, .. } = scope.get() else { break };
-                    scope_names.push(name);
-                    scope = parent;
-                }
-                if !scope_names.is_empty() {
-                    write!(f, "{comment}scope ")?;
-                    for (index, name) in scope_names.iter().rev().enumerate() {
-                        if index > 0 {
-                            write!(f, ".")?;
-                        }
-                        self.write_string(f, &*name.get())?;
+                match item.get() {
+                    MetaItem::Source { file, start, end: _ } => {
+                        writeln!(f, "{comment}source file://{}#{}", file.get(), start.line + 1)?;
                     }
-                    writeln!(f)?;
+                    MetaItem::NamedScope { .. } => {
+                        let mut names = Vec::new();
+                        let mut scope = item;
+                        while !scope.is_none() {
+                            let MetaItem::NamedScope { name, parent, .. } = scope.get() else { break };
+                            names.push(name);
+                            scope = parent;
+                        }
+                        if !names.is_empty() {
+                            write!(f, "{comment}scope ")?;
+                            for (index, name) in names.iter().rev().enumerate() {
+                                if index > 0 {
+                                    write!(f, ".")?;
+                                }
+                                write!(f, "{}", name.get())?;
+                            }
+                            writeln!(f)?;
+                        }
+                    }
+                    _ => ()
                 }
             }
             if matches!(cell, Cell::Target(..)) {
