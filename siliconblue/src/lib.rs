@@ -6,7 +6,8 @@ use std::{
 };
 
 use prjunnamed_netlist::{
-    Cell, Const, Design, Instance, Net, ParamValue, Target, TargetCell, TargetImportError, TargetPrototype, Trit, Value,
+    Cell, Const, Design, Instance, MetaItemRef, Net, ParamValue, Target, TargetCell, TargetImportError,
+    TargetPrototype, Trit, Value,
 };
 
 use prjunnamed_lut::Lut;
@@ -814,7 +815,7 @@ impl SiliconBlueTarget {
             }
         }
 
-        let mut net_dispositions: BTreeMap<Net, NetDisposition> = BTreeMap::new();
+        let mut net_dispositions: BTreeMap<Net, (NetDisposition, MetaItemRef)> = BTreeMap::new();
         for cell in design.iter_cells_topo() {
             match &*cell.get() {
                 Cell::Buf(..) | Cell::Not(..) | Cell::And(..) | Cell::Or(..) | Cell::Xor(..) | Cell::Mux(..) => {
@@ -822,24 +823,29 @@ impl SiliconBlueTarget {
                     'cell_bits: for index in 0..output.len() {
                         let slice = cell.get().slice(index..index + 1).unwrap();
                         let mut lut = Lut::from_cell(slice).unwrap();
+                        let mut meta = cell.metadata();
                         let mut full_merge_lut = lut.clone();
+                        let mut full_merge_meta = meta;
                         for net in lut.inputs() {
-                            if let Some(NetDisposition::Lut(_depth, ref input_lut)) = net_dispositions.get(&net) {
+                            if let Some((NetDisposition::Lut(_depth, ref input_lut), input_meta)) =
+                                net_dispositions.get(&net)
+                            {
                                 let Some(input_index) = full_merge_lut.inputs().iter().position(|input| input == net)
                                 else {
                                     // input disappeared — optimized out by earlier merge?
                                     continue;
                                 };
                                 full_merge_lut = full_merge_lut.merge(input_index, input_lut);
+                                full_merge_meta = full_merge_meta.merge(*input_meta);
                             }
                         }
                         if full_merge_lut.inputs().len() <= 4 {
                             lut = full_merge_lut;
+                            meta = full_merge_meta;
                         } else {
-                            let mut inputs_by_depth =
-                                Vec::from_iter(lut.inputs().iter().map(|net| {
-                                    (net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0), net)
-                                }));
+                            let mut inputs_by_depth = Vec::from_iter(lut.inputs().iter().map(|net| {
+                                (net_dispositions.get(&net).map(|(disp, _meta)| disp.depth()).unwrap_or(0), net)
+                            }));
 
                             inputs_by_depth.sort_by_key(|&(depth, net)| (std::cmp::Reverse(depth), net));
                             for (_, net) in inputs_by_depth {
@@ -847,8 +853,8 @@ impl SiliconBlueTarget {
                                     continue;
                                 };
                                 match *input_disposition {
-                                    NetDisposition::CarryOut(_) => (),
-                                    NetDisposition::Lut(_depth, ref input_lut) => {
+                                    (NetDisposition::CarryOut(_), _) => (),
+                                    (NetDisposition::Lut(_depth, ref input_lut), input_meta) => {
                                         let Some(input_index) = lut.inputs().iter().position(|input| input == net)
                                         else {
                                             // input disappeared — optimized out by earlier merge?
@@ -857,9 +863,10 @@ impl SiliconBlueTarget {
                                         let merged_lut = lut.merge(input_index, input_lut);
                                         if merged_lut.inputs().len() <= 4 {
                                             lut = merged_lut;
+                                            meta = meta.merge(input_meta);
                                         }
                                     }
-                                    NetDisposition::LutCarry(depth, ref input_lut, ci, co) => {
+                                    (NetDisposition::LutCarry(depth, ref input_lut, ci, co), input_meta) => {
                                         if use_count[&net] != 1 {
                                             continue;
                                         }
@@ -886,7 +893,10 @@ impl SiliconBlueTarget {
                                                 .inputs()
                                                 .iter()
                                                 .map(|net| {
-                                                    net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0)
+                                                    net_dispositions
+                                                        .get(&net)
+                                                        .map(|(disp, _meta)| disp.depth())
+                                                        .unwrap_or(0)
                                                 })
                                                 .max()
                                                 .unwrap_or(0)
@@ -894,7 +904,10 @@ impl SiliconBlueTarget {
                                             .max(depth);
                                             net_dispositions.insert(
                                                 output[index],
-                                                NetDisposition::LutCarry(depth, merged_lut, ci, co),
+                                                (
+                                                    NetDisposition::LutCarry(depth, merged_lut, ci, co),
+                                                    meta.merge(input_meta),
+                                                ),
                                             );
                                             continue 'cell_bits;
                                         }
@@ -905,11 +918,11 @@ impl SiliconBlueTarget {
                         let depth = lut
                             .inputs()
                             .iter()
-                            .map(|net| net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0))
+                            .map(|net| net_dispositions.get(&net).map(|(disp, _meta)| disp.depth()).unwrap_or(0))
                             .max()
                             .unwrap_or(0)
                             + 1;
-                        net_dispositions.insert(output[index], NetDisposition::Lut(depth, lut));
+                        net_dispositions.insert(output[index], (NetDisposition::Lut(depth, lut), meta));
                     }
                     cell.unalive();
                 }
@@ -917,26 +930,32 @@ impl SiliconBlueTarget {
                     // TODO: check if doable in one step
                     let output = cell.output();
                     let carry = &adc_carries[&cell];
-                    let mut max_depth = net_dispositions.get(ci).map(NetDisposition::depth).unwrap_or(0);
+                    let mut max_depth = net_dispositions.get(ci).map(|(disp, _meta)| disp.depth()).unwrap_or(0);
                     for index in 0..output.len() - 1 {
                         for net in [arg1[index], arg2[index]] {
-                            max_depth =
-                                max_depth.max(net_dispositions.get(&net).map(NetDisposition::depth).unwrap_or(0));
+                            max_depth = max_depth
+                                .max(net_dispositions.get(&net).map(|(disp, _meta)| disp.depth()).unwrap_or(0));
+                        }
+                        if cell.metadata().is_none() {
+                            eprintln!("{}", design.display_cell(cell));
                         }
                         net_dispositions.insert(
                             output[index],
-                            NetDisposition::LutCarry(
-                                max_depth + 1,
-                                Lut::new_fixed(
-                                    Value::from_iter([Net::UNDEF, arg1[index], arg2[index], carry[index]]),
-                                    Const::lit("1100001100111100"),
+                            (
+                                NetDisposition::LutCarry(
+                                    max_depth + 1,
+                                    Lut::new_fixed(
+                                        Value::from_iter([Net::UNDEF, arg1[index], arg2[index], carry[index]]),
+                                        Const::lit("1100001100111100"),
+                                    ),
+                                    carry[index],
+                                    carry[index + 1],
                                 ),
-                                carry[index],
-                                carry[index + 1],
+                                cell.metadata()
                             ),
                         );
                     }
-                    net_dispositions.insert(output.msb(), NetDisposition::CarryOut(max_depth + 1));
+                    net_dispositions.insert(output.msb(), (NetDisposition::CarryOut(max_depth + 1), cell.metadata()));
                     cell.unalive();
                 }
                 _ => {}
@@ -945,7 +964,7 @@ impl SiliconBlueTarget {
 
         let sb_lut4 = self.prototype(SB_LUT4).unwrap();
         let sb_lut4_carry = self.prototype(SB_LUT4_CARRY).unwrap();
-        for (net, disposition) in net_dispositions {
+        for (net, (disposition, metadata)) in net_dispositions {
             match disposition {
                 NetDisposition::CarryOut(_) => {}
                 NetDisposition::Lut(_, lut) => {
@@ -953,7 +972,7 @@ impl SiliconBlueTarget {
                     let mut target_cell = TargetCell::new(SB_LUT4, sb_lut4);
                     sb_lut4.apply_param(&mut target_cell, "LUT_INIT", lut.table());
                     sb_lut4.apply_input(&mut target_cell, "I", lut.inputs());
-                    let target_output = design.add_target(target_cell);
+                    let target_output = design.add_cell_with_metadata_ref(Cell::Target(target_cell), metadata);
                     let o = sb_lut4.extract_output(&target_output, "O");
                     design.replace_value(net, o);
                 }
@@ -972,7 +991,7 @@ impl SiliconBlueTarget {
                     sb_lut4_carry.apply_param(&mut target_cell, "IS_I3_CI", inputs[3] == net_ci);
                     sb_lut4_carry.apply_input(&mut target_cell, "I", inputs);
                     sb_lut4_carry.apply_input(&mut target_cell, "CI", net_ci);
-                    let target_output = design.add_target(target_cell);
+                    let target_output = design.add_cell_with_metadata_ref(Cell::Target(target_cell), metadata);
                     let o = sb_lut4_carry.extract_output(&target_output, "O");
                     design.replace_value(net, o);
                     let co = sb_lut4_carry.extract_output(&target_output, "CO");

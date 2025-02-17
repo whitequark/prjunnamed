@@ -551,7 +551,11 @@ fn export_module(mut design: Design) -> yosys::Module {
         };
 
         if output.len() > 0 {
-            NetDetails::new(indexer.value(&output)).add_to(&format!("{}$out", ys_cell_name), &mut ys_module);
+            // Duplicating the cell metadata on the cell output net is the only way to get source locations
+            // to show up in nextpnr's timing reports.
+            NetDetails::new(indexer.value(&output))
+                .attrs(map_metadata(cell_ref.metadata()))
+                .add_to(&format!("{}$out", ys_cell_name), &mut ys_module);
         }
     }
 

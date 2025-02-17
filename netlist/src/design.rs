@@ -111,6 +111,10 @@ impl Design {
         }
     }
 
+    pub fn add_cell_with_metadata_ref(&self, cell: Cell, metadata: MetaItemRef) -> Value {
+        self.add_cell_with_metadata_index(cell, metadata.index())
+    }
+
     pub fn add_cell_with_metadata(&self, cell: Cell, metadata: &MetaItem) -> Value {
         metadata.validate();
         let metadata = self.metadata.borrow_mut().add_item(metadata);
