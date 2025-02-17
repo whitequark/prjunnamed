@@ -329,7 +329,9 @@ impl<'a> Iterator for MetaItemIterator<'a> {
 
 impl Display for MetaItemIndex {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "!{}", self.0)
+        let index = self.0;
+        assert!(index > 0);
+        write!(f, "!{}", index - 1)
     }
 }
 

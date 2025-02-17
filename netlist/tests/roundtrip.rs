@@ -35,16 +35,16 @@ fn test_comment() {
 
 #[test]
 fn test_metadata() {
-    roundtrip("!1 = source \"top.py\" (#1 #2) (#3 #4)\n");
-    roundtrip("!1 = scope \"top\"\n");
-    roundtrip("!1 = source \"top.py\" (#1 #2) (#3 #4)\n!2 = scope \"top\" src=!1\n");
-    roundtrip("!1 = scope \"top\"\n!2 = scope \"cpu\" in=!1\n");
-    roundtrip("!1 = scope \"io\"\n!2 = scope #1 in=!1\n");
-    roundtrip("!1 = scope \"top\"\n!2 = ident \"addr\" in=!1\n");
-    roundtrip("!1 = scope \"top\"\n!2 = ident \"addr\" in=!1\n!3 = { !1 !2 }\n");
-    roundtrip("!1 = attr \"foo\" 1101\n");
-    roundtrip("!1 = attr \"foo\" #1\n");
-    roundtrip("!1 = attr \"foo\" \"bar\"\n");
+    roundtrip("!0 = source \"top.py\" (#1 #2) (#3 #4)\n");
+    roundtrip("!0 = scope \"top\"\n");
+    roundtrip("!0 = source \"top.py\" (#1 #2) (#3 #4)\n!1 = scope \"top\" src=!0\n");
+    roundtrip("!0 = scope \"top\"\n!1 = scope \"cpu\" in=!0\n");
+    roundtrip("!0 = scope \"io\"\n!1 = scope #1 in=!0\n");
+    roundtrip("!0 = scope \"top\"\n!1 = ident \"addr\" in=!0\n");
+    roundtrip("!0 = scope \"top\"\n!1 = ident \"addr\" in=!0\n!2 = { !0 !1 }\n");
+    roundtrip("!0 = attr \"foo\" 1101\n");
+    roundtrip("!0 = attr \"foo\" #1\n");
+    roundtrip("!0 = attr \"foo\" \"bar\"\n");
 }
 
 #[test]
@@ -131,8 +131,8 @@ fn test_cells() {
 
 #[test]
 fn test_cells_metadata() {
-    roundtrip("!1 = source \"top.py\" (#1 #2) (#3 #4)\n%0:1 = buf 0 !1\n");
-    roundtrip("!1 = source \"top.py\" (#1 #2) (#3 #4)\n%0:2 = buf 00\n%2:3 = match %0:2 !1 { (00 01) 10 11 }\n");
+    roundtrip("!0 = source \"top.py\" (#1 #2) (#3 #4)\n%0:1 = buf 0 !0\n");
+    roundtrip("!0 = source \"top.py\" (#1 #2) (#3 #4)\n%0:2 = buf 00\n%2:3 = match %0:2 !0 { (00 01) 10 11 }\n");
 }
 
 #[test]
@@ -222,7 +222,7 @@ fn test_memories() {
 
 #[test]
 fn test_memories_metadata() {
-    roundtrip("!1 = source \"op.py\" (#1 #2) (#3 #4)\n%0:0 = memory depth=#1 width=#1 !1 {\n  init 1\n}\n");
+    roundtrip("!0 = source \"op.py\" (#1 #2) (#3 #4)\n%0:0 = memory depth=#1 width=#1 !0 {\n  init 1\n}\n");
 }
 
 #[test]
@@ -243,7 +243,7 @@ fn test_instances() {
 
 #[test]
 fn test_instances_metadata() {
-    roundtrip("!1 = source \"op.py\" (#1 #2) (#3 #4)\n%0:1 = buf 0\n%1:_ = \"TBUF\" !1 {\n  input \"EN\" = %0\n}\n");
+    roundtrip("!0 = source \"op.py\" (#1 #2) (#3 #4)\n%0:1 = buf 0\n%1:_ = \"TBUF\" !0 {\n  input \"EN\" = %0\n}\n");
 }
 
 #[test]
@@ -362,18 +362,18 @@ fn test_target() {
     ));
     roundtrip(concat!(
         "set target \"test\"\n",
-        "!1 = source \"op.py\" (#1 #2) (#3 #4)\n",
+        "!0 = source \"op.py\" (#1 #2) (#3 #4)\n",
         "%0:1 = input \"A\"\n",
-        "%1:1 = target \"BUF\" !1 {\n",
+        "%1:1 = target \"BUF\" !0 {\n",
         "  input \"A\" = %0\n",
         "}\n"
     ));
     roundtrip(concat!(
         "set target \"test\"\n",
-        "!1 = source \"op.py\" (#1 #2) (#3 #4)\n",
+        "!0 = source \"op.py\" (#1 #2) (#3 #4)\n",
         "%0:1 = input \"A\"\n",
         "%1:1 = input \"B\"\n",
-        "%4:_ = target \"ADD\" !1 {\n",
+        "%4:_ = target \"ADD\" !0 {\n",
         "  input \"A\" = %0\n",
         "  input \"B\" = %1\n",
         "  %4:1 = output \"O\"\n",
