@@ -229,7 +229,7 @@ fn adc_split(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
         // If they are different, one of them must be equal to whatever
         // ci currently is.
         if a_bit == b_bit {
-            result.extend(mk_adc(design, &a[result.len()..offset], &b[result.len()..offset], ci));
+            result.extend(make_adc(design, &a[result.len()..offset], &b[result.len()..offset], ci));
             ci = a_bit;
         } else if offset == result.len() {
             if a_bit == ci {
@@ -244,7 +244,7 @@ fn adc_split(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
     if result.is_empty() {
         return None;
     }
-    result.extend(mk_adc(design, &a[result.len()..], &b[result.len()..], ci));
+    result.extend(make_adc(design, &a[result.len()..], &b[result.len()..], ci));
     Some(result)
 }
 
@@ -303,7 +303,7 @@ fn adc_unsext(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
 
         let start_offset = result.len();
         let end_offset = offset + same_count;
-        let chunk = mk_adc(design, &a[start_offset..offset + 2], &b[start_offset..offset + 2], ci);
+        let chunk = make_adc(design, &a[start_offset..offset + 2], &b[start_offset..offset + 2], ci);
         let chunk_sum = chunk.slice(..chunk.len() - 1); // drop cout
         result.extend(chunk_sum.sext(end_offset - start_offset));
         ci = chunk.msb();
@@ -312,12 +312,12 @@ fn adc_unsext(design: &Design, a: Value, b: Value, c: Net) -> Option<Value> {
     if result.is_empty() {
         return None;
     }
-    result.extend(mk_adc(design, &a[result.len()..], &b[result.len()..], ci));
+    result.extend(make_adc(design, &a[result.len()..], &b[result.len()..], ci));
     Some(result)
 }
 
-/// Create an `adc` cell, unless it's of width 0
-fn mk_adc(design: &Design, a: impl Into<Value>, b: impl Into<Value>, ci: impl Into<Net>) -> Value {
+/// Create an `adc` cell if operands have a non-zero width.
+fn make_adc(design: &Design, a: impl Into<Value>, b: impl Into<Value>, ci: impl Into<Net>) -> Value {
     let a = a.into();
     let b = b.into();
     let ci = ci.into();

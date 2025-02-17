@@ -22,21 +22,23 @@ macro_rules! netlist_match {
         }
     };
     { @RULE@ $design:ident $target:ident } => { None };
-    { @RULE@ $design:ident $target:ident [ $($pat:tt)+ ] $( if $guard:expr )? => $result:expr; $($rest:tt)* } => {
+    { @RULE@ $design:ident $target:ident [ $($pat:tt)+ ] $( if $gexpr:expr )? => $result:expr; $($rest:tt)* } => {
         {
             'block: {
                 let pattern = $crate::netlist_match!( @NEW@ [ $($pat)+ ] );
                 let collector = $crate::CellCollector::new($design);
                 match pattern.execute(&collector, $target) {
-                    Some($crate::netlist_match!( @PAT@ [ $($pat)+ ] )) $( if $guard )? => {
-                        if cfg!(feature = "trace") {
-                            eprintln!(">match {} => {}",
-                                stringify!([ $($pat)* ] $( if $guard )?).replace("\n", " "),
-                                $design.inner().display_value(&*$target)
-                            );
-                        }
+                    Some($crate::netlist_match!( @PAT@ [ $($pat)+ ] )) => {
                         let _guard = $design.inner().use_metadata_from(&collector.into_cells()[..]);
-                        break 'block Some($result.into())
+                        $( if $gexpr )? {
+                            if cfg!(feature = "trace") {
+                                eprintln!(">match {} => {}",
+                                    stringify!([ $($pat)* ] $( if $gexpr )?).replace("\n", " "),
+                                    $design.inner().display_value(&*$target)
+                                );
+                            }
+                            break 'block Some($result.into())
+                        }
                     }
                     _ => ()
                 }
@@ -51,6 +53,7 @@ macro_rules! netlist_match {
                 let collector = $crate::CellCollector::new($design);
                 match pattern.execute(&collector, $target) {
                     Some($crate::netlist_match!( @PAT@ [ $($pat)+ ] )) => {
+                        let _guard = $design.inner().use_metadata_from(&collector.into_cells()[..]);
                         if let $gpat = $gexpr {
                             if cfg!(feature = "trace") {
                                 eprintln!(">match {} => {}",
@@ -58,7 +61,6 @@ macro_rules! netlist_match {
                                     $design.inner().display_value(&*$target)
                                 );
                             }
-                            let _guard = $design.inner().use_metadata_from(&collector.into_cells()[..]);
                             break 'block Some($result.into())
                         }
                     }
