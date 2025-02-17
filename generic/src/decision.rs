@@ -97,7 +97,12 @@ impl MatchMatrix {
     }
 
     fn iter_outputs(&self) -> impl Iterator<Item = Net> {
-        BTreeSet::from_iter(self.rows.iter().flat_map(|row| row.rules.iter()).cloned()).into_iter()
+        let mut outputs: Vec<Net> = self.rows.iter()
+            .flat_map(|row| row.rules.iter())
+            .collect();
+        outputs.sort();
+        outputs.dedup();
+        outputs.into_iter()
     }
 
     fn assume(mut self, target: Net, value: Trit) -> Self {
@@ -111,6 +116,9 @@ impl MatchMatrix {
         let mut remove_rows = BTreeSet::new();
 
         // Pick columns to remove where the matched value is constant or has repeated nets.
+
+        // For each `Net`, store the index of the first column being driven
+        // by that net.
         let mut first_at = BTreeMap::new();
         for (index, net) in self.value.iter().enumerate() {
             if net.is_cell() && !first_at.contains_key(&net) {
