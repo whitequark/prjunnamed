@@ -936,9 +936,6 @@ impl SiliconBlueTarget {
                             max_depth = max_depth
                                 .max(net_dispositions.get(&net).map(|(disp, _meta)| disp.depth()).unwrap_or(0));
                         }
-                        if cell.metadata().is_none() {
-                            eprintln!("{}", design.display_cell(cell));
-                        }
                         net_dispositions.insert(
                             output[index],
                             (
