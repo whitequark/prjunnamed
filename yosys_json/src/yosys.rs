@@ -325,7 +325,7 @@ impl Metadata {
         self.0.get(key)
     }
 
-    pub fn add<V: ToOwned<Owned = MetadataValue>>(&mut self, key: &str, value: V) {
+    pub fn add(&mut self, key: &str, value: impl ToOwned<Owned = MetadataValue>) {
         self.0.insert(key.to_owned(), value.to_owned());
     }
 }
@@ -504,31 +504,31 @@ impl CellDetails {
         }
     }
 
-    pub fn attr<V: Into<MetadataValue>>(mut self, name: &str, value: V) -> CellDetails {
+    pub fn attr(mut self, name: &str, value: impl Into<MetadataValue>) -> CellDetails {
         self.attributes.add(name, value.into());
         self
     }
 
-    pub fn param<V: Into<MetadataValue>>(mut self, name: &str, value: V) -> CellDetails {
+    pub fn param(mut self, name: &str, value: impl Into<MetadataValue>) -> CellDetails {
         self.parameters.add(name, value.into());
         self
     }
 
-    pub fn port<C: Into<BitVector>>(mut self, name: &str, port_direction: PortDirection, connection: C) -> CellDetails {
+    pub fn port(mut self, name: &str, port_direction: PortDirection, connection: impl Into<BitVector>) -> CellDetails {
         self.port_directions.add(name, port_direction);
         self.connections.add(name, connection.into());
         self
     }
 
-    pub fn input<C: Into<BitVector>>(self, name: &str, connection: C) -> CellDetails {
+    pub fn input(self, name: &str, connection: impl Into<BitVector>) -> CellDetails {
         self.port(name, PortDirection::Input, connection)
     }
 
-    pub fn output<C: Into<BitVector>>(self, name: &str, connection: C) -> CellDetails {
+    pub fn output(self, name: &str, connection: impl Into<BitVector>) -> CellDetails {
         self.port(name, PortDirection::Output, connection)
     }
 
-    pub fn inout<C: Into<BitVector>>(self, name: &str, connection: C) -> CellDetails {
+    pub fn inout(self, name: &str, connection: impl Into<BitVector>) -> CellDetails {
         self.port(name, PortDirection::Inout, connection)
     }
 
@@ -611,7 +611,7 @@ pub struct NetDetails {
 }
 
 impl NetDetails {
-    pub fn new<B: Into<BitVector>>(bits: B) -> NetDetails {
+    pub fn new(bits: impl Into<BitVector>) -> NetDetails {
         NetDetails {
             hide_name: false,
             attributes: Metadata::new(),
@@ -622,7 +622,7 @@ impl NetDetails {
         }
     }
 
-    pub fn attr<V: Into<MetadataValue>>(mut self, name: &str, value: V) -> NetDetails {
+    pub fn attr(mut self, name: &str, value: impl Into<MetadataValue>) -> NetDetails {
         self.attributes.add(name, value.into());
         self
     }
