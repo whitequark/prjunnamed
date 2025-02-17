@@ -111,7 +111,16 @@ impl MatchMatrix {
         self
     }
 
-    /// Remove redundant rows and columns
+    /// Remove redundant rows and columns.
+    ///
+    /// This function ensures the following normal-form properties:
+    /// - `self.value` does not contain any constant nets
+    /// - all nets occurs within `self.value` at most once
+    /// - a row of all `X` can only occur at the very end
+    /// - no two identical rows can occur immediately next to each other
+    ///
+    /// Note that the last of these properties is relatively weak, in that
+    /// stronger properties exist which can still be feasibly checked.
     fn normalize(mut self) -> Self {
         let mut remove_cols = BTreeSet::new();
         let mut remove_rows = BTreeSet::new();
@@ -130,7 +139,7 @@ impl MatchMatrix {
         }
 
         // Pick rows to remove that:
-        // * are redundant with the previous row, or
+        // * are redundant with the immediately preceeding row, or
         // * contradict themselves or the constant nets in matched value.
         let mut prev_pattern = None;
         'outer: for (row_index, row) in self.rows.iter_mut().enumerate() {
@@ -148,6 +157,11 @@ impl MatchMatrix {
             for (net_index, net) in self.value.iter().enumerate() {
                 let mask = row.pattern[net_index];
                 // Row contradicts constant in matched value.
+                //
+                // Note that if we're matching against a constant `X`, removing
+                // the row is nevertheless valid, since the row isn't guaranteed
+                // to match regardless of the value of the `X`, and so we can
+                // refine it into "doesn't match".
                 match net.as_const() {
                     Some(trit) if trit != mask && mask != Trit::Undef => {
                         remove_rows.insert(row_index);
@@ -160,12 +174,12 @@ impl MatchMatrix {
                     // It doesn't.
                     None => (),
                     // It does and this is the first occurrence. Leave it alone.
-                    Some(&first_at_index) if first_at_index == net_index => (),
+                    Some(&first_index) if first_index == net_index => (),
                     // It does and this is the second or later occurrence. Check if it is compatible with
                     // the first one. Also, if the first one was a don't-care, move this one into the position
                     // of the first one.
-                    Some(&first_at_index) => {
-                        let first_mask = &mut row.pattern[first_at_index];
+                    Some(&first_index) => {
+                        let first_mask = &mut row.pattern[first_index];
                         if *first_mask != Trit::Undef && mask != Trit::Undef && *first_mask != mask {
                             remove_rows.insert(row_index);
                             continue 'outer;
@@ -212,6 +226,7 @@ impl MatchMatrix {
         self
     }
 
+    /// Construct a decision tree for the match matrix.
     fn dispatch(mut self) -> Decision {
         self = self.normalize();
         if self.value.is_empty() || self.rows.len() == 1 {
