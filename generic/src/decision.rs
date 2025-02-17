@@ -244,7 +244,10 @@ impl Decision {
                 for &rule in rules {
                     let _ = disjoint_sets.make_set(rule);
                     if let Some(other_rule) = unify_with {
-                        disjoint_sets.union(&rule, &other_rule).unwrap();
+                        // work around https://gitlab.com/rustychoi/union_find/-/issues/1
+                        if disjoint_sets.find_set(&rule).unwrap() != disjoint_sets.find_set(&other_rule).unwrap() {
+                            disjoint_sets.union(&rule, &other_rule).unwrap();
+                        }
                     } else {
                         unify_with = Some(rule);
                     }
