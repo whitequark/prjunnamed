@@ -339,7 +339,7 @@ impl<'a> MatchTrees<'a> {
 
         // Create matrix for this cell.
         let mut matrix = MatchMatrix::new(&match_cell.value);
-        for (output_net, alternates) in std::iter::zip(output.iter(), match_cell.patterns.iter()) {
+        for (output_net, alternates) in output.iter().zip(match_cell.patterns.iter()) {
             for pattern in alternates {
                 matrix.add(MatchRow::new(pattern.clone(), [output_net]));
             }
@@ -480,7 +480,7 @@ pub fn decision(design: &mut Design) {
     for (decision, chain) in assign_chains.iter_disjoint(&decisions, &disjoint_sets) {
         let (first_assign, last_assign) = (chain.first().unwrap(), chain.last().unwrap());
         if cfg!(feature = "trace") {
-            eprintln!(">chain:");
+            eprintln!(">disjoint:");
             for &cell_ref in chain {
                 eprintln!("{}", design.display_cell(cell_ref));
             }
@@ -501,6 +501,10 @@ pub fn decision(design: &mut Design) {
     // Lower other `assign` cells.
     for cell_ref in design.iter_cells().filter(|cell_ref| !used_assigns.contains(cell_ref)) {
         let Cell::Assign(assign_cell) = &*cell_ref.get() else { continue };
+        if cfg!(feature = "trace") {
+            eprintln!(">chained: {}", design.display_cell(cell_ref));
+        }
+
         let _guard = design.use_metadata_from(&[cell_ref]);
         let mut nets = Vec::from_iter(assign_cell.value.iter());
         let slice = assign_cell.offset..(assign_cell.offset + assign_cell.update.len());
