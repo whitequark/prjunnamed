@@ -741,11 +741,14 @@ impl Design {
             if matches!(cell.repr, CellRepr::Skip(_) | CellRepr::Void) {
                 continue;
             }
-            let cell = &*cell.get();
-            if cell.has_effects(self) {
-                queue.insert(index);
-            } else if let Cell::Debug(name, value) = cell {
-                debug.insert(name.clone(), value.clone());
+            match &*cell.get() {
+                cell if cell.has_effects(self) => {
+                    queue.insert(index);
+                }
+                Cell::Debug(name, value) => {
+                    debug.insert(name.clone(), (value.clone(), cell.meta));
+                }
+                _ => (),
             }
         }
 
@@ -784,7 +787,7 @@ impl Design {
             });
         }
 
-        for (name, mut value) in debug {
+        for (name, (mut value, meta)) in debug {
             value.visit_mut(|net| {
                 if net.is_cell() {
                     if let Some(&new_net) = net_map.get(net) {
@@ -794,7 +797,8 @@ impl Design {
                     }
                 }
             });
-            self.cells.push(CellRepr::Coarse(Box::new(Cell::Debug(name, value))).into());
+            self.cells
+                .push(AnnotatedCell { repr: CellRepr::Coarse(Box::new(Cell::Debug(name, value))), meta });
         }
 
         did_change
