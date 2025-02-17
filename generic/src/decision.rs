@@ -242,7 +242,7 @@ impl MatchMatrix {
                     }
                 }
             }
-            let test_index = (0..self.value.len()).min_by(|&ai, &bi| undef_count[ai].cmp(&undef_count[bi]));
+            let test_index = (0..self.value.len()).min_by_key(|&i| undef_count[i]);
             let test = self.value[test_index.unwrap()];
 
             // Split the matrix into two, where the test net has a value of 0 and 1, and recurse.
