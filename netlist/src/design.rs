@@ -332,6 +332,8 @@ impl Design {
         self.verify(crate::EasySmtEngine::z3().unwrap()).unwrap();
 
         let mut changes = std::mem::take(self.changes.get_mut());
+        self.changes.get_mut().next_io = changes.next_io;
+
         let mut did_change = !changes.added_ios.is_empty() || !changes.added_cells.is_empty();
         for (cell_index, new_items) in changes.appended_metadata {
             let mut all_items = BTreeSet::new();

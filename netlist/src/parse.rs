@@ -490,8 +490,9 @@ fn parse_io(t: &mut WithContext<impl Tokens<Item = char>, Context>) -> Option<Io
     let (name, size) = parse_io_name_size(t)?;
     parse_blank(t);
     parse_symbol(t, '\n')?;
-    let io_value = t.context_mut().add_io(name, size);
-    t.context_mut().design.apply();
+    let ctx = t.context_mut();
+    let io_value = ctx.add_io(name, size);
+    ctx.design.apply();
     Some(io_value)
 }
 
