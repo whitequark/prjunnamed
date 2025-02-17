@@ -277,6 +277,7 @@ impl SiliconBlueTarget {
     pub fn lower_memories(&self, design: &mut Design) {
         for cell_ref in design.iter_cells() {
             let Cell::Memory(memory) = &*cell_ref.get() else { continue };
+            let _guard = design.with_metadata_from(&[cell_ref]);
             let output = cell_ref.output();
             let bram_lowering = self.find_bram_lowering(memory);
             let fallback_ok = memory.can_lower_fallback();
