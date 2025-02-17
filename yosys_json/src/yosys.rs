@@ -225,9 +225,9 @@ impl From<&str> for MetadataValue {
     }
 }
 
-impl From<&ParamValue> for MetadataValue {
-    fn from(value: &ParamValue) -> Self {
-        match value.clone() {
+impl From<ParamValue> for MetadataValue {
+    fn from(value: ParamValue) -> Self {
+        match value {
             ParamValue::Const(value) => value.into(),
             ParamValue::Int(value) => value.into(),
             ParamValue::String(value) => value.into(),
@@ -235,6 +235,12 @@ impl From<&ParamValue> for MetadataValue {
                 unimplemented!("Yosys JSON does not define serialization for floating point parameters")
             }
         }
+    }
+}
+
+impl From<&ParamValue> for MetadataValue {
+    fn from(value: &ParamValue) -> Self {
+        value.clone().into()
     }
 }
 
@@ -327,6 +333,10 @@ impl Metadata {
 
     pub fn add(&mut self, key: &str, value: impl ToOwned<Owned = MetadataValue>) {
         self.0.insert(key.to_owned(), value.to_owned());
+    }
+
+    pub fn extend(&mut self, values: impl IntoIterator<Item = (String, MetadataValue)>) {
+        self.0.extend(values);
     }
 }
 
@@ -509,6 +519,11 @@ impl CellDetails {
         self
     }
 
+    pub fn attrs(mut self, attrs: impl IntoIterator<Item = (String, MetadataValue)>) -> CellDetails {
+        self.attributes.extend(attrs);
+        self
+    }
+
     pub fn param(mut self, name: &str, value: impl Into<MetadataValue>) -> CellDetails {
         self.parameters.add(name, value.into());
         self
@@ -624,6 +639,11 @@ impl NetDetails {
 
     pub fn attr(mut self, name: &str, value: impl Into<MetadataValue>) -> NetDetails {
         self.attributes.add(name, value.into());
+        self
+    }
+
+    pub fn attrs(mut self, attrs: impl IntoIterator<Item = (String, MetadataValue)>) -> NetDetails {
+        self.attributes.extend(attrs);
         self
     }
 

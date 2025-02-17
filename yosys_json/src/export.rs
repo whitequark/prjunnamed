@@ -1,8 +1,10 @@
 use jzon::JsonValue;
 use std::{cell::RefCell, collections::BTreeMap, io::BufWriter};
 
-use crate::yosys::{self, CellDetails, NetDetails, PortDetails};
-use prjunnamed_netlist::{Cell, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, Net, Trit, Value};
+use crate::yosys::{self, CellDetails, MetadataValue, NetDetails, PortDetails};
+use prjunnamed_netlist::{
+    Cell, Const, ControlNet, Design, IoNet, IoValue, MemoryPortRelation, MetaItem, MetaItemRef, Net, Trit, Value,
+};
 
 struct Counter(usize);
 
@@ -65,6 +67,33 @@ impl NetlistIndexer {
     }
 }
 
+fn map_metadata(metadata: MetaItemRef) -> Vec<(String, yosys::MetadataValue)> {
+    let mut ys_attrs: Vec<(String, MetadataValue)> = Vec::new();
+    let mut ys_srcs = Vec::new();
+    for item in metadata.iter() {
+        match item.get() {
+            MetaItem::Source { file, start, end } => {
+                ys_srcs.push(format!(
+                    "{}:{}.{}-{}.{}",
+                    file.get(),
+                    start.line + 1,
+                    start.column + 1,
+                    end.line + 1,
+                    end.column + 1
+                ));
+            }
+            MetaItem::Attr { name, value } => {
+                ys_attrs.push((name.get().to_owned(), value.into()));
+            }
+            _ => (),
+        }
+    }
+    if !ys_srcs.is_empty() {
+        ys_attrs.push(("src".to_owned(), ys_srcs.join("|").into()));
+    }
+    ys_attrs
+}
+
 fn export_module(mut design: Design) -> yosys::Module {
     let indexer = NetlistIndexer::new();
     let mut ys_module = yosys::Module::new();
@@ -102,6 +131,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                 .param("Y_WIDTH", output.len())
                 .input("A", indexer.value(a))
                 .output("Y", indexer.value(&output))
+                .attrs(map_metadata(cell_ref.metadata()))
                 .add_to(&format!("${}", cell_index), module)
         };
 
@@ -115,6 +145,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                 .input("A", indexer.value(a))
                 .input("B", indexer.value(b))
                 .output("Y", indexer.value(&output))
+                .attrs(map_metadata(cell_ref.metadata()))
                 .add_to(&format!("${}", cell_index), module)
         };
 
@@ -126,18 +157,19 @@ fn export_module(mut design: Design) -> yosys::Module {
             } else {
                 let stride_bits = stride.ilog2() + 1;
                 let stride = Const::from_uint(stride.into(), stride_bits as usize);
-                let res = indexer.synthetic_value(a.len() + stride.len());
+                let result = indexer.synthetic_value(a.len() + stride.len());
                 CellDetails::new("$mul")
                     .param("A_SIGNED", 0)
                     .param("A_WIDTH", a.len())
                     .param("B_SIGNED", 0)
                     .param("B_WIDTH", stride.len())
-                    .param("Y_WIDTH", res.len())
+                    .param("Y_WIDTH", result.len())
                     .input("A", indexer.value(a))
                     .input("B", indexer.value(&Value::from(stride)))
-                    .output("Y", res.clone())
+                    .output("Y", result.clone())
+                    .attrs(map_metadata(cell_ref.metadata()))
                     .add_to(&format!("${}$stride", cell_index), module);
-                res
+                result
             }
         };
 
@@ -152,6 +184,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                 .input("A", indexer.value(a))
                 .input("B", b)
                 .output("Y", indexer.value(&output))
+                .attrs(map_metadata(cell_ref.metadata()))
                 .add_to(&format!("${}", cell_index), module)
         };
 
@@ -166,13 +199,14 @@ fn export_module(mut design: Design) -> yosys::Module {
                         .param("Y_WIDTH", output.len())
                         .input("A", indexer.value(&net.into()))
                         .output("Y", result)
+                        .attrs(map_metadata(cell_ref.metadata()))
                         .add_to(not_name, module);
                     result
                 }
             }
         };
 
-        match cell_ref.get().as_ref() {
+        match &*cell_ref.get() {
             Cell::Buf(arg) => ys_cell_unary(&mut ys_module, "$pos", arg),
             Cell::Not(arg) => ys_cell_unary(&mut ys_module, "$not", arg),
             Cell::And(arg1, arg2) => ys_cell_binary(&mut ys_module, "$and", arg1, arg2, false),
@@ -184,6 +218,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                 .input("B", indexer.value(arg2))
                 .input("S", indexer.net(*arg1))
                 .output("Y", indexer.value(&output))
+                .attrs(map_metadata(cell_ref.metadata()))
                 .add_to(&format!("${}", cell_index), &mut ys_module),
             Cell::Adc(arg1, arg2, arg3) => {
                 // The $alu cell isn't supported by `write_verilog`, so we have to pattern-match here.
@@ -199,6 +234,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                             .input("A", indexer.value(arg1))
                             .input("B", indexer.value(arg2))
                             .output("Y", indexer.value(&output))
+                            .attrs(map_metadata(cell_ref.metadata()))
                             .add_to(&format!("${}", cell_index), &mut ys_module);
                     }
                     _ => {
@@ -215,6 +251,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                             .input("A", indexer.value(&ys_a))
                             .input("B", indexer.value(&ys_b))
                             .output("Y", ys_y)
+                            .attrs(map_metadata(cell_ref.metadata()))
                             .add_to(&format!("${}", cell_index), &mut ys_module);
                     }
                 }
@@ -280,10 +317,11 @@ fn export_module(mut design: Design) -> yosys::Module {
                     .param("WIDTH", output.len())
                     .input("D", indexer.value(&flip_flop.data))
                     .output("Q", indexer.value(&output))
+                    .attrs(map_metadata(cell_ref.metadata()))
                     .add_to(&ys_cell_name, &mut ys_module);
                 NetDetails::new(indexer.value(&output))
                     .attr("init", flip_flop.init_value.clone())
-                    .add_to(&format!("{}$out", ys_cell_name), &mut ys_module);
+                    .add_to(&format!("{}$ff", ys_cell_name), &mut ys_module);
                 continue; // skip default $out wire (init-less) creation
             }
 
@@ -462,11 +500,13 @@ fn export_module(mut design: Design) -> yosys::Module {
             Cell::IoBuf(io_buffer) => {
                 let ys_enable =
                     ys_control_net_pos(&mut ys_module, &format!("${}$en$not", cell_index), io_buffer.enable);
+                let ys_attrs = map_metadata(cell_ref.metadata());
                 CellDetails::new("$tribuf")
                     .param("WIDTH", output.len())
                     .input("A", indexer.value(&io_buffer.output))
                     .input("EN", ys_enable)
                     .output("Y", indexer.io_value(&io_buffer.io))
+                    .attrs(ys_attrs.clone())
                     .add_to(&format!("${}", cell_index), &mut ys_module);
                 CellDetails::new("$pos")
                     .param("A_SIGNED", 0)
@@ -474,6 +514,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                     .param("Y_WIDTH", output.len())
                     .input("A", indexer.io_value(&io_buffer.io))
                     .output("Y", indexer.value(&output))
+                    .attrs(ys_attrs)
                     .add_to(&format!("${}$pos", cell_index), &mut ys_module);
             }
 
@@ -491,7 +532,7 @@ fn export_module(mut design: Design) -> yosys::Module {
                 for (name, io_value) in instance.ios.iter() {
                     ys_cell = ys_cell.inout(name, indexer.io_value(io_value));
                 }
-                ys_cell.add_to(&ys_cell_name, &mut ys_module);
+                ys_cell.attrs(map_metadata(cell_ref.metadata())).add_to(&ys_cell_name, &mut ys_module);
             }
             Cell::Target(_target_cell) => {
                 unimplemented!("target cells must be converted to instances first for Yosys JSON export")
@@ -503,9 +544,10 @@ fn export_module(mut design: Design) -> yosys::Module {
             Cell::Output(port_name, value) => {
                 ys_module.ports.add(port_name, PortDetails::new(yosys::PortDirection::Output, indexer.value(value)))
             }
-            Cell::Name(name, value) | Cell::Debug(name, value) => ys_module
-                .netnames
-                .add(&name.replace(" ", "."), NetDetails::new(indexer.value(value)).attr("hdlname", name)),
+            Cell::Name(name, value) | Cell::Debug(name, value) => ys_module.netnames.add(
+                &name.replace(" ", "."),
+                NetDetails::new(indexer.value(value)).attrs(map_metadata(cell_ref.metadata())).attr("hdlname", name),
+            ),
         };
 
         if output.len() > 0 {
