@@ -685,10 +685,6 @@ mod test {
             Self(Design::new())
         }
 
-        fn pat(&self, pattern: &str) -> Const {
-            Const::from_iter(pattern.chars().map(Trit::lit))
-        }
-
         fn val(&self, width: usize) -> Value {
             self.0.add_void(width)
         }
@@ -714,13 +710,13 @@ mod test {
         let (n1, n2, en) = (h.net(), h.net(), h.net());
 
         let mut ml = MatchMatrix::new(&v);
-        ml.add(MatchRow::new(h.pat("01"), [n1]));
-        ml.add(MatchRow::new(h.pat("10"), [n2]));
+        ml.add(MatchRow::new(Const::lit("10"), [n1]));
+        ml.add(MatchRow::new(Const::lit("01"), [n2]));
 
         let mut mr = MatchMatrix::new(&v.concat(en));
-        mr.add(MatchRow::new(h.pat("XX0"), []));
-        mr.add(MatchRow::new(h.pat("011"), [n1]));
-        mr.add(MatchRow::new(h.pat("101"), [n2]));
+        mr.add(MatchRow::new(Const::lit("0XX"), []));
+        mr.add(MatchRow::new(Const::lit("110"), [n1]));
+        mr.add(MatchRow::new(Const::lit("101"), [n2]));
 
         ml.add_enable(en);
         assert_eq!(ml, mr, "\n{ml} != \n{mr}");
@@ -734,8 +730,8 @@ mod test {
         let (n1, n2) = (h.net(), h.net());
 
         let mut ml = MatchMatrix::new(&v);
-        ml.add(MatchRow::new(h.pat("01"), [n1]));
-        ml.add(MatchRow::new(h.pat("10"), [n2]));
+        ml.add(MatchRow::new(Const::lit("10"), [n1]));
+        ml.add(MatchRow::new(Const::lit("01"), [n2]));
 
         let mr = ml.clone();
 
@@ -752,23 +748,23 @@ mod test {
         let v2 = h.val(3);
         let (n21, n22) = (h.net(), h.net());
         let mut m1 = MatchMatrix::new(&v1);
-        m1.add(MatchRow::new(h.pat("01"), [n11]));
-        m1.add(MatchRow::new(h.pat("10"), [n12]));
-        m1.add(MatchRow::new(h.pat("XX"), []));
+        m1.add(MatchRow::new(Const::lit("10"), [n11]));
+        m1.add(MatchRow::new(Const::lit("01"), [n12]));
+        m1.add(MatchRow::new(Const::lit("XX"), []));
 
         let mut m2 = MatchMatrix::new(&v2);
-        m2.add(MatchRow::new(h.pat("00X"), [n21]));
-        m2.add(MatchRow::new(h.pat("X01"), [n22]));
-        m2.add(MatchRow::new(h.pat("XXX"), []));
+        m2.add(MatchRow::new(Const::lit("X00"), [n21]));
+        m2.add(MatchRow::new(Const::lit("10X"), [n22]));
+        m2.add(MatchRow::new(Const::lit("XXX"), []));
 
         let ml1 = m1.clone().merge(n12, &m2);
 
         let mut mr1 = MatchMatrix::new(v1.concat(&v2));
-        mr1.add(MatchRow::new(h.pat("01XXX"), [n11]));
-        mr1.add(MatchRow::new(h.pat("1000X"), [n12, n21]));
-        mr1.add(MatchRow::new(h.pat("10X01"), [n12, n22]));
-        mr1.add(MatchRow::new(h.pat("10XXX"), [n12]));
-        mr1.add(MatchRow::new(h.pat("XXXXX"), []));
+        mr1.add(MatchRow::new(Const::lit("XXX10"), [n11]));
+        mr1.add(MatchRow::new(Const::lit("X0001"), [n12, n21]));
+        mr1.add(MatchRow::new(Const::lit("10X01"), [n12, n22]));
+        mr1.add(MatchRow::new(Const::lit("XXX01"), [n12]));
+        mr1.add(MatchRow::new(Const::lit("XXXXX"), []));
 
         assert_eq!(ml1, mr1, "\n{ml1} != \n{mr1}");
     }
@@ -782,25 +778,25 @@ mod test {
         let v2 = h.val(3);
         let (n21, n22) = (h.net(), h.net());
         let mut m1 = MatchMatrix::new(&v1);
-        m1.add(MatchRow::new(h.pat("01"), [n11]));
-        m1.add(MatchRow::new(h.pat("10"), [n11]));
-        m1.add(MatchRow::new(h.pat("XX"), [n12]));
+        m1.add(MatchRow::new(Const::lit("10"), [n11]));
+        m1.add(MatchRow::new(Const::lit("01"), [n11]));
+        m1.add(MatchRow::new(Const::lit("XX"), [n12]));
 
         let mut m2 = MatchMatrix::new(&v2);
-        m2.add(MatchRow::new(h.pat("00X"), [n21]));
-        m2.add(MatchRow::new(h.pat("X01"), [n22]));
-        m2.add(MatchRow::new(h.pat("XXX"), []));
+        m2.add(MatchRow::new(Const::lit("X00"), [n21]));
+        m2.add(MatchRow::new(Const::lit("10X"), [n22]));
+        m2.add(MatchRow::new(Const::lit("XXX"), []));
 
         let ml1 = m1.clone().merge(n11, &m2);
 
         let mut mr1 = MatchMatrix::new(v1.concat(&v2));
-        mr1.add(MatchRow::new(h.pat("0100X"), [n11, n21]));
-        mr1.add(MatchRow::new(h.pat("01X01"), [n11, n22]));
-        mr1.add(MatchRow::new(h.pat("01XXX"), [n11]));
-        mr1.add(MatchRow::new(h.pat("1000X"), [n11, n21]));
-        mr1.add(MatchRow::new(h.pat("10X01"), [n11, n22]));
-        mr1.add(MatchRow::new(h.pat("10XXX"), [n11]));
-        mr1.add(MatchRow::new(h.pat("XXXXX"), [n12]));
+        mr1.add(MatchRow::new(Const::lit("X0010"), [n11, n21]));
+        mr1.add(MatchRow::new(Const::lit("10X10"), [n11, n22]));
+        mr1.add(MatchRow::new(Const::lit("XXX10"), [n11]));
+        mr1.add(MatchRow::new(Const::lit("X0001"), [n11, n21]));
+        mr1.add(MatchRow::new(Const::lit("10X01"), [n11, n22]));
+        mr1.add(MatchRow::new(Const::lit("XXX01"), [n11]));
+        mr1.add(MatchRow::new(Const::lit("XXXXX"), [n12]));
 
         assert_eq!(ml1, mr1, "\n{ml1} != \n{mr1}");
     }
@@ -811,31 +807,31 @@ mod test {
         let n = h.net();
 
         let mut m00 = MatchMatrix::new(&Value::from(Const::lit("0")));
-        m00.add(MatchRow::new(h.pat("0"), [n]));
+        m00.add(MatchRow::new(Const::lit("0"), [n]));
 
         let mut m01 = MatchMatrix::new(&Value::from(Const::lit("0")));
-        m01.add(MatchRow::new(h.pat("1"), [n]));
+        m01.add(MatchRow::new(Const::lit("1"), [n]));
 
         let mut m0X = MatchMatrix::new(&Value::from(Const::lit("0")));
-        m0X.add(MatchRow::new(h.pat("X"), [n]));
+        m0X.add(MatchRow::new(Const::lit("X"), [n]));
 
         let mut m10 = MatchMatrix::new(&Value::from(Const::lit("1")));
-        m10.add(MatchRow::new(h.pat("0"), [n]));
+        m10.add(MatchRow::new(Const::lit("0"), [n]));
 
         let mut m11 = MatchMatrix::new(&Value::from(Const::lit("1")));
-        m11.add(MatchRow::new(h.pat("1"), [n]));
+        m11.add(MatchRow::new(Const::lit("1"), [n]));
 
         let mut m1X = MatchMatrix::new(&Value::from(Const::lit("1")));
-        m1X.add(MatchRow::new(h.pat("X"), [n]));
+        m1X.add(MatchRow::new(Const::lit("X"), [n]));
 
         let mut mX0 = MatchMatrix::new(&Value::from(Const::lit("X")));
-        mX0.add(MatchRow::new(h.pat("0"), [n]));
+        mX0.add(MatchRow::new(Const::lit("0"), [n]));
 
         let mut mX1 = MatchMatrix::new(&Value::from(Const::lit("X")));
-        mX1.add(MatchRow::new(h.pat("1"), [n]));
+        mX1.add(MatchRow::new(Const::lit("1"), [n]));
 
         let mut mXX = MatchMatrix::new(&Value::from(Const::lit("X")));
-        mXX.add(MatchRow::new(h.pat("X"), [n]));
+        mXX.add(MatchRow::new(Const::lit("X"), [n]));
 
         for must_reject in [m01, m10, mX0, mX1] {
             let normalized = must_reject.clone().normalize();
@@ -855,17 +851,17 @@ mod test {
         let n = h.net();
 
         let mut m1 = MatchMatrix::new(v.concat(&v));
-        m1.add(MatchRow::new(h.pat("X0"), [n]));
+        m1.add(MatchRow::new(Const::lit("0X"), [n]));
         m1 = m1.normalize();
-        assert_eq!(m1.rows[0].pattern, h.pat("0"));
+        assert_eq!(m1.rows[0].pattern, Const::lit("0"));
 
         let mut m2 = MatchMatrix::new(v.concat(&v));
-        m2.add(MatchRow::new(h.pat("0X"), [n]));
+        m2.add(MatchRow::new(Const::lit("X0"), [n]));
         m2 = m2.normalize();
-        assert_eq!(m2.rows[0].pattern, h.pat("0"));
+        assert_eq!(m2.rows[0].pattern, Const::lit("0"));
 
         let mut m3 = MatchMatrix::new(v.concat(&v));
-        m3.add(MatchRow::new(h.pat("01"), [n]));
+        m3.add(MatchRow::new(Const::lit("10"), [n]));
         m3 = m3.normalize();
         assert_eq!(m3.rows.len(), 0);
     }
@@ -877,11 +873,11 @@ mod test {
         let (n1, n2) = (h.net(), h.net());
 
         let mut m = MatchMatrix::new(v);
-        m.add(MatchRow::new(h.pat("01"), [n1]));
-        m.add(MatchRow::new(h.pat("01"), [n2]));
+        m.add(MatchRow::new(Const::lit("10"), [n1]));
+        m.add(MatchRow::new(Const::lit("10"), [n2]));
         m = m.normalize();
         assert_eq!(m.rows.len(), 1);
-        assert_eq!(m.rows[0].pattern, h.pat("01"));
+        assert_eq!(m.rows[0].pattern, Const::lit("10"));
         assert_eq!(m.rows[0].rules, BTreeSet::from_iter([n1]));
     }
 
@@ -892,11 +888,11 @@ mod test {
         let (n1, n2) = (h.net(), h.net());
 
         let mut m = MatchMatrix::new(v);
-        m.add(MatchRow::new(h.pat("XX"), [n1]));
-        m.add(MatchRow::new(h.pat("01"), [n2]));
+        m.add(MatchRow::new(Const::lit("XX"), [n1]));
+        m.add(MatchRow::new(Const::lit("10"), [n2]));
         m = m.normalize();
         assert_eq!(m.rows.len(), 1);
-        assert_eq!(m.rows[0].pattern, h.pat(""));
+        assert_eq!(m.rows[0].pattern, Const::lit(""));
         assert_eq!(m.rows[0].rules, BTreeSet::from_iter([n1]));
     }
 
@@ -907,13 +903,13 @@ mod test {
         let (n1, n2) = (h.net(), h.net());
 
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("0X"), [n1]));
-        m.add(MatchRow::new(h.pat("1X"), [n2]));
+        m.add(MatchRow::new(Const::lit("X0"), [n1]));
+        m.add(MatchRow::new(Const::lit("X1"), [n2]));
         m = m.normalize();
         assert_eq!(m.value, v.slice(0..1));
         assert_eq!(m.rows.len(), 2);
-        assert_eq!(m.rows[0], MatchRow::new(h.pat("0"), [n1]));
-        assert_eq!(m.rows[1], MatchRow::new(h.pat("1"), [n2]));
+        assert_eq!(m.rows[0], MatchRow::new(Const::lit("0"), [n1]));
+        assert_eq!(m.rows[1], MatchRow::new(Const::lit("1"), [n2]));
     }
 
     #[test]
@@ -923,14 +919,14 @@ mod test {
         let (n1, n2, n3) = (h.net(), h.net(), h.net());
 
         let mut m = MatchMatrix::new(&v.concat(&v));
-        m.add(MatchRow::new(h.pat("0XXX"), [n1]));
-        m.add(MatchRow::new(h.pat("1XXX"), [n2]));
-        m.add(MatchRow::new(h.pat("X0X1"), [n3]));
+        m.add(MatchRow::new(Const::lit("XXX0"), [n1]));
+        m.add(MatchRow::new(Const::lit("XXX1"), [n2]));
+        m.add(MatchRow::new(Const::lit("1X0X"), [n3]));
         m = m.normalize();
         assert_eq!(m.value, v.slice(0..1));
         assert_eq!(m.rows.len(), 2);
-        assert_eq!(m.rows[0], MatchRow::new(h.pat("0"), [n1]));
-        assert_eq!(m.rows[1], MatchRow::new(h.pat("1"), [n2]));
+        assert_eq!(m.rows[0], MatchRow::new(Const::lit("0"), [n1]));
+        assert_eq!(m.rows[1], MatchRow::new(Const::lit("1"), [n2]));
     }
 
     macro_rules! assert_dispatch {
@@ -948,7 +944,7 @@ mod test {
         let v = h.val(1);
         let n = h.net();
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("0"), [n]));
+        m.add(MatchRow::new(Const::lit("0"), [n]));
 
         let d = h.rs(n);
 
@@ -962,8 +958,8 @@ mod test {
         let v = h.val(1);
         let (n1, n2) = (h.net(), h.net());
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("0"), [n1]));
-        m.add(MatchRow::new(h.pat("1"), [n2]));
+        m.add(MatchRow::new(Const::lit("0"), [n1]));
+        m.add(MatchRow::new(Const::lit("1"), [n2]));
 
         let d = h.br(v[0], h.rs(n2), h.rs(n1));
 
@@ -977,8 +973,8 @@ mod test {
         let v = h.val(1);
         let (n1, n2) = (h.net(), h.net());
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("0"), [n1]));
-        m.add(MatchRow::new(h.pat("X"), [n2]));
+        m.add(MatchRow::new(Const::lit("0"), [n1]));
+        m.add(MatchRow::new(Const::lit("X"), [n2]));
 
         let d = h.br(v[0], h.rs(n2), h.rs(n1));
 
@@ -992,8 +988,8 @@ mod test {
         let v = h.val(1);
         let (n1, n2) = (h.net(), h.net());
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("1"), [n1]));
-        m.add(MatchRow::new(h.pat("X"), [n2]));
+        m.add(MatchRow::new(Const::lit("1"), [n1]));
+        m.add(MatchRow::new(Const::lit("X"), [n2]));
 
         let d = h.br(v[0], h.rs(n1), h.rs(n2));
 
@@ -1007,9 +1003,9 @@ mod test {
         let v = h.val(1);
         let (n1, n2, n3) = (h.net(), h.net(), h.net());
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("X"), [n1]));
-        m.add(MatchRow::new(h.pat("0"), [n2]));
-        m.add(MatchRow::new(h.pat("1"), [n3]));
+        m.add(MatchRow::new(Const::lit("X"), [n1]));
+        m.add(MatchRow::new(Const::lit("0"), [n2]));
+        m.add(MatchRow::new(Const::lit("1"), [n3]));
 
         let d = h.rs(n1);
 
@@ -1023,9 +1019,9 @@ mod test {
         let v = h.val(1);
         let (n1, n2, n3) = (h.net(), h.net(), h.net());
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("0"), [n1]));
-        m.add(MatchRow::new(h.pat("1"), [n2]));
-        m.add(MatchRow::new(h.pat("X"), [n3]));
+        m.add(MatchRow::new(Const::lit("0"), [n1]));
+        m.add(MatchRow::new(Const::lit("1"), [n2]));
+        m.add(MatchRow::new(Const::lit("X"), [n3]));
 
         let d = h.br(v[0], h.rs(n2), h.rs(n1));
 
@@ -1039,9 +1035,9 @@ mod test {
         let v = h.val(2);
         let (n1, n2, n3) = (h.net(), h.net(), h.net());
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("0X"), [n1]));
-        m.add(MatchRow::new(h.pat("1X"), [n2]));
-        m.add(MatchRow::new(h.pat("XX"), [n3]));
+        m.add(MatchRow::new(Const::lit("X0"), [n1]));
+        m.add(MatchRow::new(Const::lit("X1"), [n2]));
+        m.add(MatchRow::new(Const::lit("XX"), [n3]));
 
         let d = h.br(v[0], h.rs(n2), h.rs(n1));
 
@@ -1055,9 +1051,9 @@ mod test {
         let v = h.val(2);
         let (n1, n2, n3) = (h.net(), h.net(), h.net());
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("X0"), [n1]));
-        m.add(MatchRow::new(h.pat("11"), [n2]));
-        m.add(MatchRow::new(h.pat("XX"), [n3]));
+        m.add(MatchRow::new(Const::lit("0X"), [n1]));
+        m.add(MatchRow::new(Const::lit("11"), [n2]));
+        m.add(MatchRow::new(Const::lit("XX"), [n3]));
 
         let d = h.br(v[1], h.br(v[0], h.rs(n2), h.rs(n3)), h.rs(n1));
 
@@ -1071,9 +1067,9 @@ mod test {
         let v = h.val(2);
         let (n1, n2) = (h.net(), h.net());
         let mut m = MatchMatrix::new(&v);
-        m.add(MatchRow::new(h.pat("00"), [n1]));
-        m.add(MatchRow::new(h.pat("10"), [n1]));
-        m.add(MatchRow::new(h.pat("XX"), [n2]));
+        m.add(MatchRow::new(Const::lit("00"), [n1]));
+        m.add(MatchRow::new(Const::lit("01"), [n1]));
+        m.add(MatchRow::new(Const::lit("XX"), [n2]));
 
         let d = h.br(v[1], h.rs(n2), h.rs(n1));
 
