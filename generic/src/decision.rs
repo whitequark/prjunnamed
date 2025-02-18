@@ -28,6 +28,10 @@ struct MatchRow {
 /// Matches `value` against ordered `rows` of patterns and their corresponding rules, where the `rules`
 /// for the first pattern that matches the value being tested are asserted, and all other `rules`
 /// are deasserted.
+///
+/// Invariant: once a matrix is constructed, there is always a case that matches.
+/// Note that due to the possiblity of inputs being `X`, this is only
+/// satisfiable with a catch-all row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct MatchMatrix {
     value: Value,
@@ -90,8 +94,9 @@ impl MatchMatrix {
                 for other_row in &other.rows {
                     self.add(self_row.clone().merge(&other_row));
                 }
+            } else {
+                self.add(self_row.merge(&MatchRow::empty(other.value.len())));
             }
-            self.add(self_row.merge(&MatchRow::empty(other.value.len())));
         }
         self
     }
@@ -749,10 +754,12 @@ mod test {
         let mut m1 = MatchMatrix::new(&v1);
         m1.add(MatchRow::new(h.pat("01"), [n11]));
         m1.add(MatchRow::new(h.pat("10"), [n12]));
+        m1.add(MatchRow::new(h.pat("XX"), []));
 
         let mut m2 = MatchMatrix::new(&v2);
         m2.add(MatchRow::new(h.pat("00X"), [n21]));
         m2.add(MatchRow::new(h.pat("X01"), [n22]));
+        m2.add(MatchRow::new(h.pat("XXX"), []));
 
         let ml1 = m1.clone().merge(n12, &m2);
 
@@ -761,6 +768,7 @@ mod test {
         mr1.add(MatchRow::new(h.pat("1000X"), [n12, n21]));
         mr1.add(MatchRow::new(h.pat("10X01"), [n12, n22]));
         mr1.add(MatchRow::new(h.pat("10XXX"), [n12]));
+        mr1.add(MatchRow::new(h.pat("XXXXX"), []));
 
         assert_eq!(ml1, mr1, "\n{ml1} != \n{mr1}");
     }
@@ -781,6 +789,7 @@ mod test {
         let mut m2 = MatchMatrix::new(&v2);
         m2.add(MatchRow::new(h.pat("00X"), [n21]));
         m2.add(MatchRow::new(h.pat("X01"), [n22]));
+        m2.add(MatchRow::new(h.pat("XXX"), []));
 
         let ml1 = m1.clone().merge(n11, &m2);
 
@@ -1228,7 +1237,6 @@ mod test {
         mr.add(MatchRow::new(Const::lit("XX111"), [ya[0]]));
         mr.add(MatchRow::new(Const::lit("00010"), [ya[1], yb[0]]));
         mr.add(MatchRow::new(Const::lit("11010"), [ya[1], yb[1]]));
-        mr.add(MatchRow::new(Const::lit("XX010"), [ya[1]]));
         mr.add(MatchRow::new(Const::lit("XX010"), [ya[1]]));
         mr.add(MatchRow::new(Const::lit("XXXXX"), []));
 
