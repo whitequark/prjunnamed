@@ -265,6 +265,7 @@ impl MatchMatrix {
 }
 
 impl Decision {
+    /// Union `Net`s if they can both be true at the same time.
     fn disjoint(&self, disjoint_sets: &mut DisjointSets<Net>) {
         match self {
             Decision::Result { rules } => {
@@ -288,6 +289,11 @@ impl Decision {
         }
     }
 
+    /// Emit a mux-tree that outputs `values[x]` when net `x` would be `1`
+    /// according to the decision tree.
+    ///
+    /// Assumes that each case within `values` is mutually exclusive. Panics if
+    /// that is not the case.
     fn emit_disjoint_mux(&self, design: &Design, values: &BTreeMap<Net, Value>, default: &Value) -> Value {
         match self {
             Decision::Result { rules } => {
@@ -308,6 +314,7 @@ impl Decision {
         }
     }
 
+    /// Emit a mux-tree that drives the `nets` according to the decision tree.
     fn emit_one_hot_mux(&self, design: &Design, nets: &Value) -> Value {
         match self {
             Decision::Result { rules } => Value::from_iter(
@@ -322,13 +329,14 @@ impl Decision {
 
 struct MatchTrees<'a> {
     design: &'a Design,
-    /// Set of all `match` cells that aren't children. A `match` cell is a root
-    /// when its `enable` input is being driven by something other than a
-    /// `match` cell, or when it wouldn't be the unique child for a particular
-    /// output of its parent `match` cell.
+    /// Set of all `match` cells that aren't children. A `match` cell is a child
+    /// of another `match` cell if its `enable` input is being driven from
+    /// the output of the parent, and it is the unique such `match` cell for
+    /// that particular output bit. That is, if it is possible to merge the
+    /// child into the same decision tree.
     roots: BTreeSet<CellRef<'a>>,
     /// Maps a particular output of a `match` cell to the child `match` cell
-    /// whose `enable` inputs it is driving.
+    /// whose `enable` input it is driving.
     subtrees: BTreeMap<(CellRef<'a>, usize), CellRef<'a>>,
 }
 
@@ -496,6 +504,14 @@ pub fn decision(design: &mut Design) {
     // Combine each tree of `match` cells into a single match matrix.
     // Then build a decision tree for it and use it to drive the output.
     let mut decisions: BTreeMap<Net, Rc<Decision>> = BTreeMap::new();
+
+    // Nets are in the same set if they are driven by the same decision tree
+    // and they can be driven at the same time.
+    //
+    // Note that this is currently conservative. For example, in the following
+    // match matrix, %2 and %3 are not considered mutually exclusive:
+    //   10 => %1 %2
+    //   11 => %1 %3
     let mut disjoint_sets: DisjointSets<Net> = DisjointSets::new();
     for (matrix, matches) in match_trees.iter_matrices() {
         let all_outputs = BTreeSet::from_iter(matrix.iter_outputs());
