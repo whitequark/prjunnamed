@@ -470,11 +470,11 @@ impl<'a> AssignChains<'a> {
 
         self.chains.iter().filter_map(|chain| {
             // Check if the enables belong to the same decision tree.
-            let Some(decision) = decisions.get(&enable_of(chain[0])) else { return None };
+            let decision = decisions.get(&enable_of(chain[0]))?;
             let mut end_index = chain.len();
             'chain: for (index, &other_cell) in chain.iter().enumerate().skip(1) {
-                let Some(other_decision) = decisions.get(&enable_of(other_cell)) else { return None };
-                if !std::ptr::eq(&**decision, &**other_decision) {
+                let other_decision = decisions.get(&enable_of(other_cell))?;
+                if !Rc::ptr_eq(decision, other_decision) {
                     end_index = index;
                     break 'chain
                 }
